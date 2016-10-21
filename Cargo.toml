@@ -2,7 +2,7 @@
 name = "climate"
 version = "0.1.0"
 authors = ["Tyler Neely <t@jujit.su>"]
-description = "Hard to kill transactional distributed database"
+description = "practical command-line interfaces"
 license = "Apache-2.0"
 homepage = "https://github.com/spacejam/climate"
 keywords = ["cli", "commandline", "visualization", "ui"]
