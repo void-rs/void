@@ -14,4 +14,4 @@ path = "test/test.rs"
 
 [dependencies]
 termion = "1.0"
-quickcheck = "*"
+quickcheck = "0.3"
