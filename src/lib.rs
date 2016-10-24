@@ -1,6 +1,3 @@
-#![crate_id = "climate"]
-#![crate_type = "lib"]
-
 extern crate termion;
 
 #[cfg(test)]
