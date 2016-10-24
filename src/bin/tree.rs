@@ -13,7 +13,7 @@ use termion::raw::{IntoRawMode, RawTerminal};
 
 struct Screen {
     anchors: BTreeMap<(u16, u16), Rc<RefCell<Anchor>>>,
-    last_selected: Option<Rc<RefCell<Node>>>,
+    last_selected: Option<(Rc<RefCell<Anchor>>, Rc<RefCell<Node>>)>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
     logs: RefCell<Vec<String>>,
 }
@@ -70,14 +70,26 @@ impl Screen {
     }
 
     fn try_select(&mut self, x: u16, y: u16) {
-        if let Some(ref old_node) = self.last_selected {
+        if let Some((_, ref old_node)) = self.last_selected {
             old_node.borrow_mut().selected = false;
         }
         if let Some((anchor, node)) = self.lookup((x, y)) {
             node.borrow_mut().selected = true;
-            self.last_selected = Some(node.clone())
+            self.last_selected = Some((anchor, node.clone()))
         }
     }
+
+    fn delete_selected(&mut self) {
+        if let Some((ref anchor, ref node)) = self.last_selected {
+            if anchor.borrow().head.as_ptr() == node.as_ptr() {
+                // nuke whole anchor
+            } else {
+                anchor.borrow_mut().delete(node.clone());
+            }
+        }
+    }
+
+    fn expand_selected(&mut self) {}
 
     fn run(&mut self) {
         if self.stdout.is_none() {
@@ -89,6 +101,8 @@ impl Screen {
             let evt = c.unwrap();
             match evt {
                 Event::Key(Key::Char('q')) => break,
+                Event::Key(Key::Char('\t')) => self.expand_selected(),
+                Event::Key(Key::Delete) => self.delete_selected(),
                 Event::Mouse(me) => {
                     match me {
                         MouseEvent::Press(_, x, y) => {
@@ -98,7 +112,7 @@ impl Screen {
                         e => self.log(&format!("Weird mouse event {:?}", e)),
                     }
                 }
-                _ => {}
+                e => self.log(&format!("Weird event {:?}", e)),
             }
             self.draw();
         }
@@ -136,6 +150,11 @@ impl Anchor {
             head.lookup(0, coords)
         }
     }
+
+    fn delete(&mut self, node: Rc<RefCell<Node>>) -> bool {
+        false
+    }
+
     fn children(&self) -> usize {
         self.head.borrow().children()
     }
