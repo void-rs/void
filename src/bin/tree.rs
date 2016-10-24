@@ -51,13 +51,10 @@ impl Screen {
     }
 
     fn lookup(&mut self, coords: (u16, u16)) -> Option<(Rc<RefCell<Anchor>>, Rc<RefCell<Node>>)> {
-        // self.log("trying to scan anchors");
         // scan possible anchors
         let mut candidate_anchors = vec![];
         for (&(x, y), anchor) in self.anchors.iter() {
-            self.log(&format!("{} {} {}", coords.1, y, anchor.borrow().children()));
             if coords.0 >= x && coords.1 >= y && coords.1 - y < anchor.borrow().children() as u16 {
-                self.log("got a possible anchor");
                 candidate_anchors.push(((x, y), anchor.clone()));
             }
         }
@@ -78,6 +75,7 @@ impl Screen {
         }
         if let Some((anchor, node)) = self.lookup((x, y)) {
             node.borrow_mut().selected = true;
+            self.last_selected = Some(node.clone())
         }
     }
 
@@ -128,8 +126,12 @@ impl Anchor {
     }
     fn lookup(&self, coords: (u16, u16)) -> Option<Rc<RefCell<Node>>> {
         let head = self.head.borrow();
-        if coords.1 == 0 && head.content.len() + 1 >= coords.0 as usize {
-            Some(self.head.clone())
+        if coords.1 == 0 {
+            if head.content.len() + 1 >= coords.0 as usize {
+                Some(self.head.clone())
+            } else {
+                None
+            }
         } else {
             head.lookup(0, coords)
         }
@@ -139,6 +141,7 @@ impl Anchor {
     }
 }
 
+#[derive(Debug)]
 enum Content {
     Text(String),
     Plot(Vec<i64>),
@@ -159,6 +162,7 @@ impl Content {
     }
 }
 
+#[derive(Debug)]
 struct Node {
     content: Content,
     children: Vec<Rc<RefCell<Node>>>,
@@ -212,10 +216,19 @@ impl Node {
         drawn
     }
     fn lookup(&self, depth: usize, coords: (u16, u16)) -> Option<Rc<RefCell<Node>>> {
-        println!("{} {} {}", coords.0, coords.1, self.content.len());
-        if coords.1 == 0 && self.content.len() + 1 + (3 * depth) >= coords.0 as usize {
-            println!("yaaa");
-            std::thread::sleep_ms(1000);
+        let mut y_traversed = 1;
+        for child in self.children.iter() {
+            if coords.1 == y_traversed {
+                if child.borrow().content.len() + 1 + (3 * (depth + 1)) >= coords.0 as usize {
+                    return Some(child.clone());
+                } else {
+                    return None;
+                }
+            } else if coords.1 < y_traversed + child.borrow().children() as u16 {
+                return child.borrow().lookup(depth + 1, (coords.0, coords.1 - y_traversed));
+            } else {
+                y_traversed += child.borrow().children() as u16;
+            }
         }
 
         None
