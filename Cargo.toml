@@ -15,3 +15,5 @@ path = "test/test.rs"
 [dependencies]
 termion = "1.0"
 quickcheck = "0.3"
+log = "0.3"
+lazy_static = "0.2"

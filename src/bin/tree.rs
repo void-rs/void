@@ -1,21 +1,54 @@
 extern crate climate;
 extern crate termion;
+#[macro_use]
+extern crate log;
+#[macro_use]
+extern crate lazy_static;
 
 use std::collections::BTreeMap;
 use std::io::{Write, Stdout, stdout, stdin};
 use std::cell::RefCell;
 use std::ops::{Div, Mul};
 use std::rc::Rc;
+use std::sync::RwLock;
 
+use log::{LogRecord, LogLevel, LogLevelFilter, LogMetadata, SetLoggerError};
 use termion::event::{Key, Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
+
+struct ScreenLogger;
+
+impl log::Log for ScreenLogger {
+    fn enabled(&self, metadata: &LogMetadata) -> bool {
+        metadata.level() <= LogLevel::Info
+    }
+
+    fn log(&self, record: &LogRecord) {
+        if self.enabled(record.metadata()) {
+            let line = format!("{} - {}", record.level(), record.args());
+            let mut logs = LOGS.write().unwrap();
+            logs.insert(0, line);
+            logs.truncate(10);
+        }
+    }
+}
+
+pub fn init_screen_log() -> Result<(), SetLoggerError> {
+    log::set_logger(|max_log_level| {
+        max_log_level.set(LogLevelFilter::Info);
+        Box::new(ScreenLogger)
+    })
+}
+
+lazy_static! {
+    static ref LOGS: RwLock<Vec<String>> = RwLock::new(vec![]);
+}
 
 struct Screen {
     anchors: BTreeMap<(u16, u16), Rc<RefCell<Anchor>>>,
     last_selected: Option<(Rc<RefCell<Anchor>>, Rc<RefCell<Node>>)>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
-    logs: RefCell<Vec<String>>,
 }
 
 impl Screen {
@@ -30,7 +63,7 @@ impl Screen {
         let (_, bottom) = termion::terminal_size().unwrap();
         println!("{}logs:", termion::cursor::Goto(0, bottom - 11));
         {
-            let logs = self.logs.borrow();
+            let logs = LOGS.read().unwrap();
             for msg in logs.iter().rev() {
                 println!("\r{}", msg);
             }
@@ -42,12 +75,6 @@ impl Screen {
 
     fn insert(&mut self, coords: (u16, u16), anchor: Anchor) {
         self.anchors.insert(coords, Rc::new(RefCell::new(anchor)));
-    }
-
-    fn log<'a>(&self, msg: &'a str) {
-        let mut logs = self.logs.borrow_mut();
-        logs.insert(0, msg.to_string());
-        logs.truncate(10);
     }
 
     fn lookup(&mut self, coords: (u16, u16)) -> Option<(Rc<RefCell<Anchor>>, Rc<RefCell<Node>>)> {
@@ -65,7 +92,6 @@ impl Screen {
                 candidate_nodes.push((anchor.clone(), node));
             }
         }
-        self.log(&format!("found {} matching nodes", candidate_nodes.len()));
         candidate_nodes.pop()
     }
 
@@ -109,10 +135,10 @@ impl Screen {
                             self.try_select(x, y);
                         }
                         MouseEvent::Release(x, y) => {}
-                        e => self.log(&format!("Weird mouse event {:?}", e)),
+                        e => warn!("Weird mouse event {:?}", e),
                     }
                 }
-                e => self.log(&format!("Weird event {:?}", e)),
+                e => warn!("Weird event {:?}", e),
             }
             self.draw();
         }
@@ -125,7 +151,6 @@ impl Default for Screen {
             anchors: BTreeMap::new(),
             last_selected: None,
             stdout: None,
-            logs: RefCell::new(vec![]),
         }
     }
 }
@@ -282,6 +307,7 @@ fn plot_graph<T>(nums_in: Vec<T>)
 }
 
 fn main() {
+    init_screen_log();
     let other = node("other", vec![]);
     let next = node("next", vec![]);
     let zone = node("zone", vec![]);
