@@ -36,7 +36,7 @@ impl log::Log for ScreenLogger {
 
 pub fn init_screen_log() -> Result<(), SetLoggerError> {
     log::set_logger(|max_log_level| {
-        max_log_level.set(LogLevelFilter::Info);
+        max_log_level.set(LogLevelFilter::Debug);
         Box::new(ScreenLogger)
     })
 }
@@ -45,10 +45,27 @@ lazy_static! {
     static ref LOGS: RwLock<Vec<String>> = RwLock::new(vec![]);
 }
 
+enum ScreenMode {
+    Select,
+    Edit,
+}
+
 struct Screen {
     anchors: BTreeMap<(u16, u16), Rc<RefCell<Anchor>>>,
     last_selected: Option<(Rc<RefCell<Anchor>>, Rc<RefCell<Node>>)>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
+    mode: ScreenMode,
+}
+
+impl Default for Screen {
+    fn default() -> Screen {
+        Screen {
+            anchors: BTreeMap::new(),
+            last_selected: None,
+            stdout: None,
+            mode: ScreenMode::Select,
+        }
+    }
 }
 
 impl Screen {
@@ -81,7 +98,7 @@ impl Screen {
         // scan possible anchors
         let mut candidate_anchors = vec![];
         for (&(x, y), anchor) in self.anchors.iter() {
-            if coords.0 >= x && coords.1 >= y && coords.1 - y < anchor.borrow().children() as u16 {
+            if coords.0 >= x && coords.1 >= y && coords.1 - y < anchor.borrow().height() as u16 {
                 candidate_anchors.push(((x, y), anchor.clone()));
             }
         }
@@ -107,15 +124,30 @@ impl Screen {
 
     fn delete_selected(&mut self) {
         if let Some((ref anchor, ref node)) = self.last_selected {
-            if anchor.borrow().head.as_ptr() == node.as_ptr() {
+            let ptr = {
+                anchor.borrow().head.as_ptr()
+            };
+            if ptr == node.as_ptr() {
+                info!("deleting anchor {:?}", node.borrow().content);
                 // nuke whole anchor
+                let anchors = self.anchors
+                    .clone()
+                    .into_iter()
+                    .filter(|&(ref coords, ref anchor)| anchor.borrow().head.as_ptr() != ptr)
+                    .collect();
+                self.anchors = anchors;
             } else {
-                anchor.borrow_mut().delete(node.clone());
+                let anchor = anchor.borrow();
+                anchor.head.borrow_mut().delete(node.clone());
             }
         }
     }
 
-    fn expand_selected(&mut self) {}
+    fn create_child(&mut self) {
+        if let Some((ref anchor, ref selected)) = self.last_selected {
+            selected.borrow_mut().create_child()
+        }
+    }
 
     fn run(&mut self) {
         if self.stdout.is_none() {
@@ -125,32 +157,73 @@ impl Screen {
         let stdin = stdin();
         for c in stdin.events() {
             let evt = c.unwrap();
-            match evt {
-                Event::Key(Key::Char('q')) => break,
-                Event::Key(Key::Char('\t')) => self.expand_selected(),
-                Event::Key(Key::Delete) => self.delete_selected(),
-                Event::Mouse(me) => {
-                    match me {
-                        MouseEvent::Press(_, x, y) => {
-                            self.try_select(x, y);
-                        }
-                        MouseEvent::Release(x, y) => {}
-                        e => warn!("Weird mouse event {:?}", e),
+            match self.mode {
+                ScreenMode::Select => {
+                    if evt == Event::Key(Key::Char('q')) {
+                        break;
                     }
+                    self.handle_select(evt);
                 }
-                e => warn!("Weird event {:?}", e),
+                ScreenMode::Edit => self.handle_edit(evt),
             }
             self.draw();
         }
     }
-}
 
-impl Default for Screen {
-    fn default() -> Screen {
-        Screen {
-            anchors: BTreeMap::new(),
-            last_selected: None,
-            stdout: None,
+    fn toggle_collapsed(&mut self) {
+        if let Some((ref anchor, ref selected)) = self.last_selected {
+            selected.borrow_mut().toggle_collapsed()
+        }
+    }
+
+    fn create_anchor(&mut self, coords: (u16, u16)) {
+        let header = node("new", vec![]);
+        let anchor = Anchor { head: Rc::new(RefCell::new(header)) };
+        self.insert(coords, anchor);
+    }
+
+    fn handle_select(&mut self, evt: Event) {
+        match evt {
+            Event::Key(Key::Char('e')) => self.mode = ScreenMode::Edit,
+            Event::Key(Key::Char('\n')) => self.toggle_collapsed(),
+            Event::Key(Key::Char('\t')) => self.create_child(),
+            Event::Key(Key::Delete) => self.delete_selected(),
+            Event::Mouse(me) => {
+                match me {
+                    MouseEvent::Press(_, x, y) => {
+                        self.try_select(x, y);
+                        if self.last_selected.is_none() {
+                            self.create_anchor((x, y));
+                        }
+                    }
+                    MouseEvent::Release(x, y) => {}
+                    e => warn!("Weird mouse event {:?}", e),
+                }
+            }
+            e => warn!("Weird event {:?}", e),
+        }
+    }
+
+    fn backspace(&mut self) {
+        if let Some((ref anchor, ref selected)) = self.last_selected {
+            let mut node = selected.borrow_mut();
+            node.content.backspace();
+        }
+    }
+
+    fn append(&mut self, c: char) {
+        if let Some((ref anchor, ref selected)) = self.last_selected {
+            let mut node = selected.borrow_mut();
+            node.content.append(c);
+        }
+    }
+
+    fn handle_edit(&mut self, evt: Event) {
+        match evt {
+            Event::Key(Key::Alt('\u{1b}')) => self.mode = ScreenMode::Select,
+            Event::Key(Key::Backspace) => self.backspace(),
+            Event::Key(Key::Char(c)) => self.append(c),
+            e => warn!("weird event {:?}", e),
         }
     }
 }
@@ -176,32 +249,49 @@ impl Anchor {
         }
     }
 
-    fn delete(&mut self, node: Rc<RefCell<Node>>) -> bool {
-        false
-    }
-
-    fn children(&self) -> usize {
-        self.head.borrow().children()
+    fn height(&self) -> usize {
+        self.head.borrow().height()
     }
 }
 
 #[derive(Debug)]
 enum Content {
-    Text(String),
+    Text {
+        text: String,
+    },
     Plot(Vec<i64>),
 }
 
 impl Content {
     fn draw(&self) {
         match self {
-            &Content::Text(ref text) => println!("{}", text),
+            &Content::Text { text: ref text } => print!("{}", text),
             &Content::Plot(ref data) => plot_graph(data.clone()),
         }
     }
     fn len(&self) -> usize {
         match self {
-            &Content::Text(ref text) => text.len(),
+            &Content::Text { text: ref text } => text.len(),
             &Content::Plot(ref data) => data.len(),
+        }
+    }
+    fn backspace(&mut self) {
+        match self {
+            &mut Content::Text { text: ref mut text } => {
+                let newlen = std::cmp::max(text.len(), 1) - 1;
+                *text = text.clone()[..newlen].to_string();
+            }
+            &mut Content::Plot(ref data) => unimplemented!(),
+        }
+    }
+    fn append(&mut self, c: char) {
+        match self {
+            &mut Content::Text { text: ref mut text } => {
+                text.push(c);
+            }
+            &mut Content::Plot(ref data) => {
+                unimplemented!();
+            }
         }
     }
 }
@@ -211,11 +301,11 @@ struct Node {
     content: Content,
     children: Vec<Rc<RefCell<Node>>>,
     selected: bool,
+    collapsed: bool,
 }
 
 impl Node {
     fn draw(&self, depth: usize, x: u16, y: u16, last: bool) -> usize {
-        let mut drawn = 1;
         print!("{}", termion::cursor::Goto(x, y));
 
         if self.selected {
@@ -242,19 +332,28 @@ impl Node {
 
         self.content.draw();
 
+        if self.collapsed {
+            print!("…");
+        }
+
         if self.selected {
             print!("{}", termion::style::Reset);
         }
 
-        let n_children = self.children.len();
-        for (n, child) in self.children.iter().enumerate() {
-            let last = if n + 1 == n_children {
-                true
-            } else {
-                false
-            };
+        println!("");
 
-            drawn += child.borrow().draw(depth + 1, x, y + drawn as u16, last);
+        let mut drawn = 1;
+        if !self.collapsed {
+            let n_children = self.children.len();
+            for (n, child) in self.children.iter().enumerate() {
+                let last = if n + 1 == n_children {
+                    true
+                } else {
+                    false
+                };
+
+                drawn += child.borrow().draw(depth + 1, x, y + drawn as u16, last);
+            }
         }
 
         drawn
@@ -268,17 +367,59 @@ impl Node {
                 } else {
                     return None;
                 }
-            } else if coords.1 < y_traversed + child.borrow().children() as u16 {
+            } else if coords.1 < y_traversed + child.borrow().height() as u16 {
                 return child.borrow().lookup(depth + 1, (coords.0, coords.1 - y_traversed));
             } else {
-                y_traversed += child.borrow().children() as u16;
+                y_traversed += child.borrow().height() as u16;
             }
         }
 
         None
     }
-    fn children(&self) -> usize {
-        self.children.iter().fold(1, |acc, c| acc + c.borrow().children())
+
+    fn height(&self) -> usize {
+        if self.collapsed {
+            1
+        } else {
+            self.children.iter().fold(1, |acc, c| acc + c.borrow().height())
+        }
+    }
+
+    fn delete(&mut self, node: Rc<RefCell<Node>>) -> bool {
+        let ptr = {
+            node.as_ptr()
+        };
+        let mut contains = false;
+        for child in self.children.iter() {
+            if ptr == child.as_ptr() {
+                info!("deleting child {:?}", node.borrow().content);
+                contains = true;
+            }
+        }
+        if contains {
+            let children = self.children.clone();
+            let new_children = children.into_iter().filter(|c| ptr != c.as_ptr()).collect();
+            self.children = new_children;
+            return true;
+        }
+        self.children.iter().fold(false, |acc, c| {
+            if acc {
+                true
+            } else {
+                c.borrow_mut().delete(node.clone())
+            }
+        })
+    }
+    fn toggle_collapsed(&mut self) {
+        if self.collapsed {
+            self.collapsed = false;
+        } else {
+            self.collapsed = true;
+        }
+    }
+    fn create_child(&mut self) {
+        let new = node("new", vec![]);
+        self.children.push(Rc::new(RefCell::new(new)));
     }
 }
 
@@ -286,9 +427,10 @@ fn node(text: &str, children: Vec<Node>) -> Node {
     let rc_children = children.into_iter().map(|child| Rc::new(RefCell::new(child))).collect();
 
     Node {
-        content: Content::Text(text.to_string()),
+        content: Content::Text { text: text.to_string() },
         children: rc_children,
         selected: false,
+        collapsed: false,
     }
 }
 
@@ -315,6 +457,7 @@ fn main() {
         content: Content::Plot(vec![1, 2, 5, 2, 3]),
         children: vec![],
         selected: false,
+        collapsed: false,
     };
     let bone = node("bone", vec![plot]);
     let one = node("one", vec![bone, zone]);
@@ -324,6 +467,5 @@ fn main() {
 
     let mut scene = Screen::default();
     scene.insert((3, 4), anchor);
-    plot_graph(vec![1, 2, 3, 4]);
     scene.run();
 }
