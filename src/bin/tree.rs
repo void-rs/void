@@ -54,7 +54,6 @@ struct Screen {
     anchors: BTreeMap<(u16, u16), Rc<RefCell<Anchor>>>,
     last_selected: Option<(Rc<RefCell<Anchor>>, Rc<RefCell<Node>>)>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
-    mode: ScreenMode,
 }
 
 impl Default for Screen {
@@ -63,7 +62,6 @@ impl Default for Screen {
             anchors: BTreeMap::new(),
             last_selected: None,
             stdout: None,
-            mode: ScreenMode::Select,
         }
     }
 }
@@ -157,15 +155,7 @@ impl Screen {
         let stdin = stdin();
         for c in stdin.events() {
             let evt = c.unwrap();
-            match self.mode {
-                ScreenMode::Select => {
-                    if evt == Event::Key(Key::Char('q')) {
-                        break;
-                    }
-                    self.handle_select(evt);
-                }
-                ScreenMode::Edit => self.handle_edit(evt),
-            }
+            self.handle_event(evt);
             self.draw();
         }
     }
@@ -182,12 +172,28 @@ impl Screen {
         self.insert(coords, anchor);
     }
 
-    fn handle_select(&mut self, evt: Event) {
+    fn backspace(&mut self) {
+        if let Some((ref anchor, ref selected)) = self.last_selected {
+            let mut node = selected.borrow_mut();
+            node.content.backspace();
+        }
+    }
+
+    fn append(&mut self, c: char) {
+        if let Some((ref anchor, ref selected)) = self.last_selected {
+            let mut node = selected.borrow_mut();
+            node.content.append(c);
+        }
+    }
+
+    fn handle_event(&mut self, evt: Event) {
         match evt {
-            Event::Key(Key::Char('e')) => self.mode = ScreenMode::Edit,
             Event::Key(Key::Char('\n')) => self.toggle_collapsed(),
             Event::Key(Key::Char('\t')) => self.create_child(),
             Event::Key(Key::Delete) => self.delete_selected(),
+            Event::Key(Key::Alt('\u{1b}')) => self.exit(),
+            Event::Key(Key::Backspace) => self.backspace(),
+            Event::Key(Key::Char(c)) => self.append(c),
             Event::Mouse(me) => {
                 match me {
                     MouseEvent::Press(_, x, y) => {
@@ -204,27 +210,10 @@ impl Screen {
         }
     }
 
-    fn backspace(&mut self) {
-        if let Some((ref anchor, ref selected)) = self.last_selected {
-            let mut node = selected.borrow_mut();
-            node.content.backspace();
-        }
-    }
-
-    fn append(&mut self, c: char) {
-        if let Some((ref anchor, ref selected)) = self.last_selected {
-            let mut node = selected.borrow_mut();
-            node.content.append(c);
-        }
-    }
-
-    fn handle_edit(&mut self, evt: Event) {
-        match evt {
-            Event::Key(Key::Alt('\u{1b}')) => self.mode = ScreenMode::Select,
-            Event::Key(Key::Backspace) => self.backspace(),
-            Event::Key(Key::Char(c)) => self.append(c),
-            e => warn!("weird event {:?}", e),
-        }
+    fn exit(&self) {
+        let (_, bottom) = termion::terminal_size().unwrap();
+        print!("{}", termion::cursor::Goto(0, bottom));
+        std::process::exit(0);
     }
 }
 
@@ -234,7 +223,7 @@ struct Anchor {
 
 impl Anchor {
     fn draw(&self, x: u16, y: u16) {
-        self.head.borrow().draw(0, x, y, false);
+        self.head.borrow().draw("".to_string(), x, y, false);
     }
     fn lookup(&self, coords: (u16, u16)) -> Option<Rc<RefCell<Node>>> {
         let head = self.head.borrow();
@@ -305,24 +294,20 @@ struct Node {
 }
 
 impl Node {
-    fn draw(&self, depth: usize, x: u16, y: u16, last: bool) -> usize {
+    fn draw(&self, prefix: String, x: u16, y: u16, last: bool) -> usize {
         print!("{}", termion::cursor::Goto(x, y));
 
         if self.selected {
             print!("{}", termion::style::Invert);
         }
 
-        if depth == 0 {
+        if prefix == "" {
             print!("⚒ ");
-        } else {
-            print!("  ");
         }
 
-        for _ in 1..depth {
-            print!("│  ");
-        }
+        print!("{}", prefix);
 
-        if depth != 0 {
+        if prefix != "" {
             if last {
                 print!("└─ ");
             } else {
@@ -343,6 +328,14 @@ impl Node {
         println!("");
 
         let mut drawn = 1;
+        let mut prefix = prefix;
+        if last {
+            prefix.push_str("   ");
+        } else if prefix == "" {
+            prefix.push_str("  ");
+        } else {
+            prefix.push_str("│  ");
+        }
         if !self.collapsed {
             let n_children = self.children.len();
             for (n, child) in self.children.iter().enumerate() {
@@ -351,8 +344,7 @@ impl Node {
                 } else {
                     false
                 };
-
-                drawn += child.borrow().draw(depth + 1, x, y + drawn as u16, last);
+                drawn += child.borrow().draw(prefix.clone(), x, y + drawn as u16, last);
             }
         }
 
