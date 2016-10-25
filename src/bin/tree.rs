@@ -54,6 +54,7 @@ struct Screen {
     anchors: BTreeMap<(u16, u16), Rc<RefCell<Anchor>>>,
     last_selected: Option<(Rc<RefCell<Anchor>>, Rc<RefCell<Node>>)>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
+    dragging: bool,
 }
 
 impl Default for Screen {
@@ -62,6 +63,7 @@ impl Default for Screen {
             anchors: BTreeMap::new(),
             last_selected: None,
             stdout: None,
+            dragging: false,
         }
     }
 }
@@ -110,13 +112,32 @@ impl Screen {
         candidate_nodes.pop()
     }
 
-    fn try_select(&mut self, x: u16, y: u16) {
-        if let Some((_, ref old_node)) = self.last_selected {
-            old_node.borrow_mut().selected = false;
-        }
-        if let Some((anchor, node)) = self.lookup((x, y)) {
-            node.borrow_mut().selected = true;
-            self.last_selected = Some((anchor, node.clone()))
+    // down on selectable
+    //      1. try to select
+    //      1. drag = true
+    // up on selectable
+    //      1. drag = false
+    // down on nothing
+    //      1. drag selected
+    //      1. deselect
+    // up on nothing
+    //      1. move if selected
+    //      1. drag = false
+    fn try_select(&mut self, x: u16, y: u16) -> Result<(), ()> {
+        if !self.dragging {
+            if let Some((_, old_node)) = self.last_selected.take() {
+                old_node.borrow_mut().selected = false;
+            }
+            if let Some((anchor, node)) = self.lookup((x, y)) {
+                node.borrow_mut().selected = true;
+                self.last_selected = Some((anchor, node.clone()));
+                self.dragging = true;
+                Ok(())
+            } else {
+                Err(())
+            }
+        } else {
+            Err(())
         }
     }
 
@@ -186,6 +207,18 @@ impl Screen {
         }
     }
 
+    fn move_selected(&mut self, x: u16, y: u16) {
+        let anchors_clone = self.anchors.clone();
+        if let Some((ref anchor, ref selected)) = self.last_selected {
+            for (coords, value) in anchors_clone.iter() {
+                if value.as_ptr() == anchor.as_ptr() {
+                    let anchor = self.anchors.remove(coords).unwrap();
+                    self.anchors.insert((x, y), anchor);
+                }
+            }
+        }
+    }
+
     fn handle_event(&mut self, evt: Event) {
         match evt {
             Event::Key(Key::Char('\n')) => self.toggle_collapsed(),
@@ -198,11 +231,17 @@ impl Screen {
                 match me {
                     MouseEvent::Press(_, x, y) => {
                         self.try_select(x, y);
-                        if self.last_selected.is_none() {
-                            self.create_anchor((x, y));
-                        }
                     }
-                    MouseEvent::Release(x, y) => {}
+                    MouseEvent::Release(x, y) => {
+                        if self.dragging {
+                            self.move_selected(x, y);
+                        } else {
+                            if self.last_selected.is_none() {
+                                self.create_anchor((x, y));
+                            }
+                        }
+                        self.dragging = false;
+                    }
                     e => warn!("Weird mouse event {:?}", e),
                 }
             }
