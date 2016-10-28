@@ -103,27 +103,31 @@ impl Screen {
         candidate_nodes.pop()
     }
 
-    // down on selectable
-    //      1. try to select
-    //      1. drag = true
-    // up on selectable
-    //      1. drag = false
-    // down on nothing
-    //      1. drag selected
-    //      1. deselect
-    // up on nothing
-    //      1. move if selected
-    //      1. drag = false
-    fn try_select(&mut self, x: u16, y: u16) {
+    fn pop_selected(&mut self) -> Lookup {
         if self.dragging_from.is_none() {
-            if let Some((_, old_node)) = self.last_selected.take() {
+            if let Some((anchor, old_node)) = self.last_selected.take() {
                 old_node.borrow_mut().selected = false;
+                Some((anchor, old_node))
+            } else {
+                None
             }
+        } else {
+            None
+        }
+    }
+
+    fn try_select(&mut self, x: u16, y: u16) -> Lookup {
+        if self.dragging_from.is_none() {
             if let Some((anchor, node)) = self.lookup((x, y)) {
                 node.borrow_mut().selected = true;
-                self.last_selected = Some((anchor, node.clone()));
+                self.last_selected = Some((anchor.clone(), node.clone()));
                 self.dragging_from = Some((x, y));
+                Some((anchor, node))
+            } else {
+                None
             }
+        } else {
+            None
         }
     }
 
@@ -229,13 +233,15 @@ impl Screen {
             Event::Mouse(me) => {
                 match me {
                     MouseEvent::Press(_, x, y) => {
+                        let old = self.pop_selected();
                         self.try_select(x, y);
+                        if old.is_none() && self.dragging_from.is_none() {
+                            self.create_anchor((x, y));
+                        }
                     }
                     MouseEvent::Release(x, y) => {
                         if let Some((from_x, from_y)) = self.dragging_from.take() {
                             self.move_selected((from_x, from_y), (x, y));
-                        } else if self.last_selected.is_none() {
-                            self.create_anchor((x, y));
                         }
                     }
                     MouseEvent::Hold(..) => {
