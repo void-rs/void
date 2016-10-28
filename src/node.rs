@@ -28,7 +28,7 @@ impl Node {
     }
 
 
-    pub fn draw(&self, prefix: String, x: u16, y: u16, last: bool) -> usize {
+    pub fn draw_tree(&self, prefix: String, x: u16, y: u16, last: bool) -> usize {
         print!("{}", termion::cursor::Goto(x, y));
 
         if self.selected {
@@ -74,7 +74,7 @@ impl Node {
             let n_children = self.children.len();
             for (n, child) in self.children.iter().enumerate() {
                 let last = n + 1 == n_children;
-                drawn += child.borrow().draw(prefix.clone(), x, y + drawn as u16, last);
+                drawn += child.borrow().draw_tree(prefix.clone(), x, y + drawn as u16, last);
             }
         }
 

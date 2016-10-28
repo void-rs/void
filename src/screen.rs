@@ -10,17 +10,18 @@ use termion::event::{Key, Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
-use {Anchor, Node, Content};
+use {Node, Content};
 // TODO KILL THIS WITH FIRE
 use SerScreen;
 
 use serialization;
 use logging;
 
-type Lookup = Option<(Rc<RefCell<Anchor>>, Rc<RefCell<Node>>)>;
+// anchor node, selected node
+type Lookup = Option<(Rc<RefCell<Node>>, Rc<RefCell<Node>>)>;
 
 pub struct Screen {
-    pub anchors: BTreeMap<(u16, u16), Rc<RefCell<Anchor>>>,
+    pub anchors: BTreeMap<(u16, u16), Rc<RefCell<Node>>>,
     pub last_selected: Lookup,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
     dragging_from: Option<(u16, u16)>,
@@ -53,14 +54,14 @@ impl Screen {
         print!("\x1b[2J\x1b[H");
 
         for (coords, anchor) in &self.anchors {
-            anchor.borrow().draw(coords.0, coords.1);
+            anchor.borrow().draw_tree("".to_string(), coords.0, coords.1, false);
         }
 
         // print logs
         let (width, bottom) = termion::terminal_size().unwrap();
-        if width > 4 && bottom > 12 {
+        if width > 4 && bottom > 7 {
             let mut sep = format!("{}{}logs{}",
-                                  termion::cursor::Goto(0, bottom - 11),
+                                  termion::cursor::Goto(0, bottom - 6),
                                   termion::style::Invert,
                                   termion::style::Reset);
             for _ in 0..width - 4 {
@@ -81,8 +82,8 @@ impl Screen {
         self.stdout = Some(s);
     }
 
-    fn insert(&mut self, coords: (u16, u16), anchor: Anchor) {
-        self.anchors.insert(coords, Rc::new(RefCell::new(anchor)));
+    fn insert(&mut self, coords: (u16, u16), node: Node) {
+        self.anchors.insert(coords, Rc::new(RefCell::new(node)));
     }
 
     fn lookup(&mut self, coords: (u16, u16)) -> Lookup {
@@ -96,7 +97,17 @@ impl Screen {
         // scan possible nodes
         let mut candidate_nodes = vec![];
         for ((x, y), anchor) in candidate_anchors {
-            if let Some(node) = anchor.borrow().lookup((coords.0 - x, coords.1 - y)) {
+            let lookup_coords = (coords.0 - x, coords.1 - y);
+            let look = if lookup_coords.1 == 0 {
+                if anchor.borrow().content.len() + 1 >= lookup_coords.0 as usize {
+                    Some(anchor.clone())
+                } else {
+                    None
+                }
+            } else {
+                anchor.borrow().lookup(0, lookup_coords)
+            };
+            if let Some(node) = look {
                 candidate_nodes.push((anchor.clone(), node));
             }
         }
@@ -134,7 +145,7 @@ impl Screen {
     fn delete_selected(&mut self) {
         if let Some((ref anchor, ref node)) = self.last_selected {
             let ptr = {
-                anchor.borrow().head.as_ptr()
+                anchor.as_ptr()
             };
             if ptr == node.as_ptr() {
                 info!("deleting anchor {:?}", node.borrow().content);
@@ -142,12 +153,11 @@ impl Screen {
                 let anchors = self.anchors
                     .clone()
                     .into_iter()
-                    .filter(|&(_, ref anchor)| anchor.borrow().head.as_ptr() != ptr)
+                    .filter(|&(_, ref anchor)| anchor.as_ptr() != ptr)
                     .collect();
                 self.anchors = anchors;
             } else {
-                let anchor = anchor.borrow();
-                anchor.head.borrow_mut().delete(node.clone());
+                anchor.borrow_mut().delete(node.clone());
             }
         }
     }
@@ -178,14 +188,13 @@ impl Screen {
     }
 
     fn create_anchor(&mut self, coords: (u16, u16)) {
-        let header = Node {
+        let node = Node {
             content: Content::Text { text: "".to_string() },
             children: vec![],
             selected: false,
             collapsed: false,
         };
-        let anchor = Anchor { head: Rc::new(RefCell::new(header)) };
-        self.insert(coords, anchor);
+        self.insert(coords, node);
     }
 
     fn backspace(&mut self) {

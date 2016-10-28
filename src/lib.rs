@@ -13,20 +13,18 @@ extern crate termion;
 
 mod serialization;
 mod logging;
-mod anchor;
 mod screen;
 mod node;
 mod content;
 
 pub use serialization::{serialize_screen, deserialize_screen};
 pub use screen::Screen;
-pub use anchor::Anchor;
 pub use node::Node;
 pub use content::Content;
 pub use logging::init_screen_log;
 
 // TODO KILL THIS WITH FIRE
-pub use serialization::{SerScreen, SerAnchor, SerNode};
+pub use serialization::{SerScreen, SerNode};
 
 
 #[cfg(test)]

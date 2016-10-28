@@ -14,7 +14,7 @@ impl log::Log for ScreenLogger {
             let line = format!("{} - {}", record.level(), record.args());
             let mut logs = LOGS.write().unwrap();
             logs.insert(0, line);
-            logs.truncate(10);
+            logs.truncate(5);
         }
     }
 }

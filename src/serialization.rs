@@ -7,11 +7,11 @@ use std::rc::Rc;
 use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
 
-use {Screen, Anchor, Node, Content};
+use {Screen, Node, Content};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub struct SerScreen {
-    pub anchors: BTreeMap<(u16, u16), SerAnchor>,
+    pub anchors: BTreeMap<(u16, u16), SerNode>,
 }
 
 impl SerScreen {
@@ -44,17 +44,6 @@ impl SerNode {
             selected: false,
             collapsed: false,
         }))
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
-pub struct SerAnchor {
-    pub head: SerNode,
-}
-
-impl SerAnchor {
-    fn deserialize(&self) -> Rc<RefCell<Anchor>> {
-        Rc::new(RefCell::new(Anchor { head: self.head.deserialize() }))
     }
 }
 
