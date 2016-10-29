@@ -196,8 +196,13 @@ impl Screen {
     }
 
     fn create_child(&mut self) {
-        if let Some(ref lookup) = self.last_selected {
-            lookup.node.borrow_mut().create_child()
+        if let Some(ref mut lookup) = self.last_selected.clone() {
+            let child = lookup.node.borrow_mut().create_child();
+            let mut new_lookup = NodeLookup {
+                anchor: lookup.anchor.clone(),
+                node: child,
+            };
+            self.select_node(new_lookup);
         }
     }
 
@@ -271,8 +276,12 @@ impl Screen {
     fn select_up(&mut self) {
         if let Some(lookup) = self.last_selected.clone() {
             if let Some(coords) = self.coords_for_lookup(lookup) {
-                self.click_select((coords.0, coords.1 - 1))
-                    .or_else(|| self.click_select(coords));
+                // to prevent selection fall-off, click old coords
+                // if nothing is selected above this node
+                if coords.1 > 0 {
+                    self.click_select((coords.0, coords.1 - 1))
+                        .or_else(|| self.click_select(coords));
+                }
             }
         }
     }
@@ -280,10 +289,19 @@ impl Screen {
     fn select_down(&mut self) {
         if let Some(lookup) = self.last_selected.clone() {
             if let Some(coords) = self.coords_for_lookup(lookup) {
+                // to prevent selection fall-off, click old coords
+                // if nothing is selected below this node
                 self.click_select((coords.0, coords.1 + 1))
                     .or_else(|| self.click_select(coords));
             }
         }
+    }
+
+    fn select_node(&mut self, lookup: NodeLookup) {
+        self.pop_selected();
+        let mut node = lookup.node.borrow_mut();
+        node.selected = true;
+        self.last_selected = Some(lookup.clone());
     }
 
     fn handle_event(&mut self, evt: Event) {

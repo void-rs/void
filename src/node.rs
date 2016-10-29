@@ -144,9 +144,11 @@ impl Node {
         }
     }
 
-    pub fn create_child(&mut self) {
+    pub fn create_child(&mut self) -> NodeRef {
         let new = node("", vec![]);
-        self.children.push(Rc::new(RefCell::new(new)));
+        let child = Rc::new(RefCell::new(new));
+        self.children.push(child.clone());
+        child
     }
 
     pub fn flat_children(&self) -> Vec<NodeRef> {
