@@ -10,19 +10,24 @@ use termion::event::{Key, Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
-use {Node, Content};
+use {NodeRef, Node, Content};
 // TODO KILL THIS WITH FIRE
 use SerScreen;
 
 use serialization;
 use logging;
 
-// anchor node, selected node
-type Lookup = Option<(Rc<RefCell<Node>>, Rc<RefCell<Node>>)>;
+#[derive(Clone)]
+struct NodeLookup {
+    // anchor of selected node
+    anchor: NodeRef,
+    // selected node
+    node: NodeRef,
+}
 
 pub struct Screen {
-    pub anchors: BTreeMap<(u16, u16), Rc<RefCell<Node>>>,
-    pub last_selected: Lookup,
+    pub anchors: BTreeMap<(u16, u16), NodeRef>,
+    last_selected: Option<NodeLookup>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
     dragging_from: Option<(u16, u16)>,
     pub work_path: Option<String>,
@@ -86,7 +91,32 @@ impl Screen {
         self.anchors.insert(coords, Rc::new(RefCell::new(node)));
     }
 
-    fn lookup(&mut self, coords: (u16, u16)) -> Lookup {
+    fn coords_for_anchor(&self, node: &NodeRef) -> Option<(u16, u16)> {
+        // if we switch to screen as grid of refs, use that instead
+        for (&coords, anchor) in &self.anchors {
+            if anchor.as_ptr() == node.as_ptr() {
+                return Some(coords);
+            }
+        }
+        None
+    }
+
+    fn coords_for_lookup(&self, lookup: NodeLookup) -> Option<(u16, u16)> {
+        // if we switch to screen as grid of refs, use that instead
+        // possible that a parent / anchor has been deleted
+        self.coords_for_anchor(&lookup.anchor).map(|(anchor_x, anchor_y)| {
+            let anchor_children = lookup.anchor.borrow().flat_children();
+            let mut idx = 0;
+            for (i, child) in anchor_children.iter().enumerate() {
+                if child.as_ptr() == lookup.node.as_ptr() {
+                    idx = i + 1;
+                }
+            }
+            (anchor_x, anchor_y + idx as u16)
+        })
+    }
+
+    fn find_child_at_coords(&mut self, coords: (u16, u16)) -> Option<NodeLookup> {
         // scan possible anchors
         let mut candidate_anchors = vec![];
         for (&(x, y), anchor) in &self.anchors {
@@ -105,20 +135,23 @@ impl Screen {
                     None
                 }
             } else {
-                anchor.borrow().lookup(0, lookup_coords)
+                anchor.borrow().find_child_at_coords(0, lookup_coords)
             };
             if let Some(node) = look {
-                candidate_nodes.push((anchor.clone(), node));
+                candidate_nodes.push(NodeLookup {
+                    anchor: anchor.clone(),
+                    node: node,
+                });
             }
         }
         candidate_nodes.pop()
     }
 
-    fn pop_selected(&mut self) -> Lookup {
+    fn pop_selected(&mut self) -> Option<NodeLookup> {
         if self.dragging_from.is_none() {
-            if let Some((anchor, old_node)) = self.last_selected.take() {
-                old_node.borrow_mut().selected = false;
-                Some((anchor, old_node))
+            if let Some(lookup) = self.last_selected.take() {
+                lookup.node.borrow_mut().selected = false;
+                Some(lookup.clone())
             } else {
                 None
             }
@@ -127,13 +160,13 @@ impl Screen {
         }
     }
 
-    fn try_select(&mut self, x: u16, y: u16) -> Lookup {
+    fn try_select(&mut self, coords: (u16, u16)) -> Option<NodeLookup> {
         if self.dragging_from.is_none() {
-            if let Some((anchor, node)) = self.lookup((x, y)) {
-                node.borrow_mut().selected = true;
-                self.last_selected = Some((anchor.clone(), node.clone()));
-                self.dragging_from = Some((x, y));
-                Some((anchor, node))
+            if let Some(ref lookup) = self.find_child_at_coords(coords) {
+                lookup.node.borrow_mut().selected = true;
+                self.last_selected = Some(lookup.clone());
+                self.dragging_from = Some(coords);
+                Some(lookup.clone())
             } else {
                 None
             }
@@ -143,12 +176,12 @@ impl Screen {
     }
 
     fn delete_selected(&mut self) {
-        if let Some((ref anchor, ref node)) = self.last_selected {
+        if let Some(ref lookup) = self.last_selected {
             let ptr = {
-                anchor.as_ptr()
+                lookup.anchor.as_ptr()
             };
-            if ptr == node.as_ptr() {
-                info!("deleting anchor {:?}", node.borrow().content);
+            if ptr == lookup.node.as_ptr() {
+                info!("deleting anchor {:?}", lookup.node.borrow().content);
                 // nuke whole anchor
                 let anchors = self.anchors
                     .clone()
@@ -157,14 +190,14 @@ impl Screen {
                     .collect();
                 self.anchors = anchors;
             } else {
-                anchor.borrow_mut().delete(node.clone());
+                lookup.anchor.borrow_mut().delete(lookup.node.clone());
             }
         }
     }
 
     fn create_child(&mut self) {
-        if let Some((_, ref selected)) = self.last_selected {
-            selected.borrow_mut().create_child()
+        if let Some(ref lookup) = self.last_selected {
+            lookup.node.borrow_mut().create_child()
         }
     }
 
@@ -182,8 +215,8 @@ impl Screen {
     }
 
     fn toggle_collapsed(&mut self) {
-        if let Some((_, ref selected)) = self.last_selected {
-            selected.borrow_mut().toggle_collapsed()
+        if let Some(ref lookup) = self.last_selected {
+            lookup.node.borrow_mut().toggle_collapsed()
         }
     }
 
@@ -198,15 +231,15 @@ impl Screen {
     }
 
     fn backspace(&mut self) {
-        if let Some((_, ref selected)) = self.last_selected {
-            let mut node = selected.borrow_mut();
+        if let Some(ref lookup) = self.last_selected {
+            let mut node = lookup.node.borrow_mut();
             node.content.backspace();
         }
     }
 
     fn append(&mut self, c: char) {
-        if let Some((_, ref selected)) = self.last_selected {
-            let mut node = selected.borrow_mut();
+        if let Some(ref lookup) = self.last_selected {
+            let mut node = lookup.node.borrow_mut();
             node.content.append(c);
         }
     }
@@ -216,14 +249,38 @@ impl Screen {
         let dy = to.1 as i16 - from.1 as i16;
 
         let anchors_clone = self.anchors.clone();
-        if let Some((ref anchor, _)) = self.last_selected {
+        if let Some(ref lookup) = self.last_selected {
             for (coords, value) in &anchors_clone {
                 let nx = (coords.0 as i16 + dx) as u16;
                 let ny = (coords.1 as i16 + dy) as u16;
-                if value.as_ptr() == anchor.as_ptr() {
+                if value.as_ptr() == lookup.anchor.as_ptr() {
                     let anchor = self.anchors.remove(coords).unwrap();
                     self.anchors.insert((nx, ny), anchor);
                 }
+            }
+        }
+    }
+
+    fn simple_click(&mut self, coords: (u16, u16)) {
+        self.pop_selected();
+        self.try_select((coords.0, coords.1));
+        self.dragging_from.take();
+    }
+
+    fn select_up(&mut self) {
+        if let Some(lookup) = self.last_selected.clone() {
+            if let Some(coords) = self.coords_for_lookup(lookup) {
+                info!("3: {:?}", coords);
+                self.simple_click((coords.0, coords.1 - 1));
+            }
+        }
+    }
+
+    fn select_down(&mut self) {
+        if let Some(lookup) = self.last_selected.clone() {
+            if let Some(coords) = self.coords_for_lookup(lookup) {
+                info!("3: {:?}", coords);
+                self.simple_click((coords.0, coords.1 + 1));
             }
         }
     }
@@ -237,13 +294,15 @@ impl Screen {
             Event::Key(Key::Ctrl('c')) |
             Event::Key(Key::Ctrl('d')) => self.exit(),
             Event::Key(Key::Ctrl('w')) => self.save(),
+            Event::Key(Key::Up) => self.select_up(),
+            Event::Key(Key::Down) => self.select_down(),
             Event::Key(Key::Backspace) => self.backspace(),
             Event::Key(Key::Char(c)) => self.append(c),
             Event::Mouse(me) => {
                 match me {
                     MouseEvent::Press(_, x, y) => {
                         let old = self.pop_selected();
-                        self.try_select(x, y);
+                        self.try_select((x, y));
                         if old.is_none() && self.dragging_from.is_none() {
                             self.create_anchor((x, y));
                         }

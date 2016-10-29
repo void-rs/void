@@ -26,6 +26,9 @@ pub use logging::init_screen_log;
 // TODO KILL THIS WITH FIRE
 pub use serialization::{SerScreen, SerNode};
 
+use std::rc::Rc;
+use std::cell::RefCell;
+pub type NodeRef = Rc<RefCell<Node>>;
 
 #[cfg(test)]
 mod tests {

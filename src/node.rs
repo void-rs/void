@@ -1,8 +1,9 @@
-use std::cell::RefCell;
 use std::rc::Rc;
+use std::cell::RefCell;
 
 use termion;
 
+use NodeRef;
 use Content;
 // TODO KILL THIS WITH FIRE
 use SerNode;
@@ -10,7 +11,7 @@ use SerNode;
 #[derive(Debug)]
 pub struct Node {
     pub content: Content,
-    pub children: Vec<Rc<RefCell<Node>>>,
+    pub children: Vec<NodeRef>,
     pub selected: bool,
     pub collapsed: bool,
 }
@@ -24,9 +25,9 @@ impl Node {
         SerNode {
             content: self.content.clone(),
             children: ser_children,
+            collapsed: self.collapsed,
         }
     }
-
 
     pub fn draw_tree(&self, prefix: String, x: u16, y: u16, last: bool) -> usize {
         print!("{}", termion::cursor::Goto(x, y));
@@ -80,7 +81,8 @@ impl Node {
 
         drawn
     }
-    pub fn lookup(&self, depth: usize, coords: (u16, u16)) -> Option<Rc<RefCell<Node>>> {
+
+    pub fn find_child_at_coords(&self, depth: usize, coords: (u16, u16)) -> Option<NodeRef> {
         let mut y_traversed = 1;
         for child in &self.children {
             if coords.1 == y_traversed {
@@ -90,7 +92,8 @@ impl Node {
                     return None;
                 }
             } else if coords.1 < y_traversed + child.borrow().height() as u16 {
-                return child.borrow().lookup(depth + 1, (coords.0, coords.1 - y_traversed));
+                return child.borrow()
+                    .find_child_at_coords(depth + 1, (coords.0, coords.1 - y_traversed));
             } else {
                 y_traversed += child.borrow().height() as u16;
             }
@@ -107,7 +110,7 @@ impl Node {
         }
     }
 
-    pub fn delete(&mut self, node: Rc<RefCell<Node>>) -> bool {
+    pub fn delete(&mut self, node: NodeRef) -> bool {
         let ptr = {
             node.as_ptr()
         };
@@ -144,6 +147,16 @@ impl Node {
     pub fn create_child(&mut self) {
         let new = node("", vec![]);
         self.children.push(Rc::new(RefCell::new(new)));
+    }
+
+    pub fn flat_children(&self) -> Vec<NodeRef> {
+        self.children
+            .iter()
+            .fold(vec![], |mut acc, child| {
+                acc.push(child.clone());
+                acc.extend(child.borrow().flat_children());
+                acc
+            })
     }
 }
 

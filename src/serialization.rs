@@ -7,7 +7,7 @@ use std::rc::Rc;
 use bincode::SizeLimit;
 use bincode::rustc_serialize::{encode, decode};
 
-use {Screen, Node, Content};
+use {Screen, Node, NodeRef, Content};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
 pub struct SerScreen {
@@ -30,10 +30,11 @@ impl SerScreen {
 pub struct SerNode {
     pub content: Content,
     pub children: Vec<SerNode>,
+    pub collapsed: bool,
 }
 
 impl SerNode {
-    fn deserialize(&self) -> Rc<RefCell<Node>> {
+    fn deserialize(&self) -> NodeRef {
         let children = self.children
             .iter()
             .map(|ser_child| ser_child.deserialize())
