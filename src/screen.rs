@@ -261,17 +261,18 @@ impl Screen {
         }
     }
 
-    fn simple_click(&mut self, coords: (u16, u16)) {
+    fn click_select(&mut self, coords: (u16, u16)) -> Option<NodeLookup> {
         self.pop_selected();
-        self.try_select((coords.0, coords.1));
+        let result = self.try_select((coords.0, coords.1));
         self.dragging_from.take();
+        result
     }
 
     fn select_up(&mut self) {
         if let Some(lookup) = self.last_selected.clone() {
             if let Some(coords) = self.coords_for_lookup(lookup) {
-                info!("3: {:?}", coords);
-                self.simple_click((coords.0, coords.1 - 1));
+                self.click_select((coords.0, coords.1 - 1))
+                    .or_else(|| self.click_select(coords));
             }
         }
     }
@@ -279,8 +280,8 @@ impl Screen {
     fn select_down(&mut self) {
         if let Some(lookup) = self.last_selected.clone() {
             if let Some(coords) = self.coords_for_lookup(lookup) {
-                info!("3: {:?}", coords);
-                self.simple_click((coords.0, coords.1 + 1));
+                self.click_select((coords.0, coords.1 + 1))
+                    .or_else(|| self.click_select(coords));
             }
         }
     }
