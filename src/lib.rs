@@ -6,16 +6,20 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 
-
+extern crate rand;
+extern crate quickcheck;
 extern crate rustc_serialize;
 extern crate bincode;
 extern crate termion;
+extern crate protobuf;
+extern crate rsdb;
 
 mod serialization;
 mod logging;
 mod screen;
 mod node;
 mod content;
+mod pb;
 
 pub use serialization::{serialize_screen, deserialize_screen};
 pub use screen::Screen;

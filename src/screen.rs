@@ -82,9 +82,10 @@ impl Screen {
         }
 
         print!("{}", termion::cursor::Hide);
-        let mut s = self.stdout.take().unwrap();
-        s.flush().unwrap();
-        self.stdout = Some(s);
+        if let Some(mut s) = self.stdout.take() {
+            s.flush().unwrap();
+            self.stdout = Some(s);
+        }
     }
 
     fn insert(&mut self, coords: (u16, u16), node: Node) {
@@ -198,7 +199,7 @@ impl Screen {
     fn create_child(&mut self) {
         if let Some(ref mut lookup) = self.last_selected.clone() {
             let child = lookup.node.borrow_mut().create_child();
-            let mut new_lookup = NodeLookup {
+            let new_lookup = NodeLookup {
                 anchor: lookup.anchor.clone(),
                 node: child,
             };
@@ -309,7 +310,7 @@ impl Screen {
             Event::Key(Key::Char('\n')) => self.toggle_collapsed(),
             Event::Key(Key::Char('\t')) => self.create_child(),
             Event::Key(Key::Delete) => self.delete_selected(),
-            Event::Key(Key::Alt('\u{1b}')) |
+            // Event::Key(Key::Alt('\u{1b}')) |
             Event::Key(Key::Ctrl('c')) |
             Event::Key(Key::Ctrl('d')) => self.exit(),
             Event::Key(Key::Ctrl('w')) => self.save(),
@@ -361,5 +362,85 @@ impl Screen {
         self.stdout.take().unwrap().flush().unwrap();
         self.save();
         exit(0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use termion::event::{Key, Event, MouseEvent, MouseButton};
+    use std::collections::BTreeSet;
+
+    use quickcheck::{Arbitrary, Gen, QuickCheck, StdGen};
+    use rand::{self, Rng};
+
+    use super::*;
+
+    #[derive(Debug, Clone)]
+    struct Op {
+        event: Event,
+    }
+
+    impl Arbitrary for Op {
+        fn arbitrary<G: Gen>(g: &mut G) -> Op {
+            let (c, x, y) = (g.gen::<char>(), g.gen::<u16>(), g.gen::<u16>());
+            let events = vec![
+                Event::Key(Key::Char(c)),
+                Event::Key(Key::Alt('\u{1b}')),
+                Event::Key(Key::Ctrl(c)),
+                Event::Key(Key::Up),
+                Event::Key(Key::Down),
+                Event::Key(Key::Backspace),
+                Event::Mouse(MouseEvent::Press(MouseButton::Left, x, y)),
+                Event::Mouse(MouseEvent::Release(x, y)),
+                Event::Mouse(MouseEvent::Hold(x, y)),
+            ];
+            Op { event: *g.choose(&*events).unwrap() }
+        }
+    }
+
+
+    #[derive(Debug, Clone)]
+    struct OpVec {
+        ops: Vec<Op>,
+    }
+
+    impl Arbitrary for OpVec {
+        fn arbitrary<G: Gen>(g: &mut G) -> OpVec {
+            let mut ops = vec![];
+            for _ in 0..g.gen_range(1, 100) {
+                ops.push(Op::arbitrary(g));
+            }
+            OpVec { ops: ops }
+        }
+
+        fn shrink(&self) -> Box<Iterator<Item = OpVec>> {
+            let mut smaller = vec![];
+            for i in 0..self.ops.len() {
+                let mut clone = self.clone();
+                clone.ops.remove(i);
+                smaller.push(clone);
+            }
+
+            Box::new(smaller.into_iter())
+        }
+    }
+
+    fn prop_handle_events(ops: OpVec) -> bool {
+        let mut screen = Screen::default();
+        for op in &ops.ops {
+            screen.handle_event(op.event);
+            screen.draw();
+        }
+        true
+    }
+
+    #[test]
+    // #[ignore]
+    fn qc_merge_converges() {
+        QuickCheck::new()
+            .gen(StdGen::new(rand::thread_rng(), 1))
+            .tests(1_000)
+            .max_tests(10_000)
+            .quickcheck(prop_handle_events as fn(OpVec) -> bool);
     }
 }
