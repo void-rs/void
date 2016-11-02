@@ -1,83 +1,78 @@
-use std;
-use std::io::{Error, ErrorKind};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::rc::Rc;
 
-use bincode::SizeLimit;
-use bincode::rustc_serialize::{encode, decode};
+use protobuf::{self, Message};
 
-use {Screen, Node, NodeRef, Content};
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
-pub struct SerScreen {
-    pub anchors: BTreeMap<(u16, u16), SerNode>,
-}
-
-impl SerScreen {
-    fn deserialize(&self) -> Screen {
-        let mut screen = Screen::default();
-        let mut anchors = BTreeMap::new();
-        for (coords, anchor) in &self.anchors {
-            anchors.insert(*coords, anchor.deserialize());
-        }
-        screen.anchors = anchors;
-        screen
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, RustcEncodable, RustcDecodable)]
-pub struct SerNode {
-    pub content: Content,
-    pub children: Vec<SerNode>,
-    pub collapsed: bool,
-    pub stricken: bool,
-}
-
-impl SerNode {
-    fn deserialize(&self) -> NodeRef {
-        let children = self.children
-            .iter()
-            .map(|ser_child| ser_child.deserialize())
-            .collect();
-        Rc::new(RefCell::new(Node {
-            content: self.content.clone(),
-            children: children,
-            selected: false,
-            collapsed: self.collapsed,
-            stricken: self.stricken,
-        }))
-    }
-}
+use {Screen, Node, NodeRef, Content, Meta, pb};
 
 pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
-    let serialized_screen = {
-        let mut ser_anchors = BTreeMap::new();
-        for (coords, anchor) in &screen.anchors {
-            ser_anchors.insert(*coords, serialize_node(anchor.clone()));
-        }
-        SerScreen { anchors: ser_anchors }
-    };
-    encode(&serialized_screen, SizeLimit::Infinite).unwrap()
+    let mut screen_pb = pb::Screen::default();
+    screen_pb.set_max_id(screen.max_id);
+    let anchors = screen.anchors
+        .iter()
+        .map(|(&(x, y), anchor)| {
+            let mut anchor_pb = pb::Anchor::default();
+            anchor_pb.set_x(x as u32);
+            anchor_pb.set_y(y as u32);
+            let head = serialize_node(anchor.clone());
+            anchor_pb.set_head(head);
+            anchor_pb
+        })
+        .collect();
+    screen_pb.set_anchors(protobuf::RepeatedField::from_vec(anchors));
+    screen_pb.write_to_bytes().unwrap()
 }
 
-fn serialize_node(node_ref: NodeRef) -> SerNode {
+fn serialize_node(node_ref: NodeRef) -> pb::Node {
     let node = node_ref.borrow();
-    let ser_children = node.children
+    let children_pb = node.children
         .iter()
         .map(|child| serialize_node(child.clone()))
         .collect();
-    SerNode {
-        content: node.content.clone(),
-        children: ser_children,
-        collapsed: node.collapsed,
-        stricken: node.stricken,
+    let mut node_pb = pb::Node::default();
+    if let Content::Text { ref text } = node.content {
+        // TODO handle other content
+        node_pb.set_text(text.clone());
     }
+    node_pb.set_children(protobuf::RepeatedField::from_vec(children_pb));
+    node_pb.set_collapsed(node.collapsed);
+    node_pb.set_stricken(node.stricken);
+    node_pb.set_hide_stricken(node.hide_stricken);
+    node_pb
 }
 
-pub fn deserialize_screen(data: Vec<u8>) -> std::io::Result<Screen> {
-    let ser_screen: Result<SerScreen, _> = decode(&data[..])
-        .map_err(|_| Error::new(ErrorKind::Other, "no path provided"));
-    info!("loaded saved data");
-    ser_screen.map(|ss| ss.deserialize())
+pub fn deserialize_node(node_pb: pb::Node) -> NodeRef {
+    let children = node_pb.get_children()
+        .iter()
+        .cloned()
+        .map(deserialize_node)
+        .collect();
+    Rc::new(RefCell::new(Node {
+        content: Content::Text { text: node_pb.get_text().to_string() },
+        children: children,
+        selected: false,
+        collapsed: node_pb.get_collapsed(),
+        stricken: node_pb.get_stricken(),
+        hide_stricken: node_pb.get_hide_stricken(),
+        meta: Meta::default(), // TODO serialize this forreal
+    }))
+
+}
+
+pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufError> {
+    let screen_pb: pb::Screen = try!(protobuf::parse_from_bytes(&*data));
+    let anchors: BTreeMap<(u16, u16), NodeRef> = screen_pb.get_anchors()
+        .iter()
+        .cloned()
+        .map(|mut anchor_pb| {
+            let (x, y) = (anchor_pb.get_x(), anchor_pb.get_y());
+            let head = anchor_pb.take_head();
+            let node = deserialize_node(head);
+            ((x as u16, y as u16), node)
+        })
+        .collect();
+    let mut screen = Screen::default();
+    screen.anchors = anchors;
+    Ok(screen)
 }

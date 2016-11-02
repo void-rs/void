@@ -10,7 +10,7 @@ use termion::event::{Key, Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
-use {NodeRef, Node, Content};
+use {NodeRef, Node, Content, Meta};
 use serialization;
 use logging;
 
@@ -28,6 +28,7 @@ pub struct Screen {
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
     dragging_from: Option<(u16, u16)>,
     pub work_path: Option<String>,
+    pub max_id: u64,
 }
 
 impl Default for Screen {
@@ -38,6 +39,7 @@ impl Default for Screen {
             stdout: None,
             dragging_from: None,
             work_path: None,
+            max_id: 0,
         }
     }
 }
@@ -165,10 +167,17 @@ impl Screen {
         }
     }
 
-    fn strike_selected(&mut self) {
+    fn toggle_stricken(&mut self) {
         if let Some(ref lookup) = self.last_selected {
             let mut node = lookup.node.borrow_mut();
             node.toggle_stricken();
+        }
+    }
+
+    fn toggle_hide_stricken(&mut self) {
+        if let Some(ref lookup) = self.last_selected {
+            let mut node = lookup.node.borrow_mut();
+            node.toggle_hide_stricken();
         }
     }
 
@@ -232,6 +241,8 @@ impl Screen {
             selected: false,
             collapsed: false,
             stricken: false,
+            hide_stricken: false,
+            meta: Meta::default(), // TODO do this forreal
         };
         self.insert(coords, node);
     }
@@ -310,7 +321,8 @@ impl Screen {
             Event::Key(Key::Char('\n')) => self.toggle_collapsed(),
             Event::Key(Key::Char('\t')) => self.create_child(),
             Event::Key(Key::Delete) => self.delete_selected(),
-            Event::Key(Key::Ctrl('x')) => self.strike_selected(),
+            Event::Key(Key::Ctrl('f')) => self.toggle_hide_stricken(),
+            Event::Key(Key::Ctrl('x')) => self.toggle_stricken(),
             // Event::Key(Key::Alt('\u{1b}')) |
             Event::Key(Key::Ctrl('c')) |
             Event::Key(Key::Ctrl('d')) => self.exit(),
@@ -372,10 +384,9 @@ impl Screen {
 #[cfg(test)]
 mod tests {
     use termion::event::{Key, Event, MouseEvent, MouseButton};
-    use std::collections::BTreeSet;
 
     use quickcheck::{Arbitrary, Gen, QuickCheck, StdGen};
-    use rand::{self, Rng};
+    use rand;
 
     use super::*;
 

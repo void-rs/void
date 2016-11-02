@@ -2,6 +2,7 @@
 #![plugin(clippy)]
 extern crate getopts;
 extern crate climate;
+extern crate protobuf;
 
 #[macro_use]
 extern crate log;
@@ -42,16 +43,17 @@ fn main() {
     init_screen_log().unwrap();
 
     // load from file if present
-    let work_data = parse_workfile_path().and_then(|path| {
-        let mut data = vec![];
-        let mut f = try!(File::open(path));
-        f.read_to_end(&mut data).unwrap();
-        Ok(data)
-    });
+    let saved_screen: Option<Screen> = parse_workfile_path()
+        .and_then(|path| {
+            let mut data = vec![];
+            let mut f = try!(File::open(path));
+            f.read_to_end(&mut data).unwrap();
+            Ok(data)
+        })
+        .ok()
+        .and_then(|data| deserialize_screen(data).ok());
 
-    let saved_screen: std::io::Result<Screen> = work_data.and_then(deserialize_screen);
-
-    let mut screen = saved_screen.unwrap_or_else(|_| Screen::default());
+    let mut screen = saved_screen.unwrap_or_else(Screen::default);
     screen.work_path = parse_workfile_path().ok();
     screen.run();
 }

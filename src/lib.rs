@@ -20,15 +20,18 @@ mod screen;
 mod node;
 mod content;
 mod pb;
+mod meta;
 
 pub use serialization::{serialize_screen, deserialize_screen};
 pub use screen::Screen;
 pub use node::Node;
 pub use content::Content;
 pub use logging::init_screen_log;
+pub use meta::Meta;
 
 use std::rc::Rc;
 use std::cell::RefCell;
+
 pub type NodeRef = Rc<RefCell<Node>>;
 
 #[cfg(test)]

@@ -7,17 +7,27 @@ message Tag {
   required string value = 2;
 }
 
+message Gps {
+  required float lat = 1;
+  required float lon = 2;
+}
+
 message Meta {
   required uint64 id = 1;
-  required uint64 time = 2;
-  required uint64 gps = 3;
-  repeated Tag tags = 4;
+  required uint64 ctime = 2;
+  required uint64 mtime = 3;
+  required Gps gps = 4;
+  repeated Tag tags = 5;
 }
 
 message Node {
   required uint64 id = 1;
   required Meta meta = 2;
   required string text = 3;
+  repeated Node children = 4;
+  required bool collapsed = 5;
+  required bool stricken = 6;
+  required bool hide_stricken = 7;
 }
 
 message Anchor {
@@ -35,6 +45,12 @@ message Frame {
   required Orientation orientation = 2;
 }
 
-message Screen {
+message Scene {
   repeated Frame frames = 1;
+}
+
+message Screen {
+  // TODO make screen have a set of Scenes rather than raw anchors
+  repeated Anchor anchors = 1;
+  required uint64 max_id = 2;
 }

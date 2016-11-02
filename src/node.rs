@@ -3,8 +3,7 @@ use std::cell::RefCell;
 
 use termion;
 
-use NodeRef;
-use Content;
+use {NodeRef, Content, Meta};
 
 #[derive(Debug)]
 pub struct Node {
@@ -13,6 +12,22 @@ pub struct Node {
     pub selected: bool,
     pub collapsed: bool,
     pub stricken: bool,
+    pub hide_stricken: bool,
+    pub meta: Meta,
+}
+
+impl Default for Node {
+    fn default() -> Node {
+        Node {
+            content: Content::Text { text: "".to_string() },
+            children: vec![],
+            selected: false,
+            collapsed: false,
+            stricken: false,
+            hide_stricken: false,
+            meta: Meta::default(),
+        }
+    }
 }
 
 impl Node {
@@ -132,7 +147,7 @@ impl Node {
     }
 
     pub fn create_child(&mut self) -> NodeRef {
-        let new = node("", vec![]);
+        let new = Node::default();
         let child = Rc::new(RefCell::new(new));
         self.children.push(child.clone());
         child
@@ -167,16 +182,13 @@ impl Node {
             self.stricken = true;
         }
     }
-}
 
-fn node(text: &str, children: Vec<Node>) -> Node {
-    let rc_children = children.into_iter().map(|child| Rc::new(RefCell::new(child))).collect();
-
-    Node {
-        content: Content::Text { text: text.to_string() },
-        children: rc_children,
-        selected: false,
-        collapsed: false,
-        stricken: false,
+    // TODO make these toggle things macros
+    pub fn toggle_hide_stricken(&mut self) {
+        if self.hide_stricken {
+            self.hide_stricken = false;
+        } else {
+            self.hide_stricken = true;
+        }
     }
 }
