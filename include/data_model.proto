@@ -1,0 +1,40 @@
+syntax = "proto2";
+
+package climate;
+
+message Tag {
+  required string key = 1;
+  required string value = 2;
+}
+
+message Meta {
+  required uint64 id = 1;
+  required uint64 time = 2;
+  required uint64 gps = 3;
+  repeated Tag tags = 4;
+}
+
+message Node {
+  required uint64 id = 1;
+  required Meta meta = 2;
+  required string text = 3;
+}
+
+message Anchor {
+  required uint32 x = 1;
+  required uint32 y = 2;
+  required Node head = 3;
+}
+
+message Orientation {
+   
+}
+
+message Frame {
+  repeated Anchor anchors = 1;
+  required Orientation orientation = 2;
+}
+
+message Screen {
+  repeated Frame frames = 1;
+}

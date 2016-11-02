@@ -11,9 +11,6 @@ use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
 use {NodeRef, Node, Content};
-// TODO KILL THIS WITH FIRE
-use SerScreen;
-
 use serialization;
 use logging;
 
@@ -46,14 +43,6 @@ impl Default for Screen {
 }
 
 impl Screen {
-    pub fn serialized(&self) -> SerScreen {
-        let mut ser_anchors = BTreeMap::new();
-        for (coords, anchor) in &self.anchors {
-            ser_anchors.insert(*coords, anchor.borrow().serialized());
-        }
-        SerScreen { anchors: ser_anchors }
-    }
-
     fn draw(&mut self) {
         // clear screen
         print!("\x1b[2J\x1b[H");
@@ -106,7 +95,7 @@ impl Screen {
         // if we switch to screen as grid of refs, use that instead
         // possible that a parent / anchor has been deleted
         self.coords_for_anchor(&lookup.anchor).map(|(anchor_x, anchor_y)| {
-            let anchor_children = lookup.anchor.borrow().flat_children();
+            let anchor_children = lookup.anchor.borrow().flat_visible_children();
             let mut idx = 0;
             for (i, child) in anchor_children.iter().enumerate() {
                 if child.as_ptr() == lookup.node.as_ptr() {
@@ -176,13 +165,20 @@ impl Screen {
         }
     }
 
-    fn delete_selected(&mut self) {
+    fn strike_selected(&mut self) {
         if let Some(ref lookup) = self.last_selected {
+            let mut node = lookup.node.borrow_mut();
+            node.toggle_stricken();
+        }
+    }
+
+    fn delete_selected(&mut self) {
+        if let Some(lookup) = self.last_selected.take() {
+            let coords = self.coords_for_lookup(lookup.clone());
             let ptr = {
                 lookup.anchor.as_ptr()
             };
             if ptr == lookup.node.as_ptr() {
-                info!("deleting anchor {:?}", lookup.node.borrow().content);
                 // nuke whole anchor
                 let anchors = self.anchors
                     .clone()
@@ -192,6 +188,9 @@ impl Screen {
                 self.anchors = anchors;
             } else {
                 lookup.anchor.borrow_mut().delete(lookup.node.clone());
+            }
+            if let Some(c) = coords {
+                self.click_select(c);
             }
         }
     }
@@ -232,6 +231,7 @@ impl Screen {
             children: vec![],
             selected: false,
             collapsed: false,
+            stricken: false,
         };
         self.insert(coords, node);
     }
@@ -310,9 +310,11 @@ impl Screen {
             Event::Key(Key::Char('\n')) => self.toggle_collapsed(),
             Event::Key(Key::Char('\t')) => self.create_child(),
             Event::Key(Key::Delete) => self.delete_selected(),
+            Event::Key(Key::Ctrl('x')) => self.strike_selected(),
             // Event::Key(Key::Alt('\u{1b}')) |
             Event::Key(Key::Ctrl('c')) |
             Event::Key(Key::Ctrl('d')) => self.exit(),
+            Event::Key(Key::Ctrl('s')) |
             Event::Key(Key::Ctrl('w')) => self.save(),
             Event::Key(Key::Up) => self.select_up(),
             Event::Key(Key::Down) => self.select_down(),
@@ -347,7 +349,9 @@ impl Screen {
         if let Some(ref path) = self.work_path {
             let mut tmp_path = path.clone();
             tmp_path.push_str(".tmp");
-            remove_file(&tmp_path);
+            if let Ok(_) = remove_file(&tmp_path) {
+                debug!("removed stale tmp file");
+            }
             let mut f = File::create(&tmp_path).unwrap();
             f.write_all(&*data).unwrap();
             rename(tmp_path, path).unwrap();

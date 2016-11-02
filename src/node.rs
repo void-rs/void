@@ -5,8 +5,6 @@ use termion;
 
 use NodeRef;
 use Content;
-// TODO KILL THIS WITH FIRE
-use SerNode;
 
 #[derive(Debug)]
 pub struct Node {
@@ -14,21 +12,10 @@ pub struct Node {
     pub children: Vec<NodeRef>,
     pub selected: bool,
     pub collapsed: bool,
+    pub stricken: bool,
 }
 
 impl Node {
-    pub fn serialized(&self) -> SerNode {
-        let ser_children = self.children
-            .iter()
-            .map(|child| child.borrow().serialized())
-            .collect();
-        SerNode {
-            content: self.content.clone(),
-            children: ser_children,
-            collapsed: self.collapsed,
-        }
-    }
-
     pub fn draw_tree(&self, prefix: String, x: u16, y: u16, last: bool) -> usize {
         print!("{}", termion::cursor::Goto(x, y));
 
@@ -36,18 +23,23 @@ impl Node {
             print!("{}", termion::style::Invert);
         }
 
-        if prefix == "" {
-            print!("⚒ ");
-        }
-
         print!("{}", prefix);
 
         if prefix != "" {
+            // only anchor will have blank prefix
             if last {
-                print!("└─ ");
+                print!("└─");
             } else {
-                print!("├─ ");
+                print!("├─");
             }
+        }
+
+        if self.stricken {
+            print!("☠");
+        } else if prefix == "" {
+            print!("⚒");
+        } else {
+            print!(" ");
         }
 
         self.content.draw();
@@ -56,11 +48,7 @@ impl Node {
             print!("…");
         }
 
-        if self.selected {
-            print!("{}", termion::style::Reset);
-        }
-
-        println!("");
+        println!("{}", termion::style::Reset);
 
         let mut drawn = 1;
         let mut prefix = prefix;
@@ -117,7 +105,6 @@ impl Node {
         let mut contains = false;
         for child in &self.children {
             if ptr == child.as_ptr() {
-                info!("deleting child {:?}", node.borrow().content);
                 contains = true;
             }
         }
@@ -151,6 +138,18 @@ impl Node {
         child
     }
 
+    pub fn flat_visible_children(&self) -> Vec<NodeRef> {
+        self.children
+            .iter()
+            .fold(vec![], |mut acc, child| {
+                if !self.collapsed {
+                    acc.push(child.clone());
+                    acc.extend(child.borrow().flat_visible_children());
+                }
+                acc
+            })
+    }
+
     pub fn flat_children(&self) -> Vec<NodeRef> {
         self.children
             .iter()
@@ -159,6 +158,14 @@ impl Node {
                 acc.extend(child.borrow().flat_children());
                 acc
             })
+    }
+
+    pub fn toggle_stricken(&mut self) {
+        if self.stricken {
+            self.stricken = false;
+        } else {
+            self.stricken = true;
+        }
     }
 }
 
@@ -170,5 +177,6 @@ fn node(text: &str, children: Vec<Node>) -> Node {
         children: rc_children,
         selected: false,
         collapsed: false,
+        stricken: false,
     }
 }

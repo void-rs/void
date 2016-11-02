@@ -31,6 +31,7 @@ pub struct SerNode {
     pub content: Content,
     pub children: Vec<SerNode>,
     pub collapsed: bool,
+    pub stricken: bool,
 }
 
 impl SerNode {
@@ -43,14 +44,35 @@ impl SerNode {
             content: self.content.clone(),
             children: children,
             selected: false,
-            collapsed: false,
+            collapsed: self.collapsed,
+            stricken: self.stricken,
         }))
     }
 }
 
 pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
-    let serialized_self = screen.serialized();
-    encode(&serialized_self, SizeLimit::Infinite).unwrap()
+    let serialized_screen = {
+        let mut ser_anchors = BTreeMap::new();
+        for (coords, anchor) in &screen.anchors {
+            ser_anchors.insert(*coords, serialize_node(anchor.clone()));
+        }
+        SerScreen { anchors: ser_anchors }
+    };
+    encode(&serialized_screen, SizeLimit::Infinite).unwrap()
+}
+
+fn serialize_node(node_ref: NodeRef) -> SerNode {
+    let node = node_ref.borrow();
+    let ser_children = node.children
+        .iter()
+        .map(|child| serialize_node(child.clone()))
+        .collect();
+    SerNode {
+        content: node.content.clone(),
+        children: ser_children,
+        collapsed: node.collapsed,
+        stricken: node.stricken,
+    }
 }
 
 pub fn deserialize_screen(data: Vec<u8>) -> std::io::Result<Screen> {
