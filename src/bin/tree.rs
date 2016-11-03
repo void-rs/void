@@ -14,7 +14,7 @@ use climate::{Screen, deserialize_screen, init_screen_log};
 use getopts::Options;
 
 fn print_usage(program: &str, opts: Options) {
-    let brief = format!("Usage: {} <--file=/path/to/workfile>", program);
+    let brief = format!("Usage: {} [--file=/path/to/workfile]", program);
     print!("{}", opts.usage(&brief));
 }
 

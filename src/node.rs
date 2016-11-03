@@ -57,6 +57,10 @@ impl Node {
             print!(" ");
         }
 
+        if prefix == "" {
+            print!(" ");
+        }
+
         self.content.draw();
 
         if self.collapsed {
