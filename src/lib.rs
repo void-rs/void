@@ -1,3 +1,4 @@
+#![feature(slice_patterns)]
 #![feature(plugin)]
 #![plugin(clippy)]
 

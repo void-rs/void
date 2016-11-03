@@ -485,7 +485,7 @@ impl Screen {
 
         }
         let mut back_cursor = dest;
-        let mut path = vec![];
+        let mut path = vec![dest];
         while back_cursor != start {
             let prev = visited.get(&back_cursor).unwrap();
             path.push(*prev);
@@ -496,9 +496,27 @@ impl Screen {
     }
 
     fn draw_path(&self, path: Vec<Coords>) {
-        // print!("{}", termion::color::Fg(termion::color::Green));
-        for coords in &path {
-            print!("{}*", termion::cursor::Goto(coords.0, coords.1))
+        print!("{}", termion::color::Fg(termion::color::LightGreen));
+        info!("len: {}", path.len());
+        for items in path.windows(3) {
+            let (p, this, n) = (items[0], items[1], items[2]);
+            let c = if p.0 == n.0 {
+                '│'
+            } else if p.1 == n.1 {
+                '─'
+                // TODO THIS MATH IS FUCKED
+            } else if (this.1 < p.1 && this.0 < n.0) || (this.0 < p.0 && this.1 > n.1) {
+                '┌' // up+right or left+down
+            } else if (this.0 > p.0 && this.1 < n.1) || (this.1 > p.1 && this.0 < n.0) {
+                '┘' // right+up or down+left
+            } else if (this.0 < p.0 && this.1 < n.1) || (this.1 < p.1 && this.0 > n.0) {
+                '┐' // right+down or up+left
+            } else {
+                '└' // down+right or left+up
+            };
+
+            info!("this: {:?}", items);
+            print!("{}{}", termion::cursor::Goto(this.0, this.1), c)
         }
         print!("{}", termion::color::Fg(termion::color::Reset));
     }
