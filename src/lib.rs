@@ -33,6 +33,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 pub type NodeRef = Rc<RefCell<Node>>;
+pub type Coords = (u16, u16);
 
 #[cfg(test)]
 mod tests {
