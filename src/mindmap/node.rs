@@ -3,11 +3,11 @@ use std::cell::RefCell;
 
 use termion;
 
-use {NodeRef, Content, Meta};
+use mindmap::{NodeRef, Meta};
 
 #[derive(Debug)]
 pub struct Node {
-    pub content: Content,
+    pub content: String,
     pub children: Vec<NodeRef>,
     pub selected: bool,
     pub collapsed: bool,
@@ -19,7 +19,7 @@ pub struct Node {
 impl Default for Node {
     fn default() -> Node {
         Node {
-            content: Content::Text { text: "".to_string() },
+            content: String::new(),
             children: vec![],
             selected: false,
             collapsed: false,
@@ -61,7 +61,7 @@ impl Node {
             print!(" ");
         }
 
-        self.content.draw();
+        print!("{}", self.content);
 
         if self.collapsed {
             print!("…");

@@ -1,11 +1,11 @@
 # Climate :globe_with_meridians:
 
-Build practical command-line interfaces.
+simple personal organizer for the command line
 
-* meters
-* time series
-* histograms
-* graph visualization and traversal
-* embedded logs
+### features
+  - [x] mind map with hierarchical trees
+  - [x] directional arrows between nodes
+  - [ ] taggable tasks
+  - [ ] sparklines based on simple queries over tags
 
-I created this library to build ergonomic SRE tooling and personal organizers.
+inspired by ideas from pomodoro, decision theory, GTD, military C2 theory, Flow, cognitive bias mitigation, neuroeconomics, how to solve it, etc...

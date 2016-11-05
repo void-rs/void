@@ -1,21 +1,19 @@
+use std;
 use std::cmp;
-use std::fmt::Formatter;
 use std::fs::{File, rename, remove_file};
 use std::collections::BTreeMap;
 use std::io::{Write, Stdout, stdout, stdin};
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::process::exit;
 
 use termion::{terminal_size, cursor, style};
-use termion::color::{self, Color};
+use termion::color;
 use termion::event::{Key, Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 use rand::{self, Rng};
 
-use {NodeRef, Coords, Node, Content, Meta};
-use serialization;
+use mindmap::{NodeRef, Coords, Node, Meta, serialization};
 use logging;
 
 #[derive(Clone)]
@@ -61,23 +59,35 @@ impl Default for Screen {
 }
 
 impl Screen {
-    fn handle_event(&mut self, evt: Event) {
+    fn handle_event(&mut self, evt: Event) -> bool {
         match evt {
             Event::Key(Key::Char('\n')) => self.toggle_collapsed(),
             Event::Key(Key::Char('\t')) => self.create_child(),
             Event::Key(Key::Delete) => self.delete_selected(),
             Event::Key(Key::Ctrl('f')) => self.toggle_hide_stricken(),
             Event::Key(Key::Ctrl('x')) => self.toggle_stricken(),
-            // Event::Key(Key::Alt('\u{1b}')) |
             Event::Key(Key::Ctrl('a')) => self.draw_arrow(),
+            Event::Key(Key::Alt('\u{1b}')) |
             Event::Key(Key::Ctrl('c')) |
-            Event::Key(Key::Ctrl('d')) => self.exit(),
+            Event::Key(Key::Ctrl('d')) => return false,
             Event::Key(Key::Ctrl('s')) |
             Event::Key(Key::Ctrl('w')) => self.save(),
             Event::Key(Key::Up) => self.select_up(),
             Event::Key(Key::Down) => self.select_down(),
             Event::Key(Key::Backspace) => self.backspace(),
-            Event::Key(Key::Char(c)) => self.append(c),
+            Event::Key(Key::Char(c)) => {
+                if self.last_selected.is_some() {
+                    self.append(c);
+                } else {
+                    // match c {
+                    // 'h' => self.help_screen(),
+                    // 'l' => self.log_screen(),
+                    // 'm' => self.map_screen(),
+                    // 't' => self.task_screen(),
+                    // 'g' => self.graph_screen(),
+                    // }
+                }
+            }
             Event::Mouse(me) => {
                 match me {
                     MouseEvent::Press(_, x, y) => self.click((x, y)),
@@ -90,6 +100,7 @@ impl Screen {
             }
             e => warn!("Weird event {:?}", e),
         }
+        true
     }
 
     fn draw(&mut self) {
@@ -326,8 +337,12 @@ impl Screen {
         let stdin = stdin();
         for c in stdin.events() {
             let evt = c.unwrap();
-            self.handle_event(evt);
+            let should_break = !self.handle_event(evt);
             self.draw();
+            if should_break {
+                self.cleanup_and_save();
+                break;
+            }
         }
     }
 
@@ -339,7 +354,7 @@ impl Screen {
 
     fn create_anchor(&mut self, coords: Coords) {
         let node = Node {
-            content: Content::Text { text: "".to_string() },
+            content: "".to_string(),
             children: vec![],
             selected: false,
             collapsed: false,
@@ -353,14 +368,15 @@ impl Screen {
     fn backspace(&mut self) {
         if let Some(ref lookup) = self.last_selected {
             let mut node = lookup.node.borrow_mut();
-            node.content.backspace();
+            let newlen = std::cmp::max(node.content.len(), 1) - 1;
+            node.content = node.content.clone()[..newlen].to_string();
         }
     }
 
     fn append(&mut self, c: char) {
         if let Some(ref lookup) = self.last_selected {
             let mut node = lookup.node.borrow_mut();
-            node.content.append(c);
+            node.content.push(c);
         }
     }
 
@@ -466,18 +482,18 @@ impl Screen {
             }
             let mut f = File::create(&tmp_path).unwrap();
             f.write_all(&*data).unwrap();
+            f.sync_all().unwrap();
             rename(tmp_path, path).unwrap();
             info!("saved work to {}", path);
         }
     }
 
-    fn exit(&mut self) {
+    fn cleanup_and_save(&mut self) {
         let (_, bottom) = terminal_size().unwrap();
         print!("{}", cursor::Goto(0, bottom));
         println!("{}", cursor::Show);
         self.stdout.take().unwrap().flush().unwrap();
         self.save();
-        exit(0);
     }
 
     fn occupied(&self, coords: Coords) -> bool {
@@ -527,7 +543,7 @@ impl Screen {
     }
 
     fn draw_path(&self, path: Vec<Coords>) {
-        print!("{}", color::Fg(color::LightGreen));
+        print!("{}", random_color());
         if path.len() == 1 {
             print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
         } else if path.len() > 1 {
@@ -540,7 +556,6 @@ impl Screen {
             };
 
             print!("{}{}", cursor::Goto(path[0].0, path[0].1), first);
-            print!("{}", color::Fg(color::LightGreen));
             for items in path.windows(3) {
                 let (p, this, n) = (items[0], items[1], items[2]);
                 let c = if p.0 == n.0 {
@@ -623,20 +638,21 @@ impl PrioQueue {
     }
 }
 
-// fn random_color() {
-// use termion::color::*;
-// let colors: Vec<Color> = vec![(LightGreen),
-// (LightBlack),
-// (LightRed),
-// (LightGreen),
-// (LightYellow),
-// (LightBlue),
-// (LightMagenta),
-// (LightCyan),
-// (LightWhite)];
-// let ref c = rand::thread_rng().choose(&*colors).unwrap();
-// }
-//
+fn random_color() -> String {
+    use termion::color::*;
+    let colors: Vec<String> = vec![format!("{}", Fg(LightGreen)),
+                                   // format!("{}", Fg(LightBlack)),
+                                   format!("{}", Fg(LightRed)),
+                                   format!("{}", Fg(LightGreen)),
+                                   format!("{}", Fg(LightYellow)),
+                                   format!("{}", Fg(LightBlue)),
+                                   format!("{}", Fg(LightMagenta)),
+                                   format!("{}", Fg(LightCyan)),
+                                   format!("{}", Fg(LightWhite))];
+    let c = &*rand::thread_rng().choose(&*colors).unwrap();
+    c.clone()
+}
+
 
 #[cfg(test)]
 mod tests {
