@@ -286,6 +286,10 @@ impl Screen {
             let ptr = {
                 lookup.anchor.as_ptr()
             };
+
+            // clean up any arrow state
+            self.arrows.retain(|&(ref from, ref to)| from != &lookup && to != &lookup);
+
             if ptr == lookup.node.as_ptr() {
                 // nuke whole anchor
                 let anchors = self.anchors
