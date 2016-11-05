@@ -81,9 +81,7 @@ impl Screen {
             Event::Mouse(me) => {
                 match me {
                     MouseEvent::Press(_, x, y) => self.click((x, y)),
-                    MouseEvent::Release(x, y) => {
-                        self.release((x, y));
-                    }
+                    MouseEvent::Release(x, y) => self.release((x, y)),
                     MouseEvent::Hold(..) => {
                         // this isn't supported in some terminals
                         // (urxvt...) so don't rely on it
@@ -213,6 +211,7 @@ impl Screen {
                 candidate_anchors.push(((x, y), anchor.clone()));
             }
         }
+        let err_string = format!("could not find node at location {:?}", coords);
         // scan possible nodes
         let mut candidate_nodes = vec![];
         for ((x, y), anchor) in candidate_anchors {
@@ -221,7 +220,7 @@ impl Screen {
                 if anchor.borrow().content.len() + 1 >= lookup_coords.0 as usize {
                     Ok(anchor.clone())
                 } else {
-                    Err("could not find node at this location".to_string())
+                    Err(err_string.clone())
                 }
             } else {
                 anchor.borrow().find_child_at_coords(0, lookup_coords)
@@ -233,7 +232,7 @@ impl Screen {
                 });
             }
         }
-        candidate_nodes.pop().ok_or("could not find node at this location".to_string())
+        candidate_nodes.pop().ok_or(err_string)
     }
 
     fn pop_selected(&mut self) -> Option<NodeLookup> {
@@ -252,14 +251,17 @@ impl Screen {
     fn try_select(&mut self, coords: Coords) -> Option<NodeLookup> {
         if self.dragging_from.is_none() {
             if let Ok(ref lookup) = self.find_child_at_coords(coords) {
+                debug!("selected node at {:?}", coords);
                 lookup.node.borrow_mut().selected = true;
                 self.last_selected = Some(lookup.clone());
                 self.dragging_from = Some(coords);
                 Some(lookup.clone())
             } else {
+                debug!("selected no node at {:?}", coords);
                 None
             }
         } else {
+            debug!("selected no node at {:?}", coords);
             None
         }
     }
@@ -524,10 +526,16 @@ impl Screen {
         print!("{}", color::Fg(color::LightGreen));
         if path.len() == 1 {
             print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
-        } else {
-            print!("{}{}─",
-                   cursor::Goto(path[0].0, path[0].1),
-                   color::Fg(color::LightBlue));
+        } else if path.len() > 1 {
+            let first = if path[1].1 > path[0].1 {
+                '┐'
+            } else if path[1].1 < path[0].1 {
+                '┘'
+            } else {
+                '─'
+            };
+
+            print!("{}{}", cursor::Goto(path[0].0, path[0].1), first);
             print!("{}", color::Fg(color::LightGreen));
             for items in path.windows(3) {
                 let (p, this, n) = (items[0], items[1], items[2]);
@@ -547,9 +555,13 @@ impl Screen {
 
                 print!("{}{}", cursor::Goto(this.0, this.1), c)
             }
-            print!("{}{}☠",
-                   cursor::Goto(path[path.len() - 1].0, path[path.len() - 1].1),
-                   color::Fg(color::LightRed));
+            let (end_x, end_y) = (path[path.len() - 1].0, path[path.len() - 1].1);
+            let end_char = if path[path.len() - 2].0 < end_x {
+                '>'
+            } else {
+                '<'
+            };
+            print!("{}{}", cursor::Goto(end_x, end_y), end_char);
         }
         print!("{}", color::Fg(color::Reset));
     }
@@ -559,6 +571,9 @@ impl Screen {
         for &(ref from, ref to) in &self.arrows {
             let from_coords = self.coords_for_lookup(from.clone()).unwrap();
             let to_coords = self.coords_for_lookup(to.clone()).unwrap();
+            debug!("exporting arrow from: {:?} to: {:?}",
+                   from_coords,
+                   to_coords);
             path_endpoints.push((from_coords, to_coords));
         }
         path_endpoints

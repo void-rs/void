@@ -85,6 +85,7 @@ pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufErr
         })
         .collect();
     let mut screen = Screen::default();
+    screen.anchors = anchors;
     for arrow_pb in screen_pb.get_arrows().iter() {
         let from = (arrow_pb.get_from_x() as u16, arrow_pb.get_from_y() as u16);
         let to = (arrow_pb.get_to_x() as u16, arrow_pb.get_to_y() as u16);
@@ -92,6 +93,5 @@ pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufErr
             error!("failed to deserialize arrows: {}", e);
         }
     }
-    screen.anchors = anchors;
     Ok(screen)
 }
