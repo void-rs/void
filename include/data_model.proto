@@ -49,8 +49,16 @@ message Scene {
   repeated Frame frames = 1;
 }
 
+message Arrow {
+  required uint32 from_x = 1;
+  required uint32 from_y = 2;
+  required uint32 to_x = 3;
+  required uint32 to_y = 4;
+}
+
 message Screen {
   // TODO make screen have a set of Scenes rather than raw anchors
   repeated Anchor anchors = 1;
   required uint64 max_id = 2;
+  repeated Arrow arrows = 3;
 }

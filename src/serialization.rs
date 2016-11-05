@@ -21,6 +21,18 @@ pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
         })
         .collect();
     screen_pb.set_anchors(protobuf::RepeatedField::from_vec(anchors));
+    let arrows = screen.export_path_endpoints()
+        .iter()
+        .map(|&(from, to)| {
+            let mut arrow_pb = pb::Arrow::default();
+            arrow_pb.set_from_x(from.0 as u32);
+            arrow_pb.set_from_y(from.1 as u32);
+            arrow_pb.set_to_x(to.0 as u32);
+            arrow_pb.set_to_y(to.1 as u32);
+            arrow_pb
+        })
+        .collect();
+    screen_pb.set_arrows(protobuf::RepeatedField::from_vec(arrows));
     screen_pb.write_to_bytes().unwrap()
 }
 
@@ -73,6 +85,13 @@ pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufErr
         })
         .collect();
     let mut screen = Screen::default();
+    for arrow_pb in screen_pb.get_arrows().iter() {
+        let from = (arrow_pb.get_from_x() as u16, arrow_pb.get_from_y() as u16);
+        let to = (arrow_pb.get_to_x() as u16, arrow_pb.get_to_y() as u16);
+        if let Err(e) = screen.insert_path(from, to) {
+            error!("failed to deserialize arrows: {}", e);
+        }
+    }
     screen.anchors = anchors;
     Ok(screen)
 }

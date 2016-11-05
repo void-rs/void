@@ -1,4 +1,5 @@
 use std::cmp;
+use std::fmt::Formatter;
 use std::fs::{File, rename, remove_file};
 use std::collections::BTreeMap;
 use std::io::{Write, Stdout, stdout, stdin};
@@ -6,10 +7,12 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::process::exit;
 
-use termion;
+use termion::{terminal_size, cursor, style};
+use termion::color::{self, Color};
 use termion::event::{Key, Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
+use rand::{self, Rng};
 
 use {NodeRef, Coords, Node, Content, Meta};
 use serialization;
@@ -22,6 +25,14 @@ struct NodeLookup {
     // selected node
     node: NodeRef,
 }
+
+impl PartialEq for NodeLookup {
+    fn eq(&self, other: &NodeLookup) -> bool {
+        self.anchor.as_ptr() == other.anchor.as_ptr() && self.node.as_ptr() == other.node.as_ptr()
+    }
+}
+
+impl Eq for NodeLookup {}
 
 pub struct Screen {
     pub anchors: BTreeMap<Coords, NodeRef>,
@@ -92,16 +103,16 @@ impl Screen {
         }
 
         // print logs
-        let (width, bottom) = termion::terminal_size().unwrap();
+        let (width, bottom) = terminal_size().unwrap();
         if width > 4 && bottom > 7 {
             let mut sep = format!("{}{}logs{}",
-                                  termion::cursor::Goto(0, bottom - 6),
-                                  termion::style::Invert,
-                                  termion::style::Reset);
+                                  cursor::Goto(0, bottom - 6),
+                                  style::Invert,
+                                  style::Reset);
             for _ in 0..width - 4 {
                 sep.push('█');
             }
-            println!("{}{}", termion::cursor::Goto(0, bottom - 12), sep);
+            println!("{}{}", cursor::Goto(0, bottom - 12), sep);
             {
                 let logs = logging::read_logs();
                 for msg in logs.iter().rev() {
@@ -119,7 +130,7 @@ impl Screen {
         }
 
 
-        print!("{}", termion::cursor::Hide);
+        print!("{}", cursor::Hide);
         if let Some(mut s) = self.stdout.take() {
             s.flush().unwrap();
             self.stdout = Some(s);
@@ -145,11 +156,11 @@ impl Screen {
         let (s1, s2) = self.bounds_for_lookup(start).unwrap();
         let (t1, t2) = self.bounds_for_lookup(to).unwrap();
 
-        let init = self.path(s1, t1);
+        let init = self.path(s2, t2);
         let paths = vec![
             self.path(s1, t2),
             self.path(s2, t1),
-            self.path(s2, t2),
+            self.path(s1, t1),
         ];
         paths.into_iter()
             .fold(init, |short, path| {
@@ -165,7 +176,7 @@ impl Screen {
         if let Some(left) = self.coords_for_lookup(lookup.clone()) {
             let mut rx = left.0;
             let node_ptr = lookup.node.as_ptr();
-            while let Some(cursor) = self.find_child_at_coords((rx, left.1)) {
+            while let Ok(cursor) = self.find_child_at_coords((rx, left.1)) {
                 if cursor.node.as_ptr() == node_ptr {
                     rx += 1;
                 } else {
@@ -194,7 +205,7 @@ impl Screen {
         })
     }
 
-    fn find_child_at_coords(&self, coords: Coords) -> Option<NodeLookup> {
+    fn find_child_at_coords(&self, coords: Coords) -> Result<NodeLookup, String> {
         // scan possible anchors
         let mut candidate_anchors = vec![];
         for (&(x, y), anchor) in &self.anchors {
@@ -208,21 +219,21 @@ impl Screen {
             let lookup_coords = (coords.0 - x, coords.1 - y);
             let look = if lookup_coords.1 == 0 {
                 if anchor.borrow().content.len() + 1 >= lookup_coords.0 as usize {
-                    Some(anchor.clone())
+                    Ok(anchor.clone())
                 } else {
-                    None
+                    Err("could not find node at this location".to_string())
                 }
             } else {
                 anchor.borrow().find_child_at_coords(0, lookup_coords)
             };
-            if let Some(node) = look {
+            if let Ok(node) = look {
                 candidate_nodes.push(NodeLookup {
                     anchor: anchor.clone(),
                     node: node,
                 });
             }
         }
-        candidate_nodes.pop()
+        candidate_nodes.pop().ok_or("could not find node at this location".to_string())
     }
 
     fn pop_selected(&mut self) -> Option<NodeLookup> {
@@ -240,7 +251,7 @@ impl Screen {
 
     fn try_select(&mut self, coords: Coords) -> Option<NodeLookup> {
         if self.dragging_from.is_none() {
-            if let Some(ref lookup) = self.find_child_at_coords(coords) {
+            if let Ok(ref lookup) = self.find_child_at_coords(coords) {
                 lookup.node.borrow_mut().selected = true;
                 self.last_selected = Some(lookup.clone());
                 self.dragging_from = Some(coords);
@@ -404,7 +415,20 @@ impl Screen {
 
     fn draw_arrow(&mut self) {
         if let Some(from) = self.drawing_arrow.take() {
-            self.last_selected.clone().map(|to| self.arrows.push((from, to)));
+            if let Some(arrow) = self.last_selected.clone().map(|to| (from, to)) {
+                let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
+                    if nl1 == &arrow.0 && nl2 == &arrow.1 {
+                        true
+                    } else {
+                        false || acc
+                    }
+                });
+                if contains {
+                    self.arrows.retain(|e| e != &arrow);
+                } else {
+                    self.arrows.push(arrow);
+                }
+            }
         } else {
             self.drawing_arrow = self.last_selected.clone();
         }
@@ -442,16 +466,16 @@ impl Screen {
     }
 
     fn exit(&mut self) {
-        let (_, bottom) = termion::terminal_size().unwrap();
-        print!("{}", termion::cursor::Goto(0, bottom));
-        println!("{}", termion::cursor::Show);
+        let (_, bottom) = terminal_size().unwrap();
+        print!("{}", cursor::Goto(0, bottom));
+        println!("{}", cursor::Show);
         self.stdout.take().unwrap().flush().unwrap();
         self.save();
         exit(0);
     }
 
     fn occupied(&self, coords: Coords) -> bool {
-        self.find_child_at_coords(coords).is_some()
+        self.find_child_at_coords(coords).is_ok()
     }
 
     fn path(&self, start: Coords, dest: Coords) -> Vec<Coords> {
@@ -481,6 +505,7 @@ impl Screen {
                 }
             }
             cursor = pq.pop().unwrap();
+            // for debugging: show entire search path
             // self.draw_path(visited.clone().keys().map(|k| *k).collect());
 
         }
@@ -496,29 +521,56 @@ impl Screen {
     }
 
     fn draw_path(&self, path: Vec<Coords>) {
-        print!("{}", termion::color::Fg(termion::color::LightGreen));
-        info!("len: {}", path.len());
-        for items in path.windows(3) {
-            let (p, this, n) = (items[0], items[1], items[2]);
-            let c = if p.0 == n.0 {
-                '│'
-            } else if p.1 == n.1 {
-                '─'
-                // TODO THIS MATH IS FUCKED
-            } else if (this.1 < p.1 && this.0 < n.0) || (this.0 < p.0 && this.1 > n.1) {
-                '┌' // up+right or left+down
-            } else if (this.0 > p.0 && this.1 < n.1) || (this.1 > p.1 && this.0 < n.0) {
-                '┘' // right+up or down+left
-            } else if (this.0 < p.0 && this.1 < n.1) || (this.1 < p.1 && this.0 > n.0) {
-                '┐' // right+down or up+left
-            } else {
-                '└' // down+right or left+up
-            };
+        print!("{}", color::Fg(color::LightGreen));
+        if path.len() == 1 {
+            print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
+        } else {
+            print!("{}{}─",
+                   cursor::Goto(path[0].0, path[0].1),
+                   color::Fg(color::LightBlue));
+            print!("{}", color::Fg(color::LightGreen));
+            for items in path.windows(3) {
+                let (p, this, n) = (items[0], items[1], items[2]);
+                let c = if p.0 == n.0 {
+                    '│'
+                } else if p.1 == n.1 {
+                    '─'
+                } else if (this.1 < p.1 && this.0 < n.0) || (this.0 < p.0 && this.1 < n.1) {
+                    '┌' // up+right or left+down
+                } else if (this.0 > p.0 && this.1 > n.1) || (this.1 > p.1 && this.0 > n.0) {
+                    '┘' // right+up or down+left
+                } else if (this.0 > p.0 && this.1 < n.1) || (this.1 < p.1 && this.0 > n.0) {
+                    '┐' // right+down or up+left
+                } else {
+                    '└' // down+right or left+up
+                };
 
-            info!("this: {:?}", items);
-            print!("{}{}", termion::cursor::Goto(this.0, this.1), c)
+                print!("{}{}", cursor::Goto(this.0, this.1), c)
+            }
+            print!("{}{}☠",
+                   cursor::Goto(path[path.len() - 1].0, path[path.len() - 1].1),
+                   color::Fg(color::LightRed));
         }
-        print!("{}", termion::color::Fg(termion::color::Reset));
+        print!("{}", color::Fg(color::Reset));
+    }
+
+    pub fn export_path_endpoints(&self) -> Vec<(Coords, Coords)> {
+        let mut path_endpoints = vec![];
+        for &(ref from, ref to) in &self.arrows {
+            let from_coords = self.coords_for_lookup(from.clone()).unwrap();
+            let to_coords = self.coords_for_lookup(to.clone()).unwrap();
+            path_endpoints.push((from_coords, to_coords));
+        }
+        path_endpoints
+    }
+
+    pub fn insert_path(&mut self, from: Coords, to: Coords) -> Result<(), String> {
+        let from_node = try!(self.find_child_at_coords(from));
+        let to_node = try!(self.find_child_at_coords(to));
+        if !self.arrows.contains(&(from_node.clone(), to_node.clone())) {
+            self.arrows.push((from_node, to_node));
+        }
+        Ok(())
     }
 }
 
@@ -551,6 +603,21 @@ impl PrioQueue {
         }
     }
 }
+
+// fn random_color() {
+// use termion::color::*;
+// let colors: Vec<Color> = vec![(LightGreen),
+// (LightBlack),
+// (LightRed),
+// (LightGreen),
+// (LightYellow),
+// (LightBlue),
+// (LightMagenta),
+// (LightCyan),
+// (LightWhite)];
+// let ref c = rand::thread_rng().choose(&*colors).unwrap();
+// }
+//
 
 #[cfg(test)]
 mod tests {

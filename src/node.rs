@@ -89,14 +89,17 @@ impl Node {
         drawn
     }
 
-    pub fn find_child_at_coords(&self, depth: usize, coords: (u16, u16)) -> Option<NodeRef> {
+    pub fn find_child_at_coords(&self,
+                                depth: usize,
+                                coords: (u16, u16))
+                                -> Result<NodeRef, String> {
         let mut y_traversed = 1;
         for child in &self.children {
             if coords.1 == y_traversed {
                 if child.borrow().content.len() + 1 + (3 * (depth + 1)) >= coords.0 as usize {
-                    return Some(child.clone());
+                    return Ok(child.clone());
                 } else {
-                    return None;
+                    return Err("could not find node at this location".to_string());
                 }
             } else if coords.1 < y_traversed + child.borrow().height() as u16 {
                 return child.borrow()
@@ -106,7 +109,7 @@ impl Node {
             }
         }
 
-        None
+        Err("could not find node at this location".to_string())
     }
 
     pub fn height(&self) -> usize {
