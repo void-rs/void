@@ -161,44 +161,6 @@ impl Screen {
         None
     }
 
-    fn path_between_nodes(&self, start: NodeLookup, to: NodeLookup) -> Vec<Coords> {
-        let (s1, s2) = self.bounds_for_lookup(start).unwrap();
-        let (t1, t2) = self.bounds_for_lookup(to).unwrap();
-
-        let init = self.path(s2, t2);
-        let paths = vec![
-            self.path(s1, t2),
-            self.path(s2, t1),
-            self.path(s1, t1),
-        ];
-        paths.into_iter()
-            .fold(init, |short, path| {
-                if path.len() < short.len() {
-                    path
-                } else {
-                    short
-                }
-            })
-    }
-
-    fn bounds_for_lookup(&self, lookup: NodeLookup) -> Option<(Coords, Coords)> {
-        if let Some(left) = self.coords_for_lookup(lookup.clone()) {
-            let mut rx = left.0;
-            let node_ptr = lookup.node.as_ptr();
-            while let Ok(cursor) = self.find_child_at_coords((rx, left.1)) {
-                if cursor.node.as_ptr() == node_ptr {
-                    rx += 1;
-                } else {
-                    break;
-                }
-            }
-            let right = (rx, left.1);
-            Some((left, right))
-        } else {
-            None
-        }
-    }
-
     fn coords_for_lookup(&self, lookup: NodeLookup) -> Option<Coords> {
         // if we switch to screen as grid of refs, use that instead
         // possible that a parent / anchor has been deleted
@@ -389,7 +351,8 @@ impl Screen {
             for (coords, value) in &anchors_clone {
                 let nx = cmp::max(coords.0 as i16 + dx, 1) as u16;
                 let ny = cmp::max(coords.1 as i16 + dy, 1) as u16;
-                if value.as_ptr() == lookup.anchor.as_ptr() {
+                if value.as_ptr() == lookup.anchor.as_ptr() &&
+                   !self.anchors.contains_key(&(nx, ny)) {
                     let anchor = self.anchors.remove(coords).unwrap();
                     self.anchors.insert((nx, ny), anchor);
                 }
@@ -435,27 +398,6 @@ impl Screen {
         self.last_selected = Some(lookup.clone());
     }
 
-    fn draw_arrow(&mut self) {
-        if let Some(from) = self.drawing_arrow.take() {
-            if let Some(arrow) = self.last_selected.clone().map(|to| (from, to)) {
-                let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
-                    if nl1 == &arrow.0 && nl2 == &arrow.1 {
-                        true
-                    } else {
-                        false || acc
-                    }
-                });
-                if contains {
-                    self.arrows.retain(|e| e != &arrow);
-                } else {
-                    self.arrows.push(arrow);
-                }
-            }
-        } else {
-            self.drawing_arrow = self.last_selected.clone();
-        }
-    }
-
     fn click(&mut self, coords: Coords) {
         let (x, y) = coords;
         let old = self.pop_selected();
@@ -498,6 +440,27 @@ impl Screen {
 
     fn occupied(&self, coords: Coords) -> bool {
         self.find_child_at_coords(coords).is_ok()
+    }
+
+    fn draw_arrow(&mut self) {
+        if let Some(from) = self.drawing_arrow.take() {
+            if let Some(arrow) = self.last_selected.clone().map(|to| (from, to)) {
+                let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
+                    if nl1 == &arrow.0 && nl2 == &arrow.1 {
+                        true
+                    } else {
+                        false || acc
+                    }
+                });
+                if contains {
+                    self.arrows.retain(|e| e != &arrow);
+                } else {
+                    self.arrows.push(arrow);
+                }
+            }
+        } else {
+            self.drawing_arrow = self.last_selected.clone();
+        }
     }
 
     fn path(&self, start: Coords, dest: Coords) -> Vec<Coords> {
@@ -583,6 +546,45 @@ impl Screen {
             print!("{}{}", cursor::Goto(end_x, end_y), end_char);
         }
         print!("{}", color::Fg(color::Reset));
+    }
+
+    fn path_between_nodes(&self, start: NodeLookup, to: NodeLookup) -> Vec<Coords> {
+        let (s1, s2) = self.bounds_for_lookup(start).unwrap();
+        let (t1, t2) = self.bounds_for_lookup(to).unwrap();
+
+        let init = self.path(s2, t2);
+        let paths = vec![
+            init.clone()
+            //self.path(s1, t2),
+            //self.path(s2, t1),
+            //self.path(s1, t1),
+        ];
+        paths.into_iter()
+            .fold(init, |short, path| {
+                if path.len() < short.len() {
+                    path
+                } else {
+                    short
+                }
+            })
+    }
+
+    fn bounds_for_lookup(&self, lookup: NodeLookup) -> Option<(Coords, Coords)> {
+        if let Some(left) = self.coords_for_lookup(lookup.clone()) {
+            let mut rx = left.0;
+            let node_ptr = lookup.node.as_ptr();
+            while let Ok(cursor) = self.find_child_at_coords((rx, left.1)) {
+                if cursor.node.as_ptr() == node_ptr {
+                    rx += 1;
+                } else {
+                    break;
+                }
+            }
+            let right = (rx, left.1);
+            Some((left, right))
+        } else {
+            None
+        }
     }
 
     pub fn export_path_endpoints(&self) -> Vec<(Coords, Coords)> {

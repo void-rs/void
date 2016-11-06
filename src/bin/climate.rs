@@ -2,7 +2,6 @@
 #![plugin(clippy)]
 extern crate getopts;
 extern crate climate;
-extern crate protobuf;
 
 #[macro_use]
 extern crate log;
