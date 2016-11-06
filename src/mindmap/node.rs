@@ -3,10 +3,11 @@ use std::cell::RefCell;
 
 use termion;
 
-use mindmap::{NodeRef, Meta};
+use mindmap::{Coords, NodeID, NodeRef, Meta};
 
 #[derive(Debug)]
 pub struct Node {
+    pub id: NodeID,
     pub content: String,
     pub children: Vec<NodeRef>,
     pub selected: bool,
@@ -19,6 +20,7 @@ pub struct Node {
 impl Default for Node {
     fn default() -> Node {
         Node {
+            id: 0,
             content: String::new(),
             children: vec![],
             selected: false,
@@ -31,7 +33,12 @@ impl Default for Node {
 }
 
 impl Node {
-    pub fn draw_tree(&self, prefix: String, x: u16, y: u16, last: bool) -> usize {
+    pub fn draw_tree(&self,
+                     prefix: String,
+                     x: u16,
+                     y: u16,
+                     last: bool)
+                     -> (u16, Vec<(Coords, NodeID)>) {
         print!("{}", termion::cursor::Goto(x, y));
 
         if self.selected {
@@ -69,7 +76,11 @@ impl Node {
 
         println!("{}", termion::style::Reset);
 
-        let mut drawn = 1;
+        let mut mappings = vec![];
+        for x in x..(x + prefix.len() as u16 + self.content.len() as u16) {
+            mappings.push(((x, y), self.id));
+        }
+
         let mut prefix = prefix;
         if last {
             prefix.push_str("   ");
@@ -78,15 +89,21 @@ impl Node {
         } else {
             prefix.push_str("│  ");
         }
+        let prefix = prefix;
+
+        let mut drawn = 1;
         if !self.collapsed {
             let n_children = self.children.len();
             for (n, child) in self.children.iter().enumerate() {
                 let last = n + 1 == n_children;
-                drawn += child.borrow().draw_tree(prefix.clone(), x, y + drawn as u16, last);
+                let (child_drew, mut mapped) = child.borrow()
+                    .draw_tree(prefix.clone(), x, y + drawn as u16, last);
+                mappings.append(&mut mapped);
+                drawn += child_drew;
             }
         }
 
-        drawn
+        (drawn, mappings)
     }
 
     pub fn find_child_at_coords(&self,
@@ -153,9 +170,8 @@ impl Node {
         }
     }
 
-    pub fn create_child(&mut self) -> NodeRef {
-        let new = Node::default();
-        let child = Rc::new(RefCell::new(new));
+    pub fn attach_child(&mut self, node: Node) -> NodeRef {
+        let child = Rc::new(RefCell::new(node));
         self.children.push(child.clone());
         child
     }

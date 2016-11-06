@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use protobuf::{self, Message};
 
-use mindmap::{Screen, Node, NodeRef, Meta};
+use mindmap::{Screen, Node, NodeID, NodeRef, Meta};
 use pb;
 
 pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
@@ -44,6 +44,7 @@ fn serialize_node(node_ref: NodeRef) -> pb::Node {
         .map(|child| serialize_node(child.clone()))
         .collect();
     let mut node_pb = pb::Node::default();
+    node_pb.set_id(node.id);
     node_pb.set_text(node.content.clone());
     node_pb.set_children(protobuf::RepeatedField::from_vec(children_pb));
     node_pb.set_collapsed(node.collapsed);
@@ -66,6 +67,7 @@ pub fn deserialize_node(node_pb: pb::Node) -> NodeRef {
         stricken: node_pb.get_stricken(),
         hide_stricken: node_pb.get_hide_stricken(),
         meta: Meta::default(), // TODO serialize this forreal
+        id: node_pb.get_id(),
     }))
 
 }

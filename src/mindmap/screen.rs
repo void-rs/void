@@ -13,7 +13,7 @@ use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 use rand::{self, Rng};
 
-use mindmap::{NodeRef, Coords, Node, Meta, serialization};
+use mindmap::{NodeID, NodeRef, Coords, Node, Meta, serialization};
 use logging;
 
 #[derive(Clone)]
@@ -33,32 +33,70 @@ impl PartialEq for NodeLookup {
 impl Eq for NodeLookup {}
 
 pub struct Screen {
-    pub anchors: BTreeMap<Coords, NodeRef>,
-    arrows: Vec<(NodeLookup, NodeLookup)>,
-    last_selected: Option<NodeLookup>,
+    pub work_path: Option<String>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
     dragging_from: Option<Coords>,
+
+    // REFACTOR CHANGE
+    arrows: Vec<(NodeLookup, NodeLookup)>,
+    pub arrows_new: Vec<(NodeID, NodeID)>,
+
+    last_selected: Option<NodeLookup>,
+    last_selected_new: Option<NodeID>,
+
     drawing_arrow: Option<NodeLookup>,
-    pub work_path: Option<String>,
+    drawing_arrow_new: Option<NodeID>,
+
+    // REFACTOR OUT
+    pub anchors: BTreeMap<Coords, NodeRef>,
+
+    // REFACTOR IN
     pub max_id: u64,
+    pub drawing_root: Option<NodeID>,
+    pub nodes: BTreeMap<NodeID, Node>,
+    pub lookup: BTreeMap<Coords, NodeID>,
+    pub drawn: BTreeMap<NodeID, Coords>,
 }
 
 impl Default for Screen {
     fn default() -> Screen {
         Screen {
+            // REFACTOR OUT
             anchors: BTreeMap::new(),
+
+            // REFACTOR CHANGE
             arrows: vec![],
+            arrows_new: vec![],
             last_selected: None,
+            last_selected_new: None,
+            drawing_arrow: None,
+            drawing_arrow_new: None,
+
+            // REFACTOR IN
+            nodes: BTreeMap::new(),
+            lookup: BTreeMap::new(),
+            drawn: BTreeMap::new(),
+            drawing_root: None,
             stdout: None,
             dragging_from: None,
-            drawing_arrow: None,
             work_path: None,
             max_id: 0,
         }
     }
 }
 
+// refactor plan
+// 1. populate nodes, lookup, drawn on draw()
+// 2. populate arrows_new on serialization by modifying insert arrow
+
 impl Screen {
+    fn new_node(&mut self) -> Node {
+        let mut node = Node::default();
+        node.id = self.max_id;
+        self.max_id += 1;
+        node
+    }
+
     fn handle_event(&mut self, evt: Event) -> bool {
         match evt {
             Event::Key(Key::Char('\n')) => self.toggle_collapsed(),
@@ -107,9 +145,15 @@ impl Screen {
         // clear screen
         print!("\x1b[2J\x1b[H");
 
+        let mut mappings = vec![];
         for (coords, anchor) in &self.anchors {
-            anchor.borrow().draw_tree("".to_string(), coords.0, coords.1, false);
+            let (_, mut mapped) = anchor.borrow()
+                .draw_tree("".to_string(), coords.0, coords.1, false);
+            mappings.append(&mut mapped);
         }
+
+        self.drawn = mappings.iter().map(|&(c, n)| (n, c)).collect();
+        self.lookup = mappings.iter().map(|&e| e).collect();
 
         // print logs
         let (width, bottom) = terminal_size().unwrap();
@@ -282,7 +326,8 @@ impl Screen {
 
     fn create_child(&mut self) {
         if let Some(ref mut lookup) = self.last_selected.clone() {
-            let child = lookup.node.borrow_mut().create_child();
+            let node = self.new_node();
+            let child = lookup.node.borrow_mut().attach_child(node);
             let new_lookup = NodeLookup {
                 anchor: lookup.anchor.clone(),
                 node: child,
@@ -315,15 +360,7 @@ impl Screen {
     }
 
     fn create_anchor(&mut self, coords: Coords) {
-        let node = Node {
-            content: "".to_string(),
-            children: vec![],
-            selected: false,
-            collapsed: false,
-            stricken: false,
-            hide_stricken: false,
-            meta: Meta::default(), // TODO do this forreal
-        };
+        let node = self.new_node();
         self.insert(coords, node);
     }
 

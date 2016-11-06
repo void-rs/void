@@ -13,3 +13,4 @@ use std::cell::RefCell;
 
 pub type NodeRef = Rc<RefCell<Node>>;
 pub type Coords = (u16, u16);
+pub type NodeID = u64;
