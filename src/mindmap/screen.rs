@@ -94,6 +94,8 @@ impl Screen {
             Event::Key(Key::Ctrl('f')) => self.toggle_hide_stricken(),
             Event::Key(Key::Ctrl('x')) => self.toggle_stricken(),
             Event::Key(Key::Ctrl('a')) => self.draw_arrow(),
+            Event::Key(Key::Ctrl('o')) => self.drill_down(),
+            Event::Key(Key::Ctrl('t')) => self.pop_focus(),
             Event::Key(Key::Alt('\u{1b}')) |
             Event::Key(Key::Ctrl('c')) |
             Event::Key(Key::Ctrl('d')) => return false,
@@ -465,6 +467,19 @@ impl Screen {
         }
     }
 
+    fn pop_focus(&mut self) {
+        let parent_id = self.with_node(self.drawing_root, |root| root.parent_id).unwrap();
+        self.drawing_root = parent_id;
+        self.draw();
+    }
+
+    fn drill_down(&mut self) {
+        if let Some(selected_id) = self.last_selected {
+            self.drawing_root = selected_id;
+            self.draw();
+        }
+    }
+
     fn click_select(&mut self, coords: Coords) -> Option<NodeID> {
         debug!("click_select({:?})", coords);
         self.pop_selected();
@@ -655,8 +670,16 @@ impl Screen {
     }
 
     fn path_between_nodes(&self, start: NodeID, to: NodeID) -> Vec<Coords> {
-        let (_, s2) = self.bounds_for_lookup(start).unwrap();
-        let (_, t2) = self.bounds_for_lookup(to).unwrap();
+        debug!("getting path between {} and {}", start, to);
+        let startbounds = self.bounds_for_lookup(start);
+        let tobounds = self.bounds_for_lookup(to);
+        if startbounds.is_none() || tobounds.is_none() {
+            debug!("path_between_nodes exiting early, point not drawn");
+            return vec![];
+        }
+        let (_, s2) = startbounds.unwrap();
+        let (_, t2) = tobounds.unwrap();
+        debug!("here");
 
         let init = self.path(s2, t2);
         let paths = vec![
