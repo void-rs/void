@@ -137,7 +137,7 @@ impl Screen {
         // let mut mappings = vec![];
         // for (node_id, node) in &self.anchors {
         // let (_, mut mapped) = anchor.borrow()
-        // .draw_tree("".to_string(), coords.0, coords.1, false);
+        // .draw_tree("".to_owned(), coords.0, coords.1, false);
         // mappings.append(&mut mapped);
         // }
         //
@@ -404,7 +404,7 @@ impl Screen {
         if let Some(selected_id) = self.last_selected {
             self.with_node_mut(selected_id, |node| {
                 let newlen = std::cmp::max(node.content.len(), 1) - 1;
-                node.content = node.content.clone()[..newlen].to_string();
+                node.content = node.content.clone()[..newlen].to_owned();
             });
         }
     }

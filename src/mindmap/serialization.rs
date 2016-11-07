@@ -84,7 +84,7 @@ fn deserialize_node(node_pb: &pb::Node) -> Node {
     Node {
         parent_id: node_pb.get_parent_id(),
         rooted_coords: (node_pb.get_x() as u16, node_pb.get_y() as u16),
-        content: node_pb.get_text().to_string(),
+        content: node_pb.get_text().to_owned(),
         children: node_pb.get_children().to_vec(),
         selected: node_pb.get_selected(),
         collapsed: node_pb.get_collapsed(),
