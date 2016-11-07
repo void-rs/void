@@ -32,14 +32,6 @@ impl Default for Node {
 }
 
 impl Node {
-    pub fn visible_children(&self) -> Vec<NodeID> {
-        if self.collapsed {
-            vec![]
-        } else {
-            self.children.clone()
-        }
-    }
-
     pub fn toggle_collapsed(&mut self) {
         if self.collapsed {
             self.collapsed = false;

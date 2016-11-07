@@ -28,7 +28,6 @@ impl log::Log for ScreenLogger {
                 .open("/home/t/src/climate/debug.log")
                 .unwrap();
             f.write_all(line.as_bytes()).unwrap();
-            f.sync_all().unwrap();
         }
     }
 }

@@ -86,30 +86,6 @@ impl Screen {
         })
     }
 
-    // passes node and accumulator state into f
-    // f returns (Option<to_child>, Option<ret>)
-    // to_child is passed as the accumulator to the children of this node
-    // Options are filtered and returned to the caller
-    fn nodefold<A, B, F>(&self, k: NodeID, acc: &A, mut f: &mut F) -> Vec<B>
-        where F: FnMut(&A, &Node) -> (Option<A>, Option<B>)
-    {
-        let (children, (to_child, to_ret)) = self.nodes
-            .get(&k)
-            .map(|node| (node.children.clone(), f(acc, node)))
-            .unwrap_or((vec![], (None, None)));
-        let mut ret = vec![];
-        if let Some(tr) = to_ret {
-            ret.push(tr);
-        }
-        if let Some(tc) = to_child {
-            for child in children {
-                let mut res = self.nodefold(child, &tc, f);
-                ret.append(&mut res);
-            }
-        }
-        ret
-    }
-
     // return of false signals to the caller that we are done in this view
     fn handle_event(&mut self, evt: Event) -> bool {
         match evt {
@@ -190,9 +166,8 @@ impl Screen {
             print!("…");
         }
         println!("{}", style::Reset);
-        self.lookup.clear();
-        self.drawn_at.clear();
         for x in (x..(x + 3 + prefix.len() as u16 + node.content.len() as u16)).rev() {
+            debug!("inserting {:?} at {:?}", node_id, (x, y));
             self.lookup.insert((x, y), node_id);
             self.drawn_at.insert(node_id, (x, y));
         }
@@ -219,7 +194,9 @@ impl Screen {
         drawn
     }
 
-    fn draw_visible_nodes(&mut self) {
+    fn draw_from_root(&mut self) {
+        self.lookup.clear();
+        self.drawn_at.clear();
         let anchors = self.with_node(self.drawing_root, |n| n.children.clone()).unwrap();
         for child_id in anchors {
             let coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
@@ -268,7 +245,7 @@ impl Screen {
         }
 
         // print visible nodes
-        self.draw_visible_nodes();
+        self.draw_from_root();
 
         // print logs
         if width > 4 && bottom > 7 {
@@ -316,11 +293,11 @@ impl Screen {
     }
 
     fn try_select(&mut self, coords: Coords) -> Option<NodeID> {
+        debug!("trying_select({:?}", coords);
         if self.dragging_from.is_none() {
             if let Some(&node_id) = self.lookup.get(&coords) {
-                debug!("trying to select");
-                self.with_node_mut(node_id, |mut node| {
-                        debug!("selected node at {:?}", coords);
+                return self.with_node_mut(node_id, |mut node| {
+                        debug!("selected node {} at {:?}", node_id, coords);
                         node.selected = true;
                         node_id
                     })
@@ -329,10 +306,14 @@ impl Screen {
                         self.dragging_from = Some(coords);
                         Some(id)
                     })
-                    .or_else(|| None);
+                    .or_else(|| {
+                        debug!("found no node at {:?}", coords);
+                        None
+                    });
             }
         }
         debug!("selected no node at {:?}", coords);
+        debug!("lookup is {:?}", self.lookup);
         None
     }
 
@@ -486,6 +467,7 @@ impl Screen {
     }
 
     fn click_select(&mut self, coords: Coords) -> Option<NodeID> {
+        debug!("click_select({:?})", coords);
         self.pop_selected();
         let result = self.try_select((coords.0, coords.1));
         self.dragging_from.take();
