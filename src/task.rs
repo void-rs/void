@@ -5,7 +5,3 @@
 // research
 // plan
 // execute
-
-enum State {
-    Define,
-}

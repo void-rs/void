@@ -2,7 +2,7 @@ extern crate climate;
 
 use std::io::Read;
 use std::fs::File;
-use climate::{Screen, deserialize_screen, init_screen_log};
+use climate::{deserialize_screen, init_screen_log};
 
 fn main() {
     init_screen_log().unwrap();

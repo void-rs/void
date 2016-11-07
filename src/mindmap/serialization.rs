@@ -1,35 +1,22 @@
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::rc::Rc;
-
 use protobuf::{self, Message};
 
-use mindmap::{Screen, Node, NodeID, NodeRef, Meta};
+use mindmap::{Screen, Node, Meta};
 use pb;
 
 pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
     let mut screen_pb = pb::Screen::default();
     screen_pb.set_max_id(screen.max_id);
-    let anchors = screen.anchors
+    let nodes = screen.nodes
         .iter()
-        .map(|(&(x, y), anchor)| {
-            let mut anchor_pb = pb::Anchor::default();
-            anchor_pb.set_x(x as u32);
-            anchor_pb.set_y(y as u32);
-            let head = serialize_node(anchor.clone());
-            anchor_pb.set_head(head);
-            anchor_pb
-        })
+        .map(|(_, node)| serialize_node(node))
         .collect();
-    screen_pb.set_anchors(protobuf::RepeatedField::from_vec(anchors));
-    let arrows = screen.export_path_endpoints()
+    screen_pb.set_nodes(protobuf::RepeatedField::from_vec(nodes));
+    let arrows = screen.arrows
         .iter()
         .map(|&(from, to)| {
             let mut arrow_pb = pb::Arrow::default();
-            arrow_pb.set_from_x(from.0 as u32);
-            arrow_pb.set_from_y(from.1 as u32);
-            arrow_pb.set_to_x(to.0 as u32);
-            arrow_pb.set_to_y(to.1 as u32);
+            arrow_pb.set_from_node(from);
+            arrow_pb.set_to_node(to);
             arrow_pb
         })
         .collect();
@@ -37,61 +24,95 @@ pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
     screen_pb.write_to_bytes().unwrap()
 }
 
-fn serialize_node(node_ref: NodeRef) -> pb::Node {
-    let node = node_ref.borrow();
-    let children_pb = node.children
-        .iter()
-        .map(|child| serialize_node(child.clone()))
-        .collect();
+fn serialize_meta(meta: &Meta) -> pb::Meta {
+    // TODO do this forreal
+    let mut gps_pb = pb::Gps::default();
+    gps_pb.set_lat(meta.gps.0);
+    gps_pb.set_lon(meta.gps.1);
+    let mut meta_pb = pb::Meta::default();
+    meta_pb.set_gps(gps_pb);
+    meta_pb.set_ctime(meta.ctime);
+    meta_pb.set_mtime(meta.mtime);
+    if let Some(finish_time) = meta.finish_time {
+        meta_pb.set_finish_time(finish_time);
+    }
+    let mut tags = vec![];
+    for (tagk, tagv) in &meta.tags {
+        let mut tag = pb::Tag::default();
+        tag.set_key(tagk.clone());
+        tag.set_value(tagv.clone());
+        tags.push(tag);
+    }
+    meta_pb.set_tags(protobuf::RepeatedField::from_vec(tags));
+    meta_pb
+}
+
+fn serialize_node(node: &Node) -> pb::Node {
     let mut node_pb = pb::Node::default();
     node_pb.set_id(node.id);
     node_pb.set_text(node.content.clone());
-    node_pb.set_children(protobuf::RepeatedField::from_vec(children_pb));
+    node_pb.set_children(node.children.clone());
     node_pb.set_collapsed(node.collapsed);
     node_pb.set_stricken(node.stricken);
     node_pb.set_hide_stricken(node.hide_stricken);
+    node_pb.set_parent_id(node.parent_id);
+    node_pb.set_x(node.rooted_coords.0 as u32);
+    node_pb.set_y(node.rooted_coords.1 as u32);
+    node_pb.set_meta(serialize_meta(&node.meta));
     node_pb
 }
 
-pub fn deserialize_node(node_pb: pb::Node) -> NodeRef {
-    let children = node_pb.get_children()
-        .iter()
-        .cloned()
-        .map(deserialize_node)
-        .collect();
-    Rc::new(RefCell::new(Node {
+fn deserialize_meta(meta_pb: &pb::Meta) -> Meta {
+    let gps = meta_pb.get_gps();
+    Meta {
+        ctime: meta_pb.get_ctime(),
+        mtime: meta_pb.get_mtime(),
+        finish_time: if meta_pb.has_finish_time() {
+            Some(meta_pb.get_finish_time())
+        } else {
+            None
+        },
+        gps: (gps.get_lat(), gps.get_lon()),
+        tags: meta_pb.get_tags()
+            .iter()
+            .map(|tag| (tag.get_key().to_owned(), tag.get_value().to_owned()))
+            .collect(),
+    }
+}
+
+fn deserialize_node(node_pb: &pb::Node) -> Node {
+    Node {
+        parent_id: node_pb.get_parent_id(),
+        rooted_coords: (node_pb.get_x() as u16, node_pb.get_y() as u16),
         content: node_pb.get_text().to_string(),
-        children: children,
-        selected: false,
+        children: node_pb.get_children().to_vec(),
+        selected: node_pb.get_selected(),
         collapsed: node_pb.get_collapsed(),
         stricken: node_pb.get_stricken(),
         hide_stricken: node_pb.get_hide_stricken(),
-        meta: Meta::default(), // TODO serialize this forreal
+        meta: deserialize_meta(node_pb.get_meta()),
         id: node_pb.get_id(),
-    }))
-
+    }
 }
 
 pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufError> {
     let screen_pb: pb::Screen = try!(protobuf::parse_from_bytes(&*data));
-    let anchors: BTreeMap<(u16, u16), NodeRef> = screen_pb.get_anchors()
+    let mut screen = Screen::default();
+    screen.nodes = screen_pb.get_nodes()
         .iter()
-        .cloned()
-        .map(|mut anchor_pb| {
-            let (x, y) = (anchor_pb.get_x(), anchor_pb.get_y());
-            let head = anchor_pb.take_head();
-            let node = deserialize_node(head);
-            ((x as u16, y as u16), node)
+        .map(|node_pb| {
+            let node = deserialize_node(node_pb);
+            (node.id, node)
         })
         .collect();
-    let mut screen = Screen::default();
-    screen.anchors = anchors;
-    for arrow_pb in screen_pb.get_arrows().iter() {
-        let from = (arrow_pb.get_from_x() as u16, arrow_pb.get_from_y() as u16);
-        let to = (arrow_pb.get_to_x() as u16, arrow_pb.get_to_y() as u16);
-        if let Err(e) = screen.insert_path(from, to) {
-            error!("failed to deserialize arrows: {}", e);
-        }
-    }
+
+    screen.arrows = screen_pb.get_arrows()
+        .iter()
+        .map(|arrow_pb| {
+            let from = arrow_pb.get_from_node();
+            let to = arrow_pb.get_to_node();
+            (from, to)
+        })
+        .collect();
     Ok(screen)
 }

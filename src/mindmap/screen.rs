@@ -3,34 +3,15 @@ use std::cmp;
 use std::fs::{File, rename, remove_file};
 use std::collections::BTreeMap;
 use std::io::{Write, Stdout, stdout, stdin};
-use std::cell::RefCell;
-use std::rc::Rc;
 
 use termion::{terminal_size, cursor, style};
 use termion::color;
 use termion::event::{Key, Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
-use rand::{self, Rng};
 
-use mindmap::{NodeID, NodeRef, Coords, Node, Meta, serialization};
+use mindmap::{NodeID, Coords, Node, serialization, random_color, PrioQueue};
 use logging;
-
-#[derive(Clone)]
-struct NodeLookup {
-    // anchor of selected node
-    anchor: NodeRef,
-    // selected node
-    node: NodeRef,
-}
-
-impl PartialEq for NodeLookup {
-    fn eq(&self, other: &NodeLookup) -> bool {
-        self.anchor.as_ptr() == other.anchor.as_ptr() && self.node.as_ptr() == other.node.as_ptr()
-    }
-}
-
-impl Eq for NodeLookup {}
 
 pub struct Screen {
     pub work_path: Option<String>,
@@ -38,50 +19,40 @@ pub struct Screen {
     dragging_from: Option<Coords>,
 
     // REFACTOR CHANGE
-    arrows: Vec<(NodeLookup, NodeLookup)>,
-    pub arrows_new: Vec<(NodeID, NodeID)>,
-
-    last_selected: Option<NodeLookup>,
-    last_selected_new: Option<NodeID>,
-
-    drawing_arrow: Option<NodeLookup>,
-    drawing_arrow_new: Option<NodeID>,
-
-    // REFACTOR OUT
-    pub anchors: BTreeMap<Coords, NodeRef>,
+    pub arrows: Vec<(NodeID, NodeID)>,
+    last_selected: Option<NodeID>,
+    drawing_arrow: Option<NodeID>,
 
     // REFACTOR IN
     pub max_id: u64,
-    pub drawing_root: Option<NodeID>,
+    pub drawing_root: NodeID,
     pub nodes: BTreeMap<NodeID, Node>,
     pub lookup: BTreeMap<Coords, NodeID>,
-    pub drawn: BTreeMap<NodeID, Coords>,
+    pub drawn_at: BTreeMap<NodeID, Coords>,
 }
 
 impl Default for Screen {
     fn default() -> Screen {
-        Screen {
-            // REFACTOR OUT
-            anchors: BTreeMap::new(),
-
+        let mut root = Node::default();
+        root.content = "home".to_owned();
+        let mut screen = Screen {
             // REFACTOR CHANGE
             arrows: vec![],
-            arrows_new: vec![],
             last_selected: None,
-            last_selected_new: None,
             drawing_arrow: None,
-            drawing_arrow_new: None,
 
             // REFACTOR IN
             nodes: BTreeMap::new(),
             lookup: BTreeMap::new(),
-            drawn: BTreeMap::new(),
-            drawing_root: None,
+            drawn_at: BTreeMap::new(),
+            drawing_root: 0,
             stdout: None,
             dragging_from: None,
             work_path: None,
             max_id: 0,
-        }
+        };
+        screen.nodes.insert(0, root);
+        screen
     }
 }
 
@@ -90,13 +61,31 @@ impl Default for Screen {
 // 2. populate arrows_new on serialization by modifying insert arrow
 
 impl Screen {
-    fn new_node(&mut self) -> Node {
+    fn new_node(&mut self) -> NodeID {
         let mut node = Node::default();
-        node.id = self.max_id;
+        let id = self.max_id;
         self.max_id += 1;
-        node
+        node.id = id;
+        self.nodes.insert(id, node);
+        id
     }
 
+    fn with_node<B, F>(&self, k: NodeID, mut f: F) -> Option<B>
+        where F: FnMut(&Node) -> B
+    {
+        self.nodes.get(&k).map(|v| f(v))
+    }
+
+    fn with_node_mut<B, F>(&mut self, k: NodeID, mut f: F) -> Option<B>
+        where F: FnMut(&mut Node) -> B
+    {
+        self.nodes.get_mut(&k).map(|mut node| {
+            node.meta.bump_mtime();
+            f(&mut node)
+        })
+    }
+
+    // return of false signals to the caller that we are done in this view
     fn handle_event(&mut self, evt: Event) -> bool {
         match evt {
             Event::Key(Key::Char('\n')) => self.toggle_collapsed(),
@@ -141,22 +130,133 @@ impl Screen {
         true
     }
 
+    fn draw_tree(&mut self) {
+        // print trees that are children of drawing_root
+        // TODO
+        //
+        // let mut mappings = vec![];
+        // for (node_id, node) in &self.anchors {
+        // let (_, mut mapped) = anchor.borrow()
+        // .draw_tree("".to_string(), coords.0, coords.1, false);
+        // mappings.append(&mut mapped);
+        // }
+        //
+        // IMPORTANT: reverse on drawn_at is important for the bounds_for_lookup fn
+        // self.drawn_at = mappings.iter().reverse()map(|&(c, n)| (n, c)).collect();
+        // self.lookup = mappings.iter().map(|&e| e).collect();
+
+        // print!("{}", termion::cursor::Goto(x, y));
+        //
+        // if self.selected {
+        // print!("{}", termion::style::Invert);
+        // }
+        //
+        // print!("{}", prefix);
+        //
+        // if prefix != "" {
+        // only anchor will have blank prefix
+        // if last {
+        // print!("└─");
+        // } else {
+        // print!("├─");
+        // }
+        // }
+        //
+        // if self.stricken {
+        // print!("☠");
+        // } else if prefix == "" {
+        // print!("⚒");
+        // } else {
+        // print!(" ");
+        // }
+        //
+        // if prefix == "" {
+        // print!(" ");
+        // }
+        //
+        // print!("{}", self.content);
+        //
+        // if self.collapsed {
+        // print!("…");
+        // }
+        //
+        // println!("{}", termion::style::Reset);
+        //
+        // let mut mappings = vec![];
+        // for x in x..(x + prefix.len() as u16 + self.content.len() as u16) {
+        // mappings.push(((x, y), self.id));
+        // }
+        //
+        // let mut prefix = prefix;
+        // if last {
+        // prefix.push_str("   ");
+        // } else if prefix == "" {
+        // prefix.push_str("  ");
+        // } else {
+        // prefix.push_str("│  ");
+        // }
+        // let prefix = prefix;
+        //
+        // let mut drawn = 1;
+        // if !self.collapsed {
+        // let n_children = self.children.len();
+        // for (n, child) in self.children.iter().enumerate() {
+        // let last = n + 1 == n_children;
+        // let (child_drew, mut mapped) = child.borrow()
+        // .draw_tree(prefix.clone(), x, y + drawn as u16, last);
+        // mappings.append(&mut mapped);
+        // drawn += child_drew;
+        // }
+        // }
+        //
+        // (drawn, mappings)
+        //
+    }
+
+    pub fn height(&self, node_id: NodeID) -> Option<usize> {
+        self.with_node(node_id, |node| {
+            if node.collapsed {
+                1
+            } else {
+                node.children.iter().fold(1, |acc, &c| {
+                    if let Some(child_height) = self.height(c) {
+                        acc + child_height
+                    } else {
+                        acc
+                    }
+                })
+            }
+        })
+    }
+
+
     fn draw(&mut self) {
         // clear screen
+        // TODO replace this with termion abstraction
         print!("\x1b[2J\x1b[H");
 
-        let mut mappings = vec![];
-        for (coords, anchor) in &self.anchors {
-            let (_, mut mapped) = anchor.borrow()
-                .draw_tree("".to_string(), coords.0, coords.1, false);
-            mappings.append(&mut mapped);
+        let (width, bottom) = terminal_size().unwrap();
+
+        // print header
+        let header_text = self.with_node(self.drawing_root, |node| node.content.clone())
+            .unwrap();
+
+        if width > header_text.len() as u16 && bottom > 1 {
+            let mut sep = format!("{}{}{}{}",
+                                  cursor::Goto(0, 0),
+                                  header_text,
+                                  style::Invert,
+                                  style::Reset);
+            for _ in 0..width as usize - header_text.len() {
+                sep.push('█');
+            }
+            println!("{}{}", cursor::Goto(0, bottom - 12), sep);
         }
 
-        self.drawn = mappings.iter().map(|&(c, n)| (n, c)).collect();
-        self.lookup = mappings.iter().map(|&e| e).collect();
+        // print visible nodes
+        self.draw_tree();
 
         // print logs
-        let (width, bottom) = terminal_size().unwrap();
         if width > 4 && bottom > 7 {
             let mut sep = format!("{}{}logs{}",
                                   cursor::Goto(0, bottom - 6),
@@ -165,7 +265,7 @@ impl Screen {
             for _ in 0..width - 4 {
                 sep.push('█');
             }
-            println!("{}{}", cursor::Goto(0, bottom - 12), sep);
+            println!("{}", sep);
             {
                 let logs = logging::read_logs();
                 for msg in logs.iter().rev() {
@@ -174,11 +274,8 @@ impl Screen {
             }
         }
 
-        // let p = self.path((6, 16), (6, 22));
-        // self.draw_path(p);
-
         for &(ref from, ref to) in &self.arrows {
-            let path = self.path_between_nodes(from.clone(), to.clone());
+            let path = self.path_between_nodes(*from, *to);
             self.draw_path(path);
         }
 
@@ -190,134 +287,69 @@ impl Screen {
         }
     }
 
-    fn insert(&mut self, coords: Coords, node: Node) {
-        let safe_coords = (cmp::max(coords.0, 1), cmp::max(coords.1, 1));
-        self.anchors.insert(safe_coords, Rc::new(RefCell::new(node)));
+    fn pop_selected(&mut self) -> Option<NodeID> {
+        if self.dragging_from.is_none() {
+            if let Some(selected_id) = self.last_selected.take() {
+                self.with_node_mut(selected_id, |mut node| node.selected = false)
+                    .map(|_| selected_id)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
-    fn coords_for_anchor(&self, node: &NodeRef) -> Option<Coords> {
-        // if we switch to screen as grid of refs, use that instead
-        for (&coords, anchor) in &self.anchors {
-            if anchor.as_ptr() == node.as_ptr() {
-                return Some(coords);
+    fn try_select(&mut self, coords: Coords) -> Option<NodeID> {
+        if self.dragging_from.is_none() {
+            if let Some(&node_id) = self.lookup.get(&coords) {
+                self.with_node_mut(node_id, |mut node| {
+                        debug!("selected node at {:?}", coords);
+                        node.selected = true;
+                        node_id
+                    })
+                    .and_then(|id| {
+                        self.last_selected = Some(node_id);
+                        self.dragging_from = Some(coords);
+                        Some(id)
+                    })
+                    .or_else(|| {
+                        error!("could not find node in self.nodes from last_selected");
+                        None
+                    });
             }
         }
+        debug!("selected no node at {:?}", coords);
         None
     }
 
-    fn coords_for_lookup(&self, lookup: NodeLookup) -> Option<Coords> {
-        // if we switch to screen as grid of refs, use that instead
-        // possible that a parent / anchor has been deleted
-        self.coords_for_anchor(&lookup.anchor).map(|(anchor_x, anchor_y)| {
-            let anchor_children = lookup.anchor.borrow().flat_visible_children();
-            let mut idx = 0;
-            for (i, child) in anchor_children.iter().enumerate() {
-                if child.as_ptr() == lookup.node.as_ptr() {
-                    idx = i + 1;
-                }
-            }
-            (anchor_x, anchor_y + idx as u16)
-        })
-    }
-
-    fn find_child_at_coords(&self, coords: Coords) -> Result<NodeLookup, String> {
-        // scan possible anchors
-        let mut candidate_anchors = vec![];
-        for (&(x, y), anchor) in &self.anchors {
-            if coords.0 >= x && coords.1 >= y && coords.1 - y < anchor.borrow().height() as u16 {
-                candidate_anchors.push(((x, y), anchor.clone()));
-            }
-        }
-        let err_string = format!("could not find node at location {:?}", coords);
-        // scan possible nodes
-        let mut candidate_nodes = vec![];
-        for ((x, y), anchor) in candidate_anchors {
-            let lookup_coords = (coords.0 - x, coords.1 - y);
-            let look = if lookup_coords.1 == 0 {
-                if anchor.borrow().content.len() + 1 >= lookup_coords.0 as usize {
-                    Ok(anchor.clone())
-                } else {
-                    Err(err_string.clone())
-                }
-            } else {
-                anchor.borrow().find_child_at_coords(0, lookup_coords)
-            };
-            if let Ok(node) = look {
-                candidate_nodes.push(NodeLookup {
-                    anchor: anchor.clone(),
-                    node: node,
-                });
-            }
-        }
-        candidate_nodes.pop().ok_or(err_string)
-    }
-
-    fn pop_selected(&mut self) -> Option<NodeLookup> {
-        if self.dragging_from.is_none() {
-            if let Some(lookup) = self.last_selected.take() {
-                lookup.node.borrow_mut().selected = false;
-                Some(lookup.clone())
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
-    fn try_select(&mut self, coords: Coords) -> Option<NodeLookup> {
-        if self.dragging_from.is_none() {
-            if let Ok(ref lookup) = self.find_child_at_coords(coords) {
-                debug!("selected node at {:?}", coords);
-                lookup.node.borrow_mut().selected = true;
-                self.last_selected = Some(lookup.clone());
-                self.dragging_from = Some(coords);
-                Some(lookup.clone())
-            } else {
-                debug!("selected no node at {:?}", coords);
-                None
-            }
-        } else {
-            debug!("selected no node at {:?}", coords);
-            None
-        }
-    }
-
     fn toggle_stricken(&mut self) {
-        if let Some(ref lookup) = self.last_selected {
-            let mut node = lookup.node.borrow_mut();
-            node.toggle_stricken();
+        if let Some(selected_id) = self.last_selected {
+            self.with_node_mut(selected_id, |node| node.toggle_stricken());
         }
     }
 
     fn toggle_hide_stricken(&mut self) {
-        if let Some(ref lookup) = self.last_selected {
-            let mut node = lookup.node.borrow_mut();
-            node.toggle_hide_stricken();
+        if let Some(selected_id) = self.last_selected {
+            self.with_node_mut(selected_id, |node| node.toggle_hide_stricken());
+        }
+    }
+
+    fn delete_recursive(&mut self, node_id: NodeID) {
+        if let Some(node) = self.nodes.remove(&node_id) {
+            // clean up any arrow state
+            self.arrows.retain(|&(ref from, ref to)| from != &node_id && to != &node_id);
+
+            for child_id in &node.children {
+                self.delete_recursive(*child_id);
+            }
         }
     }
 
     fn delete_selected(&mut self) {
-        if let Some(lookup) = self.last_selected.take() {
-            let coords = self.coords_for_lookup(lookup.clone());
-            let ptr = {
-                lookup.anchor.as_ptr()
-            };
-
-            // clean up any arrow state
-            self.arrows.retain(|&(ref from, ref to)| from != &lookup && to != &lookup);
-
-            if ptr == lookup.node.as_ptr() {
-                // nuke whole anchor
-                let anchors = self.anchors
-                    .clone()
-                    .into_iter()
-                    .filter(|&(_, ref anchor)| anchor.as_ptr() != ptr)
-                    .collect();
-                self.anchors = anchors;
-            } else {
-                lookup.anchor.borrow_mut().delete(lookup.node.clone());
-            }
+        if let Some(selected_id) = self.last_selected.take() {
+            let coords = self.drawn_at.remove(&selected_id);
+            self.delete_recursive(selected_id);
             if let Some(c) = coords {
                 self.click_select(c);
             }
@@ -325,14 +357,16 @@ impl Screen {
     }
 
     fn create_child(&mut self) {
-        if let Some(ref mut lookup) = self.last_selected.clone() {
-            let node = self.new_node();
-            let child = lookup.node.borrow_mut().attach_child(node);
-            let new_lookup = NodeLookup {
-                anchor: lookup.anchor.clone(),
-                node: child,
-            };
-            self.select_node(new_lookup);
+        if let Some(selected_id) = self.last_selected {
+            let node_id = self.new_node();
+            let added = self.with_node_mut(selected_id, |selected| {
+                selected.children.push(node_id);
+            });
+            if added.is_some() {
+                self.select_node(node_id);
+            } else {
+                self.delete_recursive(node_id);
+            }
         }
     }
 
@@ -354,50 +388,65 @@ impl Screen {
     }
 
     fn toggle_collapsed(&mut self) {
-        if let Some(ref lookup) = self.last_selected {
-            lookup.node.borrow_mut().toggle_collapsed()
+        if let Some(selected_id) = self.last_selected {
+            self.with_node_mut(selected_id, |node| node.toggle_collapsed());
         }
     }
 
     fn create_anchor(&mut self, coords: Coords) {
-        let node = self.new_node();
-        self.insert(coords, node);
+        let root = self.drawing_root;
+        let node_id = self.new_node();
+        self.with_node_mut(node_id, |node| node.rooted_coords = coords);
+        self.with_node_mut(root, |root| root.children.push(node_id));
     }
 
     fn backspace(&mut self) {
-        if let Some(ref lookup) = self.last_selected {
-            let mut node = lookup.node.borrow_mut();
-            let newlen = std::cmp::max(node.content.len(), 1) - 1;
-            node.content = node.content.clone()[..newlen].to_string();
+        if let Some(selected_id) = self.last_selected {
+            self.with_node_mut(selected_id, |node| {
+                let newlen = std::cmp::max(node.content.len(), 1) - 1;
+                node.content = node.content.clone()[..newlen].to_string();
+            });
         }
     }
 
     fn append(&mut self, c: char) {
-        if let Some(ref lookup) = self.last_selected {
-            let mut node = lookup.node.borrow_mut();
-            node.content.push(c);
+        if let Some(selected_id) = self.last_selected {
+            self.with_node_mut(selected_id, |node| {
+                node.content.push(c);
+            });
         }
     }
 
+    // TODO after NodeID refactor add support for moving
+    // children to other trees here.
     fn move_selected(&mut self, from: Coords, to: Coords) {
         let dx = to.0 as i16 - from.0 as i16;
         let dy = to.1 as i16 - from.1 as i16;
 
-        let anchors_clone = self.anchors.clone();
-        if let Some(ref lookup) = self.last_selected {
-            for (coords, value) in &anchors_clone {
-                let nx = cmp::max(coords.0 as i16 + dx, 1) as u16;
-                let ny = cmp::max(coords.1 as i16 + dy, 1) as u16;
-                if value.as_ptr() == lookup.anchor.as_ptr() &&
-                   !self.anchors.contains_key(&(nx, ny)) {
-                    let anchor = self.anchors.remove(coords).unwrap();
-                    self.anchors.insert((nx, ny), anchor);
+        if let Some(selected_id) = self.last_selected {
+            // find the "root" just below self.drawing_root to mod
+            // the rooted_coords for.
+            let mut ptr = selected_id;
+            loop {
+                let id = self.with_node_mut(ptr, |node| node.parent_id).unwrap();
+                if id != self.drawing_root {
+                    ptr = id;
+                } else {
+                    break;
                 }
             }
+
+            self.with_node_mut(ptr, |mut root| {
+                    let coords = root.rooted_coords;
+                    let nx = cmp::max(coords.0 as i16 + dx, 1) as u16;
+                    let ny = cmp::max(coords.1 as i16 + dy, 1) as u16;
+                    root.rooted_coords = (nx, ny);
+                })
+                .unwrap();
         }
     }
 
-    fn click_select(&mut self, coords: Coords) -> Option<NodeLookup> {
+    fn click_select(&mut self, coords: Coords) -> Option<NodeID> {
         self.pop_selected();
         let result = self.try_select((coords.0, coords.1));
         self.dragging_from.take();
@@ -405,21 +454,19 @@ impl Screen {
     }
 
     fn select_up(&mut self) {
-        if let Some(lookup) = self.last_selected.clone() {
-            if let Some(coords) = self.coords_for_lookup(lookup) {
+        if let Some(selected_id) = self.last_selected {
+            if let Some(&coords) = self.drawn_at.get(&selected_id) {
                 // to prevent selection fall-off, click old coords
                 // if nothing is selected above this node
-                if coords.1 > 0 {
-                    self.click_select((coords.0, coords.1 - 1))
-                        .or_else(|| self.click_select(coords));
-                }
+                self.click_select((coords.0, coords.1 - 1))
+                    .or_else(|| self.click_select(coords));
             }
         }
     }
 
     fn select_down(&mut self) {
-        if let Some(lookup) = self.last_selected.clone() {
-            if let Some(coords) = self.coords_for_lookup(lookup) {
+        if let Some(selected_id) = self.last_selected {
+            if let Some(&coords) = self.drawn_at.get(&selected_id) {
                 // to prevent selection fall-off, click old coords
                 // if nothing is selected below this node
                 self.click_select((coords.0, coords.1 + 1))
@@ -428,11 +475,10 @@ impl Screen {
         }
     }
 
-    fn select_node(&mut self, lookup: NodeLookup) {
+    fn select_node(&mut self, node_id: NodeID) {
         self.pop_selected();
-        let mut node = lookup.node.borrow_mut();
-        node.selected = true;
-        self.last_selected = Some(lookup.clone());
+        self.with_node_mut(node_id, |mut node| node.selected = true);
+        self.last_selected = Some(node_id);
     }
 
     fn click(&mut self, coords: Coords) {
@@ -476,12 +522,12 @@ impl Screen {
     }
 
     fn occupied(&self, coords: Coords) -> bool {
-        self.find_child_at_coords(coords).is_ok()
+        self.lookup.contains_key(&coords)
     }
 
     fn draw_arrow(&mut self) {
         if let Some(from) = self.drawing_arrow.take() {
-            if let Some(arrow) = self.last_selected.clone().map(|to| (from, to)) {
+            if let Some(arrow) = self.last_selected.map(|to| (from, to)) {
                 let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
                     if nl1 == &arrow.0 && nl2 == &arrow.1 {
                         true
@@ -496,7 +542,7 @@ impl Screen {
                 }
             }
         } else {
-            self.drawing_arrow = self.last_selected.clone();
+            self.drawing_arrow = self.last_selected;
         }
     }
 
@@ -516,6 +562,8 @@ impl Screen {
         let mut visited: BTreeMap<Coords, Coords> = BTreeMap::new();
         let mut pq = PrioQueue::default();
 
+        // TODO start with dest, go backwards, that way we don't need to reverse
+        // draw tree greedily
         let mut cursor = start;
         while cursor != dest {
             for neighbor in perms(cursor) {
@@ -529,8 +577,8 @@ impl Screen {
             cursor = pq.pop().unwrap();
             // for debugging: show entire search path
             // self.draw_path(visited.clone().keys().map(|k| *k).collect());
-
         }
+
         let mut back_cursor = dest;
         let mut path = vec![dest];
         while back_cursor != start {
@@ -585,9 +633,9 @@ impl Screen {
         print!("{}", color::Fg(color::Reset));
     }
 
-    fn path_between_nodes(&self, start: NodeLookup, to: NodeLookup) -> Vec<Coords> {
-        let (s1, s2) = self.bounds_for_lookup(start).unwrap();
-        let (t1, t2) = self.bounds_for_lookup(to).unwrap();
+    fn path_between_nodes(&self, start: NodeID, to: NodeID) -> Vec<Coords> {
+        let (_, s2) = self.bounds_for_lookup(start).unwrap();
+        let (_, t2) = self.bounds_for_lookup(to).unwrap();
 
         let init = self.path(s2, t2);
         let paths = vec![
@@ -606,12 +654,13 @@ impl Screen {
             })
     }
 
-    fn bounds_for_lookup(&self, lookup: NodeLookup) -> Option<(Coords, Coords)> {
-        if let Some(left) = self.coords_for_lookup(lookup.clone()) {
+    // correctness depends on invariant of the leftmost element being the
+    // value in self.drawn_at
+    fn bounds_for_lookup(&self, node_id: NodeID) -> Option<(Coords, Coords)> {
+        if let Some(&left) = self.drawn_at.get(&node_id) {
             let mut rx = left.0;
-            let node_ptr = lookup.node.as_ptr();
-            while let Ok(cursor) = self.find_child_at_coords((rx, left.1)) {
-                if cursor.node.as_ptr() == node_ptr {
+            while let Some(&cursor) = self.lookup.get(&(rx + 1, left.1)) {
+                if cursor == node_id {
                     rx += 1;
                 } else {
                     break;
@@ -622,152 +671,5 @@ impl Screen {
         } else {
             None
         }
-    }
-
-    pub fn export_path_endpoints(&self) -> Vec<(Coords, Coords)> {
-        let mut path_endpoints = vec![];
-        for &(ref from, ref to) in &self.arrows {
-            let from_coords = self.coords_for_lookup(from.clone()).unwrap();
-            let to_coords = self.coords_for_lookup(to.clone()).unwrap();
-            debug!("exporting arrow from: {:?} to: {:?}",
-                   from_coords,
-                   to_coords);
-            path_endpoints.push((from_coords, to_coords));
-        }
-        path_endpoints
-    }
-
-    pub fn insert_path(&mut self, from: Coords, to: Coords) -> Result<(), String> {
-        let from_node = try!(self.find_child_at_coords(from));
-        let to_node = try!(self.find_child_at_coords(to));
-        if !self.arrows.contains(&(from_node.clone(), to_node.clone())) {
-            self.arrows.push((from_node, to_node));
-        }
-        Ok(())
-    }
-}
-
-struct PrioQueue {
-    to_visit: BTreeMap<u16, Vec<Coords>>,
-}
-
-impl Default for PrioQueue {
-    fn default() -> PrioQueue {
-        PrioQueue { to_visit: BTreeMap::new() }
-    }
-}
-
-impl PrioQueue {
-    fn insert(&mut self, k: u16, v: Coords) {
-        let mut cur = self.to_visit.remove(&k).unwrap_or_else(|| vec![]);
-        cur.push(v);
-        self.to_visit.insert(k, cur);
-    }
-    fn pop(&mut self) -> Option<Coords> {
-        if let Some((lowest_cost, _)) = self.to_visit.clone().iter().nth(0) {
-            let mut cur = self.to_visit.remove(lowest_cost).unwrap_or_else(|| vec![]);
-            let coords = cur.pop();
-            if !cur.is_empty() {
-                self.to_visit.insert(*lowest_cost, cur);
-            }
-            coords
-        } else {
-            None
-        }
-    }
-}
-
-fn random_color() -> String {
-    use termion::color::*;
-    let colors: Vec<String> = vec![format!("{}", Fg(LightGreen)),
-                                   // format!("{}", Fg(LightBlack)),
-                                   format!("{}", Fg(LightRed)),
-                                   format!("{}", Fg(LightGreen)),
-                                   format!("{}", Fg(LightYellow)),
-                                   format!("{}", Fg(LightBlue)),
-                                   format!("{}", Fg(LightMagenta)),
-                                   format!("{}", Fg(LightCyan)),
-                                   format!("{}", Fg(LightWhite))];
-    let c = &*rand::thread_rng().choose(&*colors).unwrap();
-    c.clone()
-}
-
-
-#[cfg(test)]
-mod tests {
-    use termion::event::{Key, Event, MouseEvent, MouseButton};
-
-    use quickcheck::{Arbitrary, Gen, QuickCheck, StdGen};
-    use rand;
-
-    use super::*;
-
-    #[derive(Debug, Clone)]
-    struct Op {
-        event: Event,
-    }
-
-    impl Arbitrary for Op {
-        fn arbitrary<G: Gen>(g: &mut G) -> Op {
-            let (c, x, y) = (g.gen::<char>(), g.gen::<u16>(), g.gen::<u16>());
-            let events = vec![
-                Event::Key(Key::Char(c)),
-                Event::Key(Key::Alt('\u{1b}')),
-                Event::Key(Key::Ctrl(c)),
-                Event::Key(Key::Up),
-                Event::Key(Key::Down),
-                Event::Key(Key::Backspace),
-                Event::Mouse(MouseEvent::Press(MouseButton::Left, x, y)),
-                Event::Mouse(MouseEvent::Release(x, y)),
-                Event::Mouse(MouseEvent::Hold(x, y)),
-            ];
-            Op { event: *g.choose(&*events).unwrap() }
-        }
-    }
-
-
-    #[derive(Debug, Clone)]
-    struct OpVec {
-        ops: Vec<Op>,
-    }
-
-    impl Arbitrary for OpVec {
-        fn arbitrary<G: Gen>(g: &mut G) -> OpVec {
-            let mut ops = vec![];
-            for _ in 0..g.gen_range(1, 100) {
-                ops.push(Op::arbitrary(g));
-            }
-            OpVec { ops: ops }
-        }
-
-        fn shrink(&self) -> Box<Iterator<Item = OpVec>> {
-            let mut smaller = vec![];
-            for i in 0..self.ops.len() {
-                let mut clone = self.clone();
-                clone.ops.remove(i);
-                smaller.push(clone);
-            }
-
-            Box::new(smaller.into_iter())
-        }
-    }
-
-    fn prop_handle_events(ops: OpVec) -> bool {
-        let mut screen = Screen::default();
-        for op in &ops.ops {
-            screen.handle_event(op.event);
-            screen.draw();
-        }
-        true
-    }
-
-    #[test]
-    // #[ignore]
-    fn qc_merge_converges() {
-        QuickCheck::new()
-            .gen(StdGen::new(rand::thread_rng(), 1))
-            .tests(1_000)
-            .max_tests(10_000)
-            .quickcheck(prop_handle_events as fn(OpVec) -> bool);
     }
 }
