@@ -9,7 +9,6 @@ use termion::color;
 use termion::event::{Key, Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
-use rand::{self, Rng};
 
 use mindmap::{NodeID, Coords, Node, serialization, random_color, PrioQueue};
 use logging;
@@ -688,7 +687,8 @@ impl Screen {
                     break;
                 }
             }
-            let right = (rx, left.1);
+            // intentionally add 1 to the right side to prevent cluttering
+            let right = (rx + 1, left.1);
             Some((left, right))
         } else {
             None

@@ -1,6 +1,6 @@
 use std::sync::RwLock;
 
-use std::fs::{OpenOptions, File};
+use std::fs::OpenOptions;
 use std::io::Write;
 
 use log::{self, LogRecord, LogLevel, LogLevelFilter, LogMetadata, SetLoggerError};
