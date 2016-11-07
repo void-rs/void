@@ -9,6 +9,7 @@ use termion::color;
 use termion::event::{Key, Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
+use rand::{self, Rng};
 
 use mindmap::{NodeID, Coords, Node, serialization, random_color, PrioQueue};
 use logging;
@@ -63,8 +64,8 @@ impl Default for Screen {
 impl Screen {
     fn new_node(&mut self) -> NodeID {
         let mut node = Node::default();
-        let id = self.max_id;
         self.max_id += 1;
+        let id = self.max_id;
         node.id = id;
         self.nodes.insert(id, node);
         id
@@ -73,7 +74,7 @@ impl Screen {
     fn with_node<B, F>(&self, k: NodeID, mut f: F) -> Option<B>
         where F: FnMut(&Node) -> B
     {
-        self.nodes.get(&k).map(|v| f(v))
+        self.nodes.get(&k).map(|node| f(node))
     }
 
     fn with_node_mut<B, F>(&mut self, k: NodeID, mut f: F) -> Option<B>
@@ -83,6 +84,30 @@ impl Screen {
             node.meta.bump_mtime();
             f(&mut node)
         })
+    }
+
+    // passes node and accumulator state into f
+    // f returns (Option<to_child>, Option<ret>)
+    // to_child is passed as the accumulator to the children of this node
+    // Options are filtered and returned to the caller
+    fn nodefold<A, B, F>(&self, k: NodeID, acc: &A, mut f: &mut F) -> Vec<B>
+        where F: FnMut(&A, &Node) -> (Option<A>, Option<B>)
+    {
+        let (children, (to_child, to_ret)) = self.nodes
+            .get(&k)
+            .map(|node| (node.children.clone(), f(acc, node)))
+            .unwrap_or((vec![], (None, None)));
+        let mut ret = vec![];
+        if let Some(tr) = to_ret {
+            ret.push(tr);
+        }
+        if let Some(tc) = to_child {
+            for child in children {
+                let mut res = self.nodefold(child, &tc, f);
+                ret.append(&mut res);
+            }
+        }
+        ret
     }
 
     // return of false signals to the caller that we are done in this view
@@ -130,87 +155,76 @@ impl Screen {
         true
     }
 
-    fn draw_tree(&mut self) {
-        // print trees that are children of drawing_root
-        // TODO
-        //
-        // let mut mappings = vec![];
-        // for (node_id, node) in &self.anchors {
-        // let (_, mut mapped) = anchor.borrow()
-        // .draw_tree("".to_owned(), coords.0, coords.1, false);
-        // mappings.append(&mut mapped);
-        // }
-        //
-        // IMPORTANT: reverse on drawn_at is important for the bounds_for_lookup fn
-        // self.drawn_at = mappings.iter().reverse()map(|&(c, n)| (n, c)).collect();
-        // self.lookup = mappings.iter().map(|&e| e).collect();
+    // recursively draw node and children, returning how many have been drawn
+    fn draw_node(&mut self, node_id: NodeID, prefix: String, coords: Coords, last: bool) -> usize {
+        debug!("drawing node {}", node_id);
+        let (x, y) = coords;
+        print!("{}", cursor::Goto(x, y));
+        let node = self.with_node(node_id, |n| n.clone()).unwrap();
+        if node.selected {
+            print!("{}", style::Invert);
+        }
+        print!("{}", prefix);
+        if prefix != "" {
+            // only anchor will have blank prefix
+            if last {
+                print!("└─");
+            } else {
+                print!("├─");
+            }
+        }
+        if node.stricken {
+            print!("☠");
+        } else if prefix == "" {
+            print!("⚒");
+        } else {
+            print!(" ");
+        }
+        if prefix == "" {
+            print!(" ");
+        }
 
-        // print!("{}", termion::cursor::Goto(x, y));
-        //
-        // if self.selected {
-        // print!("{}", termion::style::Invert);
-        // }
-        //
-        // print!("{}", prefix);
-        //
-        // if prefix != "" {
-        // only anchor will have blank prefix
-        // if last {
-        // print!("└─");
-        // } else {
-        // print!("├─");
-        // }
-        // }
-        //
-        // if self.stricken {
-        // print!("☠");
-        // } else if prefix == "" {
-        // print!("⚒");
-        // } else {
-        // print!(" ");
-        // }
-        //
-        // if prefix == "" {
-        // print!(" ");
-        // }
-        //
-        // print!("{}", self.content);
-        //
-        // if self.collapsed {
-        // print!("…");
-        // }
-        //
-        // println!("{}", termion::style::Reset);
-        //
-        // let mut mappings = vec![];
-        // for x in x..(x + prefix.len() as u16 + self.content.len() as u16) {
-        // mappings.push(((x, y), self.id));
-        // }
-        //
-        // let mut prefix = prefix;
-        // if last {
-        // prefix.push_str("   ");
-        // } else if prefix == "" {
-        // prefix.push_str("  ");
-        // } else {
-        // prefix.push_str("│  ");
-        // }
-        // let prefix = prefix;
-        //
-        // let mut drawn = 1;
-        // if !self.collapsed {
-        // let n_children = self.children.len();
-        // for (n, child) in self.children.iter().enumerate() {
-        // let last = n + 1 == n_children;
-        // let (child_drew, mut mapped) = child.borrow()
-        // .draw_tree(prefix.clone(), x, y + drawn as u16, last);
-        // mappings.append(&mut mapped);
-        // drawn += child_drew;
-        // }
-        // }
-        //
-        // (drawn, mappings)
-        //
+        print!("{}", node.content);
+
+        if node.collapsed {
+            print!("…");
+        }
+        println!("{}", style::Reset);
+        self.lookup.clear();
+        self.drawn_at.clear();
+        for x in (x..(x + 3 + prefix.len() as u16 + node.content.len() as u16)).rev() {
+            self.lookup.insert((x, y), node_id);
+            self.drawn_at.insert(node_id, (x, y));
+        }
+        let mut prefix = prefix;
+        if last {
+            prefix.push_str("   ");
+        } else if prefix == "" {
+            prefix.push_str("  ");
+        } else {
+            prefix.push_str("│  ");
+        }
+        let prefix = prefix;
+
+        let mut drawn = 1;
+        if !node.collapsed {
+            let n_children = node.children.len();
+            for (n, &child) in node.children.iter().enumerate() {
+                let last = n + 1 == n_children;
+                let child_coords = (x, y + drawn as u16);
+                let child_drew = self.draw_node(child, prefix.clone(), child_coords, last);
+                drawn += child_drew;
+            }
+        }
+        drawn
+    }
+
+    fn draw_visible_nodes(&mut self) {
+        let anchors = self.with_node(self.drawing_root, |n| n.children.clone()).unwrap();
+        for child_id in anchors {
+            let coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
+            self.draw_node(child_id, "".to_owned(), coords, false);
+        }
     }
 
     pub fn height(&self, node_id: NodeID) -> Option<usize> {
@@ -243,18 +257,18 @@ impl Screen {
 
         if width > header_text.len() as u16 && bottom > 1 {
             let mut sep = format!("{}{}{}{}",
-                                  cursor::Goto(0, 0),
-                                  header_text,
+                                  cursor::Goto(0, 1),
                                   style::Invert,
+                                  header_text,
                                   style::Reset);
             for _ in 0..width as usize - header_text.len() {
                 sep.push('█');
             }
-            println!("{}{}", cursor::Goto(0, bottom - 12), sep);
+            println!("{}", sep);
         }
 
         // print visible nodes
-        self.draw_tree();
+        self.draw_visible_nodes();
 
         // print logs
         if width > 4 && bottom > 7 {
@@ -290,6 +304,7 @@ impl Screen {
     fn pop_selected(&mut self) -> Option<NodeID> {
         if self.dragging_from.is_none() {
             if let Some(selected_id) = self.last_selected.take() {
+                debug!("popping selected");
                 self.with_node_mut(selected_id, |mut node| node.selected = false)
                     .map(|_| selected_id)
             } else {
@@ -303,6 +318,7 @@ impl Screen {
     fn try_select(&mut self, coords: Coords) -> Option<NodeID> {
         if self.dragging_from.is_none() {
             if let Some(&node_id) = self.lookup.get(&coords) {
+                debug!("trying to select");
                 self.with_node_mut(node_id, |mut node| {
                         debug!("selected node at {:?}", coords);
                         node.selected = true;
@@ -313,10 +329,7 @@ impl Screen {
                         self.dragging_from = Some(coords);
                         Some(id)
                     })
-                    .or_else(|| {
-                        error!("could not find node in self.nodes from last_selected");
-                        None
-                    });
+                    .or_else(|| None);
             }
         }
         debug!("selected no node at {:?}", coords);
@@ -325,12 +338,14 @@ impl Screen {
 
     fn toggle_stricken(&mut self) {
         if let Some(selected_id) = self.last_selected {
+            debug!("toggle stricken");
             self.with_node_mut(selected_id, |node| node.toggle_stricken());
         }
     }
 
     fn toggle_hide_stricken(&mut self) {
         if let Some(selected_id) = self.last_selected {
+            debug!("toggle hide stricken");
             self.with_node_mut(selected_id, |node| node.toggle_hide_stricken());
         }
     }
@@ -349,6 +364,12 @@ impl Screen {
     fn delete_selected(&mut self) {
         if let Some(selected_id) = self.last_selected.take() {
             let coords = self.drawn_at.remove(&selected_id);
+            // remove ref from parent
+            let parent_id = self.with_node(selected_id, |n| n.parent_id).unwrap();
+            debug!("deleting selected");
+            self.with_node_mut(parent_id, |p| p.children.retain(|c| c != &selected_id));
+
+            // remove children
             self.delete_recursive(selected_id);
             if let Some(c) = coords {
                 self.click_select(c);
@@ -359,10 +380,12 @@ impl Screen {
     fn create_child(&mut self) {
         if let Some(selected_id) = self.last_selected {
             let node_id = self.new_node();
+            debug!("creating child attributes");
             let added = self.with_node_mut(selected_id, |selected| {
                 selected.children.push(node_id);
             });
             if added.is_some() {
+                self.with_node_mut(node_id, |node| node.parent_id = selected_id);
                 self.select_node(node_id);
             } else {
                 self.delete_recursive(node_id);
@@ -389,6 +412,7 @@ impl Screen {
 
     fn toggle_collapsed(&mut self) {
         if let Some(selected_id) = self.last_selected {
+            debug!("collapsed toggle");
             self.with_node_mut(selected_id, |node| node.toggle_collapsed());
         }
     }
@@ -396,12 +420,18 @@ impl Screen {
     fn create_anchor(&mut self, coords: Coords) {
         let root = self.drawing_root;
         let node_id = self.new_node();
-        self.with_node_mut(node_id, |node| node.rooted_coords = coords);
+        debug!("setting node parent and rooted_coords");
+        self.with_node_mut(node_id, |node| {
+            node.rooted_coords = coords;
+            node.parent_id = root;
+        });
+        debug!("creating anchor");
         self.with_node_mut(root, |root| root.children.push(node_id));
     }
 
     fn backspace(&mut self) {
         if let Some(selected_id) = self.last_selected {
+            debug!("backspace");
             self.with_node_mut(selected_id, |node| {
                 let newlen = std::cmp::max(node.content.len(), 1) - 1;
                 node.content = node.content.clone()[..newlen].to_owned();
@@ -411,6 +441,7 @@ impl Screen {
 
     fn append(&mut self, c: char) {
         if let Some(selected_id) = self.last_selected {
+            debug!("append");
             self.with_node_mut(selected_id, |node| {
                 node.content.push(c);
             });
@@ -418,7 +449,9 @@ impl Screen {
     }
 
     // TODO after NodeID refactor add support for moving
-    // children to other trees here.
+    // children to other trees here. this will have the nice
+    // effect of no longer having weird overlapping nodes
+    // as often (ever?)
     fn move_selected(&mut self, from: Coords, to: Coords) {
         let dx = to.0 as i16 - from.0 as i16;
         let dy = to.1 as i16 - from.1 as i16;
@@ -428,7 +461,12 @@ impl Screen {
             // the rooted_coords for.
             let mut ptr = selected_id;
             loop {
-                let id = self.with_node_mut(ptr, |node| node.parent_id).unwrap();
+                let id = self.with_node(ptr, |node| node.parent_id).unwrap();
+                debug!("move selected 1, id: {} ptr: {} selected: {} root: {}",
+                       id,
+                       ptr,
+                       selected_id,
+                       self.drawing_root);
                 if id != self.drawing_root {
                     ptr = id;
                 } else {
@@ -436,6 +474,7 @@ impl Screen {
                 }
             }
 
+            debug!("move selected 2");
             self.with_node_mut(ptr, |mut root| {
                     let coords = root.rooted_coords;
                     let nx = cmp::max(coords.0 as i16 + dx, 1) as u16;
@@ -477,6 +516,7 @@ impl Screen {
 
     fn select_node(&mut self, node_id: NodeID) {
         self.pop_selected();
+        debug!("select_node");
         self.with_node_mut(node_id, |mut node| node.selected = true);
         self.last_selected = Some(node_id);
     }

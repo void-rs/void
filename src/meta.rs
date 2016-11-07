@@ -37,6 +37,24 @@ impl Meta {
     }
 }
 
+fn gps_query() -> Result<(f32, f32), GpsError> {
+    let client = Client::new();
+    let mut res = try!(client.get("http://ipinfo.io/loc").send());
+    let mut text_res = String::new();
+    try!(res.read_to_string(&mut text_res));
+    let parts = text_res.trim().split(',').collect::<Vec<_>>();
+
+    if parts.len() == 2 {
+        let lat = try!(parts[0].parse::<f32>());
+        let lon = try!(parts[1].parse::<f32>());
+        Ok((lat, lon))
+    } else {
+        let err_string = format!("unable to parse response: {:?}", text_res);
+        let error = GpsError::Other(err_string);
+        Err(error)
+    }
+}
+
 #[derive(Debug)]
 enum GpsError {
     Hyper(hyper::Error),
@@ -61,23 +79,5 @@ impl From<io::Error> for GpsError {
 impl From<num::ParseFloatError> for GpsError {
     fn from(err: num::ParseFloatError) -> GpsError {
         GpsError::Parse(err)
-    }
-}
-
-fn gps_query() -> Result<(f32, f32), GpsError> {
-    let client = Client::new();
-    let mut res = try!(client.get("http://ipinfo.io/loc").send());
-    let mut text_res = String::new();
-    try!(res.read_to_string(&mut text_res));
-    let parts = text_res.split(',').collect::<Vec<_>>();
-
-    if parts.len() == 2 {
-        let lat = try!(parts[0].parse::<f32>());
-        let lon = try!(parts[1].parse::<f32>());
-        Ok((lat, lon))
-    } else {
-        let err_string = format!("unable to parse response: {:?}", text_res);
-        let error = GpsError::Other(err_string);
-        Err(error)
     }
 }
