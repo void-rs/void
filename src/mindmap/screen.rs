@@ -2,6 +2,7 @@ use std;
 use std::cmp;
 use std::fs::{File, rename, remove_file};
 use std::collections::BTreeMap;
+use std::process::Command;
 use std::io::{Write, Stdout, stdout, stdin};
 
 use termion::{terminal_size, cursor, style, clear};
@@ -137,7 +138,24 @@ impl Screen {
     }
 
     fn exec_selected(&mut self) {
-        //
+        if let Some(selected_id) = self.last_selected {
+            let cmd = self.with_node(selected_id, |n| n.content.clone())
+                .unwrap();
+            debug!("executing command: {}", cmd);
+            let mut split: Vec<&str> = cmd.split_whitespace().collect();
+            if split.is_empty() {
+                debug!("cannot execute empty command");
+            }
+            let head = split.remove(0);
+            let output = Command::new(head)
+                .args(&split[..])
+                .output()
+                .expect(&*format!("command failed to start: {}", cmd));
+            debug!("status: {}", output.status);
+            debug!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+            debug!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+
+        }
     }
 
     // recursively draw node and children, returning how many have been drawn
@@ -237,7 +255,7 @@ impl Screen {
         self.lookup.clear();
         self.drawn_at.clear();
         let anchors = self.with_node(self.drawing_root, |n| n.children.clone()).unwrap();
-        debug!("drawing children of root({}): {:?}",
+        trace!("drawing children of root({}): {:?}",
                self.drawing_root,
                anchors);
         for child_id in anchors {
@@ -272,22 +290,20 @@ impl Screen {
         self.draw_from_root();
 
         // print logs
-        if self.show_logs {
-            if width > 4 && bottom > 7 {
-                let mut sep = format!("{}{}logs{}",
-                                      cursor::Goto(0, bottom - 6),
-                                      style::Invert,
-                                      style::Reset);
-                for _ in 0..width - 4 {
-                    sep.push('█');
-                }
-                println!("{}", sep);
-                {
-                    let logs = logging::read_logs();
-                    for msg in logs.iter().rev() {
-                        let line_width = cmp::min(msg.len(), width as usize);
-                        println!("\r{}", msg[..line_width as usize].to_owned());
-                    }
+        if self.show_logs && width > 4 && bottom > 7 {
+            let mut sep = format!("{}{}logs{}",
+                                  cursor::Goto(0, bottom - 6),
+                                  style::Invert,
+                                  style::Reset);
+            for _ in 0..width - 4 {
+                sep.push('█');
+            }
+            println!("{}", sep);
+            {
+                let logs = logging::read_logs();
+                for msg in logs.iter().rev() {
+                    let line_width = cmp::min(msg.len(), width as usize);
+                    println!("\r{}", msg[..line_width as usize].to_owned());
                 }
             }
         }
@@ -299,6 +315,10 @@ impl Screen {
         }
 
         print!("{}", cursor::Hide);
+        self.flush();
+    }
+
+    fn flush(&mut self) {
         if let Some(mut s) = self.stdout.take() {
             s.flush().unwrap();
             self.stdout = Some(s);
@@ -623,7 +643,7 @@ impl Screen {
         let selected_id = self.last_selected.unwrap_or(0);
         let default_coords = (width / 2u16, bottom / 2u16);
         let cur = self.drawn_at(selected_id).unwrap_or(&default_coords);
-        let (id, cost) = self.drawn_at
+        let (id, _) = self.drawn_at
             .iter()
             .filter_map(|(&n, &nc)| {
                 if sort_fn(*cur, nc) {
