@@ -43,12 +43,13 @@ impl Node {
     pub fn toggle_stricken(&mut self) {
         if self.stricken {
             self.stricken = false;
+            self.meta.unfinish();
         } else {
             self.stricken = true;
+            self.meta.finish();
         }
     }
 
-    // TODO make these toggle things macros
     pub fn toggle_hide_stricken(&mut self) {
         if self.hide_stricken {
             self.hide_stricken = false;

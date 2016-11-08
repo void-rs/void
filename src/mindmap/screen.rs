@@ -237,7 +237,9 @@ impl Screen {
         self.lookup.clear();
         self.drawn_at.clear();
         let anchors = self.with_node(self.drawing_root, |n| n.children.clone()).unwrap();
-        debug!("children of root({}): {:?}", self.drawing_root, anchors);
+        debug!("drawing children of root({}): {:?}",
+               self.drawing_root,
+               anchors);
         for child_id in anchors {
             let coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
             let hide_stricken = self.with_node(self.drawing_root, |n| n.hide_stricken).unwrap();
@@ -393,9 +395,9 @@ impl Screen {
             let should_break = !self.handle_event(evt);
             self.draw();
 
-            debug!("nodes:");
+            trace!("nodes:");
             for (id, node) in &self.nodes {
-                debug!("{} -> {:?} -> {}", id, node.children, node.parent_id);
+                trace!("{} -> {:?} -> {}", id, node.children, node.parent_id);
             }
 
             if should_break {

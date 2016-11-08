@@ -35,6 +35,14 @@ impl Meta {
     pub fn bump_mtime(&mut self) {
         self.mtime = time::get_time().sec as u64;
     }
+
+    pub fn finish(&mut self) {
+        self.finish_time = Some(time::get_time().sec as u64);
+    }
+
+    pub fn unfinish(&mut self) {
+        self.finish_time = None;
+    }
 }
 
 fn gps_query() -> Result<(f32, f32), GpsError> {
