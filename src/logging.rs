@@ -19,16 +19,14 @@ impl log::Log for ScreenLogger {
             logs.insert(0, line);
             logs.truncate(5);
         }
-        if record.metadata().level() == LogLevel::Debug {
-            let line = format!("{} - {}\n", record.level(), record.args());
-            // TODO configure this
-            let mut f = OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open("/home/t/src/climate/debug.log")
-                .unwrap();
-            f.write_all(line.as_bytes()).unwrap();
-        }
+        let line = format!("{} - {}\n", record.level(), record.args());
+        // TODO configure this
+        let mut f = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("/home/t/src/climate/debug.log")
+            .unwrap();
+        f.write_all(line.as_bytes()).unwrap();
     }
 }
 

@@ -4,9 +4,9 @@ use std::fs::{File, rename, remove_file};
 use std::collections::BTreeMap;
 use std::io::{Write, Stdout, stdout, stdin};
 
-use termion::{terminal_size, cursor, style};
+use termion::{terminal_size, cursor, style, clear};
 use termion::color;
-use termion::event::{Key, Event, MouseEvent};
+use termion::event::{Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
@@ -14,21 +14,17 @@ use mindmap::{NodeID, Coords, Node, serialization, random_color, PrioQueue};
 use logging;
 
 pub struct Screen {
-    pub work_path: Option<String>,
-    stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
-    dragging_from: Option<Coords>,
-
-    // REFACTOR CHANGE
-    pub arrows: Vec<(NodeID, NodeID)>,
-    last_selected: Option<NodeID>,
-    drawing_arrow: Option<NodeID>,
-
-    // REFACTOR IN
     pub max_id: u64,
     pub drawing_root: NodeID,
     pub nodes: BTreeMap<NodeID, Node>,
-    pub lookup: BTreeMap<Coords, NodeID>,
-    pub drawn_at: BTreeMap<NodeID, Coords>,
+    pub arrows: Vec<(NodeID, NodeID)>,
+    pub work_path: Option<String>,
+    last_selected: Option<NodeID>,
+    drawing_arrow: Option<NodeID>,
+    dragging_from: Option<Coords>,
+    lookup: BTreeMap<Coords, NodeID>,
+    drawn_at: BTreeMap<NodeID, Coords>,
+    stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
 }
 
 impl Default for Screen {
@@ -36,12 +32,9 @@ impl Default for Screen {
         let mut root = Node::default();
         root.content = "home".to_owned();
         let mut screen = Screen {
-            // REFACTOR CHANGE
             arrows: vec![],
             last_selected: None,
             drawing_arrow: None,
-
-            // REFACTOR IN
             nodes: BTreeMap::new(),
             lookup: BTreeMap::new(),
             drawn_at: BTreeMap::new(),
@@ -55,10 +48,6 @@ impl Default for Screen {
         screen
     }
 }
-
-// refactor plan
-// 1. populate nodes, lookup, drawn on draw()
-// 2. populate arrows_new on serialization by modifying insert arrow
 
 impl Screen {
     fn new_node(&mut self) -> NodeID {
@@ -87,34 +76,37 @@ impl Screen {
 
     // return of false signals to the caller that we are done in this view
     fn handle_event(&mut self, evt: Event) -> bool {
+        use termion::event::Key::*;
         match evt {
-            Event::Key(Key::Char('\n')) => self.toggle_collapsed(),
-            Event::Key(Key::Char('\t')) => self.create_child(),
-            Event::Key(Key::Delete) => self.delete_selected(),
-            Event::Key(Key::Ctrl('f')) => self.toggle_hide_stricken(),
-            Event::Key(Key::Ctrl('x')) => self.toggle_stricken(),
-            Event::Key(Key::Ctrl('a')) => self.draw_arrow(),
-            Event::Key(Key::Ctrl('o')) => self.drill_down(),
-            Event::Key(Key::Ctrl('t')) => self.pop_focus(),
-            Event::Key(Key::Alt('\u{1b}')) |
-            Event::Key(Key::Ctrl('c')) |
-            Event::Key(Key::Ctrl('d')) => return false,
-            Event::Key(Key::Ctrl('s')) |
-            Event::Key(Key::Ctrl('w')) => self.save(),
-            Event::Key(Key::Up) => self.select_up(),
-            Event::Key(Key::Down) => self.select_down(),
-            Event::Key(Key::Backspace) => self.backspace(),
-            Event::Key(Key::Char(c)) => {
-                if self.last_selected.is_some() {
-                    self.append(c);
-                } else {
-                    // match c {
-                    // 'h' => self.help_screen(),
-                    // 'l' => self.log_screen(),
-                    // 'm' => self.map_screen(),
-                    // 't' => self.task_screen(),
-                    // 'g' => self.graph_screen(),
-                    // }
+            Event::Key(ke) => {
+                match ke {
+                    Char('\n') => self.toggle_collapsed(),
+                    Char('\t') => self.create_child(),
+                    Delete => self.delete_selected(),
+                    Ctrl('f') => self.toggle_hide_stricken(),
+                    Ctrl('x') => self.toggle_stricken(),
+                    Ctrl('a') => self.draw_arrow(),
+                    Ctrl('o') => self.drill_down(),
+                    Ctrl('t') => self.pop_focus(),
+                    Alt('\u{1b}') | Ctrl('c') | Ctrl('d') => return false,
+                    Ctrl('s') | Ctrl('w') => self.save(),
+                    Up => self.select_up(),
+                    Down => self.select_down(),
+                    Backspace => self.backspace(),
+                    Char(c) => {
+                        if self.last_selected.is_some() {
+                            self.append(c);
+                        } else {
+                            // match c {
+                            // 'h' => self.help_screen(),
+                            // 'l' => self.log_screen(),
+                            // 'm' => self.map_screen(),
+                            // 't' => self.task_screen(),
+                            // 'g' => self.graph_screen(),
+                            // }
+                        }
+                    }
+                    _ => warn!("Weird event {:?}", evt),
                 }
             }
             Event::Mouse(me) => {
@@ -133,11 +125,20 @@ impl Screen {
     }
 
     // recursively draw node and children, returning how many have been drawn
-    fn draw_node(&mut self, node_id: NodeID, prefix: String, coords: Coords, last: bool) -> usize {
-        debug!("drawing node {}", node_id);
+    fn draw_node(&mut self,
+                 node_id: NodeID,
+                 prefix: String,
+                 coords: Coords,
+                 last: bool,
+                 hide_stricken: bool)
+                 -> usize {
+        // debug!("drawing node {}", node_id);
         let (x, y) = coords;
-        print!("{}", cursor::Goto(x, y));
         let node = self.with_node(node_id, |n| n.clone()).unwrap();
+        if node.stricken && hide_stricken {
+            return 0;
+        }
+        print!("{}", cursor::Goto(x, y));
         if node.selected {
             print!("{}", style::Invert);
         }
@@ -152,6 +153,10 @@ impl Screen {
         }
         if node.stricken {
             print!("☠");
+        } else if node.collapsed {
+            print!("⊞");
+        } else if node.hide_stricken {
+            print!("⚔");
         } else if prefix == "" {
             print!("⚒");
         } else {
@@ -163,12 +168,9 @@ impl Screen {
 
         print!("{}", node.content);
 
-        if node.collapsed {
-            print!("…");
-        }
         println!("{}", style::Reset);
         for x in (x..(x + 3 + prefix.len() as u16 + node.content.len() as u16)).rev() {
-            debug!("inserting {:?} at {:?}", node_id, (x, y));
+            // debug!("inserting {:?} at {:?}", node_id, (x, y));
             self.lookup.insert((x, y), node_id);
             self.drawn_at.insert(node_id, (x, y));
         }
@@ -185,10 +187,16 @@ impl Screen {
         let mut drawn = 1;
         if !node.collapsed {
             let n_children = node.children.len();
-            for (n, &child) in node.children.iter().enumerate() {
+            for (n, &child) in node.children
+                .iter()
+                .enumerate() {
                 let last = n + 1 == n_children;
                 let child_coords = (x, y + drawn as u16);
-                let child_drew = self.draw_node(child, prefix.clone(), child_coords, last);
+                let child_drew = self.draw_node(child,
+                                                prefix.clone(),
+                                                child_coords,
+                                                last,
+                                                node.hide_stricken);
                 drawn += child_drew;
             }
         }
@@ -201,31 +209,13 @@ impl Screen {
         let anchors = self.with_node(self.drawing_root, |n| n.children.clone()).unwrap();
         for child_id in anchors {
             let coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
-            self.draw_node(child_id, "".to_owned(), coords, false);
+            let hide_stricken = self.with_node(child_id, |n| n.hide_stricken).unwrap();
+            self.draw_node(child_id, "".to_owned(), coords, false, hide_stricken);
         }
     }
 
-    pub fn height(&self, node_id: NodeID) -> Option<usize> {
-        self.with_node(node_id, |node| {
-            if node.collapsed {
-                1
-            } else {
-                node.children.iter().fold(1, |acc, &c| {
-                    if let Some(child_height) = self.height(c) {
-                        acc + child_height
-                    } else {
-                        acc
-                    }
-                })
-            }
-        })
-    }
-
-
     fn draw(&mut self) {
-        // clear screen
-        // TODO replace this with termion abstraction
-        print!("\x1b[2J\x1b[H");
+        print!("{}", clear::All);
 
         let (width, bottom) = terminal_size().unwrap();
 
@@ -261,16 +251,17 @@ impl Screen {
             {
                 let logs = logging::read_logs();
                 for msg in logs.iter().rev() {
-                    println!("\r{}", msg);
+                    let line_width = cmp::min(msg.len(), width as usize);
+                    println!("\r{}", msg[..line_width as usize].to_owned());
                 }
             }
         }
 
+        // print arrows
         for &(ref from, ref to) in &self.arrows {
             let path = self.path_between_nodes(*from, *to);
             self.draw_path(path);
         }
-
 
         print!("{}", cursor::Hide);
         if let Some(mut s) = self.stdout.take() {
@@ -314,7 +305,7 @@ impl Screen {
             }
         }
         debug!("selected no node at {:?}", coords);
-        debug!("lookup is {:?}", self.lookup);
+        // debug!("lookup is {:?}", self.lookup);
         None
     }
 
@@ -670,7 +661,7 @@ impl Screen {
     }
 
     fn path_between_nodes(&self, start: NodeID, to: NodeID) -> Vec<Coords> {
-        debug!("getting path between {} and {}", start, to);
+        // debug!("getting path between {} and {}", start, to);
         let startbounds = self.bounds_for_lookup(start);
         let tobounds = self.bounds_for_lookup(to);
         if startbounds.is_none() || tobounds.is_none() {
@@ -679,7 +670,6 @@ impl Screen {
         }
         let (_, s2) = startbounds.unwrap();
         let (_, t2) = tobounds.unwrap();
-        debug!("here");
 
         let init = self.path(s2, t2);
         let paths = vec![
