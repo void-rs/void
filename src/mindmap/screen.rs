@@ -360,31 +360,10 @@ impl Screen {
             let parent_id = self.parent(selected_id).unwrap();
             debug!("deleting node {} from parent {}", selected_id, parent_id);
             self.with_node_mut(parent_id, |p| p.children.retain(|c| c != &selected_id)).unwrap();
-            debug!("nodes:");
-            for (id, node) in &self.nodes {
-                debug!("{} -> {:?} -> {}", id, node.children, node.parent_id);
-            }
-
             // remove children
             self.delete_recursive(selected_id);
             if let Some(c) = coords {
                 self.click_select(c);
-            }
-        }
-    }
-
-    fn create_child(&mut self) {
-        if let Some(selected_id) = self.last_selected {
-            let node_id = self.new_node();
-            trace!("creating child attributes");
-            let added = self.with_node_mut(selected_id, |selected| {
-                selected.children.push(node_id);
-            });
-            if added.is_some() {
-                self.with_node_mut(node_id, |node| node.parent_id = selected_id);
-                self.select_node(node_id);
-            } else {
-                self.delete_recursive(node_id);
             }
         }
     }
@@ -399,6 +378,12 @@ impl Screen {
             let evt = c.unwrap();
             let should_break = !self.handle_event(evt);
             self.draw();
+
+            debug!("nodes:");
+            for (id, node) in &self.nodes {
+                debug!("{} -> {:?} -> {}", id, node.children, node.parent_id);
+            }
+
             if should_break {
                 self.cleanup_and_save();
                 break;
@@ -413,15 +398,28 @@ impl Screen {
         }
     }
 
+    fn create_child(&mut self) {
+        if let Some(selected_id) = self.last_selected {
+            let node_id = self.new_node();
+            self.with_node_mut(node_id, |node| node.parent_id = selected_id);
+            let added = self.with_node_mut(selected_id, |selected| {
+                selected.children.push(node_id);
+            });
+            if added.is_some() {
+                self.select_node(node_id);
+            } else {
+                self.delete_recursive(node_id);
+            }
+        }
+    }
+
     fn create_anchor(&mut self, coords: Coords) {
         let root = self.drawing_root;
         let node_id = self.new_node();
-        trace!("setting node parent and rooted_coords");
         self.with_node_mut(node_id, |node| {
             node.rooted_coords = coords;
             node.parent_id = root;
         });
-        trace!("creating anchor");
         self.with_node_mut(root, |root| root.children.push(node_id));
         // need to draw here to populate drawn_at for select to work below
         self.draw();
@@ -522,9 +520,10 @@ impl Screen {
                 // 2. add to new parent's children
                 // 3. set parent_id pointer
                 let old_parent = self.parent(selected_id).unwrap();
-                self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &selected_id));
-                self.with_node_mut(new_parent, |np| np.children.push(selected_id));
-                self.with_node_mut(selected_id, |s| s.parent_id = new_parent);
+                self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &selected_id))
+                    .unwrap();
+                self.with_node_mut(new_parent, |np| np.children.push(selected_id)).unwrap();
+                self.with_node_mut(selected_id, |s| s.parent_id = new_parent).unwrap();
             } else {
                 let ptr = self.anchor(selected_id).unwrap();
                 trace!("move selected 2");
@@ -542,11 +541,14 @@ impl Screen {
             // 2. add to drawing_root's children
             // 3. update rooted_coords
             let old_parent = self.parent(selected_id).unwrap();
-            self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &selected_id));
+            self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &selected_id)).unwrap();
             let root = self.drawing_root;
-            self.with_node_mut(root, |dr| dr.children.push(selected_id));
-            self.with_node_mut(selected_id, |s| s.rooted_coords = to);
-
+            self.with_node_mut(root, |dr| dr.children.push(selected_id)).unwrap();
+            self.with_node_mut(selected_id, |s| {
+                    s.rooted_coords = to;
+                    s.parent_id = root;
+                })
+                .unwrap();
         }
     }
 
