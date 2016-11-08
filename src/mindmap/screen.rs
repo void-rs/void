@@ -287,7 +287,7 @@ impl Screen {
     fn try_select(&mut self, coords: Coords) -> Option<NodeID> {
         debug!("trying_select({:?}", coords);
         if self.dragging_from.is_none() {
-            if let Some(&node_id) = self.lookup.get(&coords) {
+            if let Some(&node_id) = self.lookup(coords) {
                 return self.with_node_mut(node_id, |mut node| {
                         debug!("selected node {} at {:?}", node_id, coords);
                         node.selected = true;
@@ -338,7 +338,7 @@ impl Screen {
         if let Some(selected_id) = self.last_selected.take() {
             let coords = self.drawn_at.remove(&selected_id);
             // remove ref from parent
-            let parent_id = self.with_node(selected_id, |n| n.parent_id).unwrap();
+            let parent_id = self.parent(selected_id).unwrap();
             debug!("deleting selected");
             self.with_node_mut(parent_id, |p| p.children.retain(|c| c != &selected_id));
 
@@ -421,6 +421,58 @@ impl Screen {
         }
     }
 
+    fn drawn_at(&self, node_id: NodeID) -> Option<&Coords> {
+        self.drawn_at.get(&node_id)
+    }
+
+    fn lookup(&self, coords: Coords) -> Option<&NodeID> {
+        self.lookup.get(&coords)
+    }
+
+    // returns true if a is a parent of b
+    fn is_parent(&self, a: NodeID, b: NodeID) -> bool {
+        let mut ptr = b;
+        loop {
+            debug!("loop in is_parent");
+            if ptr == a {
+                return true;
+            } else if ptr == 0 {
+                // we've reached the top, and 0 is not the parent (a)
+                // because we did not return in the last clause
+                return false;
+            }
+            ptr = self.parent(ptr).unwrap();
+        }
+    }
+
+    fn anchor(&self, node_id: NodeID) -> Option<NodeID> {
+        if let None = self.drawn_at(node_id) {
+            return None;
+        }
+
+        // find the "root" just below self.drawing_root to mod
+        // the rooted_coords for.
+        let mut ptr = node_id;
+        loop {
+            let id = self.parent(ptr).unwrap();
+            debug!("anchor loop id: {} ptr: {} selected: {} root: {}",
+                   id,
+                   ptr,
+                   node_id,
+                   self.drawing_root);
+            if id != self.drawing_root {
+                ptr = id;
+            } else {
+                break;
+            }
+        }
+        Some(ptr)
+    }
+
+    fn parent(&self, node_id: NodeID) -> Option<NodeID> {
+        self.with_node(node_id, |n| n.parent_id)
+    }
+
     // TODO after NodeID refactor add support for moving
     // children to other trees here. this will have the nice
     // effect of no longer having weird overlapping nodes
@@ -429,37 +481,49 @@ impl Screen {
         let dx = to.0 as i16 - from.0 as i16;
         let dy = to.1 as i16 - from.1 as i16;
 
-        if let Some(selected_id) = self.last_selected {
-            // find the "root" just below self.drawing_root to mod
-            // the rooted_coords for.
-            let mut ptr = selected_id;
-            loop {
-                let id = self.with_node(ptr, |node| node.parent_id).unwrap();
-                debug!("move selected 1, id: {} ptr: {} selected: {} root: {}",
-                       id,
-                       ptr,
-                       selected_id,
-                       self.drawing_root);
-                if id != self.drawing_root {
-                    ptr = id;
-                } else {
-                    break;
-                }
+        let selected_id = if let Some(selected_id) = self.last_selected {
+            selected_id
+        } else {
+            // nothing to drag, no work to do
+            return;
+        };
+        if let Some(&new_parent) = self.lookup(to) {
+            if !self.is_parent(selected_id, new_parent) {
+                // reparent selected to new_parent
+                // 1. remove from old parent's children
+                // 2. add to new parent's children
+                // 3. set parent_id pointer
+                let old_parent = self.parent(selected_id).unwrap();
+                self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &selected_id));
+                self.with_node_mut(new_parent, |np| np.children.push(selected_id));
+                self.with_node_mut(selected_id, |s| s.parent_id = new_parent);
+            } else {
+                let ptr = self.anchor(selected_id).unwrap();
+                debug!("move selected 2");
+                self.with_node_mut(ptr, |mut root| {
+                        let coords = root.rooted_coords;
+                        let nx = cmp::max(coords.0 as i16 + dx, 1) as u16;
+                        let ny = cmp::max(coords.1 as i16 + dy, 1) as u16;
+                        root.rooted_coords = (nx, ny);
+                    })
+                    .unwrap();
             }
+        } else {
+            // destination is not another node, so redraw selected at coords
+            // 1. remove from old parent's children
+            // 2. add to drawing_root's children
+            // 3. update rooted_coords
+            let old_parent = self.parent(selected_id).unwrap();
+            self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &selected_id));
+            let root = self.drawing_root;
+            self.with_node_mut(root, |dr| dr.children.push(selected_id));
+            self.with_node_mut(selected_id, |s| s.rooted_coords = to);
 
-            debug!("move selected 2");
-            self.with_node_mut(ptr, |mut root| {
-                    let coords = root.rooted_coords;
-                    let nx = cmp::max(coords.0 as i16 + dx, 1) as u16;
-                    let ny = cmp::max(coords.1 as i16 + dy, 1) as u16;
-                    root.rooted_coords = (nx, ny);
-                })
-                .unwrap();
         }
     }
 
     fn pop_focus(&mut self) {
-        let parent_id = self.with_node(self.drawing_root, |root| root.parent_id).unwrap();
+        let parent_id = self.parent(self.drawing_root).unwrap();
         self.drawing_root = parent_id;
         self.draw();
     }
@@ -481,7 +545,7 @@ impl Screen {
 
     fn select_up(&mut self) {
         if let Some(selected_id) = self.last_selected {
-            if let Some(&coords) = self.drawn_at.get(&selected_id) {
+            if let Some(&coords) = self.drawn_at(selected_id) {
                 // to prevent selection fall-off, click old coords
                 // if nothing is selected above this node
                 self.click_select((coords.0, coords.1 - 1))
@@ -492,7 +556,7 @@ impl Screen {
 
     fn select_down(&mut self) {
         if let Some(selected_id) = self.last_selected {
-            if let Some(&coords) = self.drawn_at.get(&selected_id) {
+            if let Some(&coords) = self.drawn_at(selected_id) {
                 // to prevent selection fall-off, click old coords
                 // if nothing is selected below this node
                 self.click_select((coords.0, coords.1 + 1))
@@ -661,7 +725,7 @@ impl Screen {
     }
 
     fn path_between_nodes(&self, start: NodeID, to: NodeID) -> Vec<Coords> {
-        // debug!("getting path between {} and {}", start, to);
+        debug!("getting path between {} and {}", start, to);
         let startbounds = self.bounds_for_lookup(start);
         let tobounds = self.bounds_for_lookup(to);
         if startbounds.is_none() || tobounds.is_none() {
@@ -691,9 +755,9 @@ impl Screen {
     // correctness depends on invariant of the leftmost element being the
     // value in self.drawn_at
     fn bounds_for_lookup(&self, node_id: NodeID) -> Option<(Coords, Coords)> {
-        if let Some(&left) = self.drawn_at.get(&node_id) {
+        if let Some(&left) = self.drawn_at(node_id) {
             let mut rx = left.0;
-            while let Some(&cursor) = self.lookup.get(&(rx + 1, left.1)) {
+            while let Some(&cursor) = self.lookup((rx + 1, left.1)) {
                 if cursor == node_id {
                     rx += 1;
                 } else {
