@@ -53,7 +53,7 @@ pub fn random_color() -> String {
                                    format!("{}", Fg(LightRed)),
                                    format!("{}", Fg(LightGreen)),
                                    format!("{}", Fg(LightYellow)),
-                                   format!("{}", Fg(LightBlue)),
+                                   // format!("{}", Fg(LightBlue)),
                                    format!("{}", Fg(LightMagenta)),
                                    format!("{}", Fg(LightCyan)),
                                    format!("{}", Fg(LightWhite))];
