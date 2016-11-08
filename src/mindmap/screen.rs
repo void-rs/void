@@ -22,6 +22,8 @@ pub struct Screen {
     pub nodes: BTreeMap<NodeID, Node>,
     pub arrows: Vec<(NodeID, NodeID)>,
     pub work_path: Option<String>,
+    pub show_logs: bool,
+    pub show_meta: bool,
     last_selected: Option<NodeID>,
     drawing_arrow: Option<NodeID>,
     dragging_from: Option<Coords>,
@@ -41,6 +43,8 @@ impl Default for Screen {
             nodes: BTreeMap::new(),
             lookup: BTreeMap::new(),
             drawn_at: BTreeMap::new(),
+            show_logs: false,
+            show_meta: true,
             drawing_root: 0,
             stdout: None,
             dragging_from: None,
@@ -86,6 +90,8 @@ impl Screen {
                     Char('\n') => self.toggle_collapsed(),
                     Char('\t') => self.create_child(),
                     Delete => self.delete_selected(),
+                    Ctrl('e') => self.exec_selected(),
+                    Ctrl('l') => self.toggle_show_logs(),
                     Ctrl('f') => self.toggle_hide_stricken(),
                     Ctrl('x') => self.toggle_stricken(),
                     Ctrl('a') => self.draw_arrow(),
@@ -96,6 +102,8 @@ impl Screen {
                     Ctrl('s') | Ctrl('w') => self.save(),
                     Up => self.select_up(),
                     Down => self.select_down(),
+                    Left => self.select_left(),
+                    Right => self.select_right(),
                     Backspace => self.backspace(),
                     Char(c) => {
                         if self.last_selected.is_some() {
@@ -126,6 +134,10 @@ impl Screen {
             e => warn!("Weird event {:?}", e),
         }
         true
+    }
+
+    fn exec_selected(&mut self) {
+        //
     }
 
     // recursively draw node and children, returning how many have been drawn
@@ -228,7 +240,7 @@ impl Screen {
         debug!("children of root({}): {:?}", self.drawing_root, anchors);
         for child_id in anchors {
             let coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
-            let hide_stricken = self.with_node(child_id, |n| n.hide_stricken).unwrap();
+            let hide_stricken = self.with_node(self.drawing_root, |n| n.hide_stricken).unwrap();
             self.draw_node(child_id, "".to_owned(), coords, false, hide_stricken);
         }
     }
@@ -258,20 +270,22 @@ impl Screen {
         self.draw_from_root();
 
         // print logs
-        if width > 4 && bottom > 7 {
-            let mut sep = format!("{}{}logs{}",
-                                  cursor::Goto(0, bottom - 6),
-                                  style::Invert,
-                                  style::Reset);
-            for _ in 0..width - 4 {
-                sep.push('█');
-            }
-            println!("{}", sep);
-            {
-                let logs = logging::read_logs();
-                for msg in logs.iter().rev() {
-                    let line_width = cmp::min(msg.len(), width as usize);
-                    println!("\r{}", msg[..line_width as usize].to_owned());
+        if self.show_logs {
+            if width > 4 && bottom > 7 {
+                let mut sep = format!("{}{}logs{}",
+                                      cursor::Goto(0, bottom - 6),
+                                      style::Invert,
+                                      style::Reset);
+                for _ in 0..width - 4 {
+                    sep.push('█');
+                }
+                println!("{}", sep);
+                {
+                    let logs = logging::read_logs();
+                    for msg in logs.iter().rev() {
+                        let line_width = cmp::min(msg.len(), width as usize);
+                        println!("\r{}", msg[..line_width as usize].to_owned());
+                    }
                 }
             }
         }
@@ -396,6 +410,10 @@ impl Screen {
             trace!("collapsed toggle");
             self.with_node_mut(selected_id, |node| node.toggle_collapsed());
         }
+    }
+
+    fn toggle_show_logs(&mut self) {
+        self.show_logs = !self.show_logs;
     }
 
     fn create_child(&mut self) {
@@ -545,7 +563,10 @@ impl Screen {
             let root = self.drawing_root;
             self.with_node_mut(root, |dr| dr.children.push(selected_id)).unwrap();
             self.with_node_mut(selected_id, |s| {
-                    s.rooted_coords = to;
+                    let coords = s.rooted_coords;
+                    let nx = cmp::max(coords.0 as i16 + dx, 1) as u16;
+                    let ny = cmp::max(coords.1 as i16 + dy, 1) as u16;
+                    s.rooted_coords = (nx, ny);
                     s.parent_id = root;
                 })
                 .unwrap();
@@ -574,25 +595,49 @@ impl Screen {
     }
 
     fn select_up(&mut self) {
-        if let Some(selected_id) = self.last_selected {
-            if let Some(&coords) = self.drawn_at(selected_id) {
-                // to prevent selection fall-off, click old coords
-                // if nothing is selected above this node
-                self.click_select((coords.0, coords.1 - 1))
-                    .or_else(|| self.click_select(coords));
-            }
-        }
+        let node_id = self.find_node(|cur, other| cur.1 > other.1);
+        self.select_node(node_id);
     }
 
     fn select_down(&mut self) {
-        if let Some(selected_id) = self.last_selected {
-            if let Some(&coords) = self.drawn_at(selected_id) {
-                // to prevent selection fall-off, click old coords
-                // if nothing is selected below this node
-                self.click_select((coords.0, coords.1 + 1))
-                    .or_else(|| self.click_select(coords));
-            }
-        }
+        let node_id = self.find_node(|cur, other| cur.1 < other.1);
+        self.select_node(node_id);
+    }
+
+    fn select_left(&mut self) {
+        let node_id = self.find_node(|cur, other| cur.0 > other.0);
+        self.select_node(node_id);
+    }
+
+    fn select_right(&mut self) {
+        let node_id = self.find_node(|cur, other| cur.0 < other.0);
+        self.select_node(node_id);
+    }
+
+    fn find_node<F>(&mut self, sort_fn: F) -> NodeID
+        where F: Fn(Coords, Coords) -> bool
+    {
+        let (width, bottom) = terminal_size().unwrap();
+        let selected_id = self.last_selected.unwrap_or(0);
+        let default_coords = (width / 2u16, bottom / 2u16);
+        let cur = self.drawn_at(selected_id).unwrap_or(&default_coords);
+        let (id, cost) = self.drawn_at
+            .iter()
+            .filter_map(|(&n, &nc)| {
+                if sort_fn(*cur, nc) {
+                    Some((n, cost(*cur, nc)))
+                } else {
+                    None
+                }
+            })
+            .fold((0, 0), |(acc_id, acc_cost), (id, cost)| {
+                if acc_cost == 0 || cost < acc_cost {
+                    (id, cost)
+                } else {
+                    (acc_id, acc_cost)
+                }
+            });
+        id
     }
 
     fn select_node(&mut self, node_id: NodeID) {
@@ -678,11 +723,6 @@ impl Screen {
                dest,
                width,
                bottom);
-        fn cost(c1: Coords, c2: Coords) -> u16 {
-            let xcost = cmp::max(c1.0, c2.0) - cmp::min(c1.0, c2.0);
-            let ycost = cmp::max(c1.1, c2.1) - cmp::min(c1.1, c2.1);
-            xcost + ycost
-        }
         fn perms(c: Coords) -> Vec<Coords> {
             vec![(c.0 + 1, c.1),
                  (cmp::max(c.0, 1) - 1, c.1),
@@ -825,4 +865,10 @@ impl Screen {
             None
         }
     }
+}
+
+fn cost(c1: Coords, c2: Coords) -> u16 {
+    let xcost = cmp::max(c1.0, c2.0) - cmp::min(c1.0, c2.0);
+    let ycost = cmp::max(c1.1, c2.1) - cmp::min(c1.1, c2.1);
+    xcost + ycost
 }
