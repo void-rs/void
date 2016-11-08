@@ -15,6 +15,11 @@ pub use meta::Meta;
 pub type Coords = (u16, u16);
 pub type NodeID = u64;
 
+pub enum Dir {
+    L,
+    R,
+}
+
 // useful for greedy path search
 pub struct PrioQueue<A: Ord, B> {
     inner: BTreeMap<A, Vec<B>>,

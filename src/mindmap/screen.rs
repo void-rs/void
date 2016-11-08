@@ -13,7 +13,7 @@ use termion::raw::{IntoRawMode, RawTerminal};
 use rand;
 use rand::distributions::{IndependentSample, Range};
 
-use mindmap::{NodeID, Coords, Node, serialization, random_color, PrioQueue};
+use mindmap::{NodeID, Coords, Node, serialization, random_color, PrioQueue, Dir};
 use logging;
 
 pub struct Screen {
@@ -278,8 +278,8 @@ impl Screen {
 
         // print arrows
         for &(ref from, ref to) in &self.arrows {
-            let path = self.path_between_nodes(*from, *to);
-            self.draw_path(path);
+            let (path, (d1, d2)) = self.path_between_nodes(*from, *to);
+            self.draw_path(path, d1, d2);
         }
 
         print!("{}", cursor::Hide);
@@ -731,15 +731,21 @@ impl Screen {
         path
     }
 
-    fn draw_path(&self, path: Vec<Coords>) {
+    fn draw_path(&self, path: Vec<Coords>, start_dir: Dir, dest_dir: Dir) {
         print!("{}", random_color());
         if path.len() == 1 {
             print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
         } else if path.len() > 1 {
             let first = if path[1].1 > path[0].1 {
-                '┐'
+                match start_dir {
+                    Dir::R => '┐',
+                    Dir::L => '┌',
+                }
             } else if path[1].1 < path[0].1 {
-                '┘'
+                match start_dir {
+                    Dir::R => '┘',
+                    Dir::L => '└',
+                }
             } else {
                 '─'
             };
@@ -764,40 +770,38 @@ impl Screen {
                 print!("{}{}", cursor::Goto(this.0, this.1), c)
             }
             let (end_x, end_y) = (path[path.len() - 1].0, path[path.len() - 1].1);
-            let end_char = if path[path.len() - 2].0 < end_x {
-                '>'
-            } else {
-                '<'
+            let end_char = match dest_dir {
+                Dir::L => '>',
+                Dir::R => '<',
             };
             print!("{}{}", cursor::Goto(end_x, end_y), end_char);
         }
         print!("{}", color::Fg(color::Reset));
     }
 
-    fn path_between_nodes(&self, start: NodeID, to: NodeID) -> Vec<Coords> {
+    fn path_between_nodes(&self, start: NodeID, to: NodeID) -> (Vec<Coords>, (Dir, Dir)) {
         trace!("getting path between {} and {}", start, to);
         let startbounds = self.bounds_for_lookup(start);
         let tobounds = self.bounds_for_lookup(to);
         if startbounds.is_none() || tobounds.is_none() {
             trace!("path_between_nodes exiting early, point not drawn");
-            return vec![];
+            return (vec![], (Dir::R, Dir::R));
         }
-        let (_, s2) = startbounds.unwrap();
-        let (_, t2) = tobounds.unwrap();
+        let (s1, s2) = startbounds.unwrap();
+        let (t1, t2) = tobounds.unwrap();
 
-        let init = self.path(s2, t2);
+        let init = (self.path(s2, t2), (Dir::R, Dir::R));
         let paths = vec![
-            init.clone()
-            //self.path(s1, t2),
-            //self.path(s2, t1),
-            //self.path(s1, t1),
+            (self.path(s1, t2), (Dir::L, Dir::R)),
+            (self.path(s2, t1), (Dir::R, Dir::L)),
+            (self.path(s1, t1), (Dir::L, Dir::L)),
         ];
         paths.into_iter()
-            .fold(init, |short, path| {
-                if path.len() < short.len() {
-                    path
+            .fold(init, |(spath, sdirs), (path, dirs)| {
+                if path.len() < spath.len() {
+                    (path, dirs)
                 } else {
-                    short
+                    (spath, sdirs)
                 }
             })
     }
