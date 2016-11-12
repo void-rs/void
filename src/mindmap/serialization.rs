@@ -96,7 +96,7 @@ fn deserialize_node(node_pb: &pb::Node) -> Node {
 }
 
 pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufError> {
-    let screen_pb: pb::Screen = try!(protobuf::parse_from_bytes(&*data));
+    let screen_pb: pb::Screen = protobuf::parse_from_bytes(&*data)?;
     let mut screen = Screen::default();
     screen.max_id = screen_pb.get_max_id();
     screen.nodes = screen_pb.get_nodes()

@@ -11,9 +11,12 @@ use termion::event::{Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
+use time;
+
 use rand;
 use rand::distributions::{IndependentSample, Range};
 
+use plot::plot_sparkline;
 use mindmap::{NodeID, Coords, Node, serialization, random_color, PrioQueue, Dir};
 use logging;
 
@@ -139,18 +142,26 @@ impl Screen {
 
     fn exec_selected(&mut self) {
         if let Some(selected_id) = self.last_selected {
-            let cmd = self.with_node(selected_id, |n| n.content.clone())
+            let content = self.with_node(selected_id, |n| n.content.clone())
                 .unwrap();
-            debug!("executing command: {}", cmd);
-            let mut split: Vec<&str> = cmd.split_whitespace().collect();
+            debug!("executing command: {}", content);
+            let mut split: Vec<&str> = content.split_whitespace().collect();
             if split.is_empty() {
                 debug!("cannot execute empty command");
             }
             let head = split.remove(0);
-            let output = Command::new(head)
-                .args(&split[..])
-                .output()
-                .expect(&*format!("command failed to start: {}", cmd));
+
+            let output = if head.starts_with("http") {
+                Command::new("firefox")
+                    .arg(head)
+                    .output()
+                    .expect(&*format!("command failed to start: {}", content))
+            } else {
+                Command::new(head)
+                    .args(&split[..])
+                    .output()
+                    .expect(&*format!("command failed to start: {}", content))
+            };
             debug!("status: {}", output.status);
             debug!("stdout: {}", String::from_utf8_lossy(&output.stdout));
             debug!("stderr: {}", String::from_utf8_lossy(&output.stderr));
@@ -245,9 +256,19 @@ impl Screen {
         let between_y = Range::new(2, bottom - 7);
         let mut rng = rand::thread_rng();
         for node_id in nodes {
-            let x = between_x.ind_sample(&mut rng);
-            let y = between_y.ind_sample(&mut rng);
+            let (mut x, mut y) = (0, 0);
+            for _ in 1..20 {
+                // try 20 times to place in non-overlapping way
+                x = between_x.ind_sample(&mut rng);
+                y = between_y.ind_sample(&mut rng);
+                if self.lookup((x, y)).is_none() {
+                    // seems to be empty
+                    // TODO test this for children
+                    break;
+                }
+            }
             self.with_node_mut(node_id, |n| n.rooted_coords = (x, y)).unwrap();
+            self.draw();
         }
     }
 
@@ -265,31 +286,91 @@ impl Screen {
         }
     }
 
-    fn draw(&mut self) {
-        print!("{}", clear::All);
+    fn recursive_child_filter_map<F, B>(&self, node_id: NodeID, mut filter_map: &mut F) -> Vec<B>
+        where F: FnMut(&Node) -> Option<B>
+    {
+        let mut ret = vec![];
 
-        let (width, bottom) = terminal_size().unwrap();
+        if let Some(node) = self.nodes.get(&node_id) {
+            if let Some(b) = filter_map(node) {
+                ret.push(b);
+            }
+            for &child_id in &node.children {
+                ret.append(&mut self.recursive_child_filter_map(child_id, filter_map));
+            }
+        } else {
+            debug!("queried for node {} but it is not in self.nodes", node_id);
+        }
 
-        // print header
-        let header_text = self.with_node(self.drawing_root, |node| node.content.clone())
+        ret
+    }
+
+    fn print_header(&mut self) {
+        let mut header_text = self.with_node(self.drawing_root, |node| node.content.clone())
             .unwrap();
 
+        let now = time::get_time().sec as u64;
+        let day_in_sec = 60 * 60 * 24;
+        let last_week = now - (day_in_sec * 7);
+        let tasks_finished_in_last_week = self.recursive_child_filter_map(self.drawing_root,
+                                                                          &mut |n: &Node| {
+            let f = n.meta.finish_time;
+            if let Some(t) = f {
+                if t > last_week {
+                    Some(t)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        });
+        let mut counts = BTreeMap::new();
+        for d in 0..7 {
+            let t = now - (d * day_in_sec);
+            let normalized_t = t / day_in_sec * day_in_sec;
+            counts.insert(normalized_t, 0);
+        }
+        for t in &tasks_finished_in_last_week {
+            let normalized_t = t / day_in_sec * day_in_sec;
+            let cur = counts.remove(&normalized_t).unwrap_or(0);
+            counts.insert(normalized_t, cur + 1);
+        }
+        let today_normalized = now / day_in_sec * day_in_sec;
+        let counts_clone = counts.clone();
+        let finished_today = counts_clone.get(&today_normalized).unwrap();
+        let week_line = counts.into_iter().map(|(_, v)| v).collect();
+        let plot = plot_sparkline(week_line);
+        let plot_line = format!("│{}│({} today)", plot, finished_today);
+        header_text.push_str(&*plot_line);
+
+
+        let (width, bottom) = terminal_size().unwrap();
         if width > header_text.len() as u16 && bottom > 1 {
             let mut sep = format!("{}{}{}{}",
                                   cursor::Goto(0, 1),
                                   style::Invert,
                                   header_text,
                                   style::Reset);
-            for _ in 0..width as usize - header_text.len() {
+            for _ in 0..(width as usize - header_text.len()) {
                 sep.push('█');
             }
             println!("{}", sep);
         }
 
+
+    }
+
+    fn draw(&mut self) {
+        print!("{}", clear::All);
+        // print header
+        self.print_header();
+
         // print visible nodes
         self.draw_from_root();
 
         // print logs
+        let (width, bottom) = terminal_size().unwrap();
         if self.show_logs && width > 4 && bottom > 7 {
             let mut sep = format!("{}{}logs{}",
                                   cursor::Goto(0, bottom - 6),
@@ -518,7 +599,7 @@ impl Screen {
         // the rooted_coords for.
         let mut ptr = node_id;
         loop {
-            let id = try!(self.parent(ptr));
+            let id = self.parent(ptr)?;
             trace!("anchor loop id: {} ptr: {} selected: {} root: {}",
                    id,
                    ptr,

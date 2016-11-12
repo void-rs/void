@@ -45,7 +45,7 @@ fn main() {
     let saved_screen: Option<Screen> = parse_workfile_path()
         .and_then(|path| {
             let mut data = vec![];
-            let mut f = try!(File::open(path));
+            let mut f = File::open(path)?;
             f.read_to_end(&mut data).unwrap();
             Ok(data)
         })
