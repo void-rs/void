@@ -1,9 +1,10 @@
 use std;
+use std::env;
 use std::cmp;
-use std::fs::{File, rename, remove_file};
+use std::fs::{File, rename, remove_file, OpenOptions};
 use std::collections::BTreeMap;
-use std::process::Command;
-use std::io::{Write, Stdout, stdout, stdin};
+use std::process;
+use std::io::{Write, Read, Seek, SeekFrom, Stdout, stdout, stdin};
 
 use termion::{terminal_size, cursor, style, clear};
 use termion::color;
@@ -151,22 +152,76 @@ impl Screen {
             }
             let head = split.remove(0);
 
+            if head.starts_with("txt:") {
+                self.exec_text_editor(selected_id);
+                return;
+            }
+
             let output = if head.starts_with("http") {
-                Command::new("firefox")
+                process::Command::new("firefox")
                     .arg(head)
                     .output()
                     .expect(&*format!("command failed to start: {}", content))
             } else {
-                Command::new(head)
+                process::Command::new(head)
                     .args(&split[..])
                     .output()
                     .expect(&*format!("command failed to start: {}", content))
             };
-            debug!("status: {}", output.status);
-            debug!("stdout: {}", String::from_utf8_lossy(&output.stdout));
-            debug!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-
+            log_cmd_output(output);
         }
+    }
+
+    fn exec_text_editor(&mut self, node_id: NodeID) {
+        let text = self.with_node(node_id, |n| n.free_text.clone())
+            .unwrap()
+            .unwrap_or("".to_owned());
+
+        // TODO add PID to path
+        let path = "/tmp/climate_buffer.tmp";
+        debug!("trying to open {} in editor", path);
+
+        // remove old tmp file
+        if let Ok(_) = remove_file(&path) {
+            trace!("removed stale tmp file");
+        }
+
+        // create new tmp file
+        let mut f = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .unwrap();
+        f.write_all(text.as_bytes()).unwrap();
+        f.seek(SeekFrom::Start(0));
+
+        // have raw mode destructor run
+        self.cleanup();
+
+        // open text editor
+        let ed = env::var("EDITOR").unwrap_or("vim".to_owned());
+        process::Command::new(ed)
+            .arg(path)
+            .spawn()
+            .expect(&*format!("failed to open text editor"))
+            .wait();
+
+        // read new data
+        let mut data = vec![];
+        {
+            let mut f = File::open(path).unwrap();
+            f.read_to_end(&mut data).unwrap();
+            // f closed as it slides out of scope
+        }
+        let new_text = String::from_utf8(data).unwrap();
+
+        remove_file(&path).unwrap();
+
+        // set node's saved text
+        self.with_node_mut(node_id, |n| n.free_text = Some(new_text.clone())).unwrap();
+
+        // restore raw mode
+        self.start_raw_mode();
     }
 
     // recursively draw node and children, returning how many have been drawn
@@ -486,9 +541,7 @@ impl Screen {
     }
 
     pub fn run(&mut self) {
-        if self.stdout.is_none() {
-            self.stdout = Some(MouseTerminal::from(stdout().into_raw_mode().unwrap()));
-        }
+        self.start_raw_mode();
         self.draw();
         let stdin = stdin();
         for c in stdin.events() {
@@ -502,7 +555,8 @@ impl Screen {
             }
 
             if should_break {
-                self.cleanup_and_save();
+                self.cleanup();
+                self.save();
                 break;
             }
         }
@@ -782,12 +836,17 @@ impl Screen {
         }
     }
 
-    fn cleanup_and_save(&mut self) {
+    fn cleanup(&mut self) {
         let (_, bottom) = terminal_size().unwrap();
         print!("{}", cursor::Goto(0, bottom));
         println!("{}", cursor::Show);
         self.stdout.take().unwrap().flush().unwrap();
-        self.save();
+    }
+
+    fn start_raw_mode(&mut self) {
+        if self.stdout.is_none() {
+            self.stdout = Some(MouseTerminal::from(stdout().into_raw_mode().unwrap()));
+        }
     }
 
     fn occupied(&self, coords: Coords) -> bool {
@@ -974,4 +1033,10 @@ fn cost(c1: Coords, c2: Coords) -> u16 {
     let xcost = cmp::max(c1.0, c2.0) - cmp::min(c1.0, c2.0);
     let ycost = cmp::max(c1.1, c2.1) - cmp::min(c1.1, c2.1);
     xcost + ycost
+}
+
+fn log_cmd_output(output: process::Output) {
+    debug!("status: {}", output.status);
+    debug!("stdout: {}", String::from_utf8_lossy(&output.stdout));
+    debug!("stderr: {}", String::from_utf8_lossy(&output.stderr));
 }

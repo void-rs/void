@@ -32,6 +32,7 @@ message Node {
   required uint32 y = 9;
   required bool selected = 10;
   required uint64 parent_id = 11;
+  optional string free_text = 12;
 }
 
 message Arrow {

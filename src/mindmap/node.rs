@@ -12,6 +12,7 @@ pub struct Node {
     pub stricken: bool,
     pub hide_stricken: bool,
     pub meta: Meta,
+    pub free_text: Option<String>,
 }
 
 impl Default for Node {
@@ -27,6 +28,7 @@ impl Default for Node {
             stricken: false,
             hide_stricken: false,
             meta: Meta::default(),
+            free_text: None,
         }
     }
 }

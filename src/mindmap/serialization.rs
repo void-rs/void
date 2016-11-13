@@ -59,6 +59,9 @@ fn serialize_node(node: &Node) -> pb::Node {
     node_pb.set_x(node.rooted_coords.0 as u32);
     node_pb.set_y(node.rooted_coords.1 as u32);
     node_pb.set_meta(serialize_meta(&node.meta));
+    if let Some(ref free_text) = node.free_text {
+        node_pb.set_free_text(free_text.to_owned());
+    }
     node_pb
 }
 
@@ -92,6 +95,11 @@ fn deserialize_node(node_pb: &pb::Node) -> Node {
         hide_stricken: node_pb.get_hide_stricken(),
         meta: deserialize_meta(node_pb.get_meta()),
         id: node_pb.get_id(),
+        free_text: if node_pb.has_free_text() {
+            Some(node_pb.get_free_text().to_owned())
+        } else {
+            None
+        },
     }
 }
 
