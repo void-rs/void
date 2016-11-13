@@ -1,3 +1,9 @@
 *.swp
 target
 Cargo.lock
+tags
+callgrind*
+*db
+*txt
+*bak
+*log
