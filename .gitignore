@@ -1,3 +1,4 @@
+flamegraph.svg
 *.swp
 target
 Cargo.lock
