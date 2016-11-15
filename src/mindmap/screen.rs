@@ -731,13 +731,11 @@ impl Screen {
     fn pop_focus(&mut self) {
         let parent_id = self.parent(self.drawing_root).unwrap();
         self.drawing_root = parent_id;
-        self.draw();
     }
 
     fn drill_down(&mut self) {
         if let Some(selected_id) = self.last_selected {
             self.drawing_root = selected_id;
-            self.draw();
         }
     }
 
