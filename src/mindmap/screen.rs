@@ -315,19 +315,18 @@ impl Screen {
         let between_y = Range::new(2, bottom - 7);
         let mut rng = rand::thread_rng();
         for node_id in nodes {
-            let (mut x, mut y) = (0, 0);
+            let (mut x, mut y) = (1, 2);
             for _ in 1..20 {
                 // try 20 times to place in non-overlapping way
-                x = between_x.ind_sample(&mut rng);
-                y = between_y.ind_sample(&mut rng);
                 if self.lookup((x, y)).is_none() {
                     // seems to be empty
                     // TODO test this for children
                     break;
                 }
+                x = between_x.ind_sample(&mut rng);
+                y = between_y.ind_sample(&mut rng);
             }
             self.with_node_mut(node_id, |n| n.rooted_coords = (x, y)).unwrap();
-            self.draw();
         }
     }
 

@@ -2,7 +2,8 @@ mod serialization;
 mod screen;
 mod node;
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::hash::Hash;
 
 use rand::{self, Rng};
 
@@ -21,17 +22,17 @@ pub enum Dir {
 }
 
 // useful for greedy path search
-pub struct PrioQueue<A: Ord, B> {
-    inner: BTreeMap<A, Vec<B>>,
+pub struct PrioQueue<A: Hash + Eq, B> {
+    inner: HashMap<A, Vec<B>>,
 }
 
-impl<A: Ord, B> Default for PrioQueue<A, B> {
+impl<A: Hash + Eq, B> Default for PrioQueue<A, B> {
     fn default() -> PrioQueue<A, B> {
-        PrioQueue { inner: BTreeMap::new() }
+        PrioQueue { inner: HashMap::new() }
     }
 }
 
-impl<A: Ord + Clone, B: Clone> PrioQueue<A, B> {
+impl<A: Hash + Eq + Clone, B: Clone> PrioQueue<A, B> {
     fn insert(&mut self, k: A, v: B) {
         let mut cur: Vec<B> = self.inner.remove(&k).unwrap_or_else(|| vec![]);
         cur.push(v);
