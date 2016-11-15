@@ -25,7 +25,6 @@ pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
 }
 
 fn serialize_meta(meta: &Meta) -> pb::Meta {
-    // TODO do this forreal
     let mut gps_pb = pb::Gps::default();
     gps_pb.set_lat(meta.gps.0);
     gps_pb.set_lon(meta.gps.1);
