@@ -2,7 +2,7 @@ use std;
 use std::env;
 use std::cmp;
 use std::fs::{File, rename, remove_file, OpenOptions};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, BinaryHeap};
 use std::process;
 use std::io::{Write, Read, Seek, SeekFrom, Stdout, stdout, stdin};
 
@@ -18,7 +18,7 @@ use rand;
 use rand::distributions::{IndependentSample, Range};
 
 use plot::plot_sparkline;
-use mindmap::{NodeID, Coords, Node, serialization, random_color, PrioQueue, Dir};
+use mindmap::{NodeID, Coords, Node, serialization, random_color, Dir};
 use logging;
 
 pub struct Screen {
@@ -203,8 +203,9 @@ impl Screen {
         process::Command::new(ed)
             .arg(path)
             .spawn()
-            .expect(&*format!("failed to open text editor"))
-            .wait();
+            .expect("failed to open text editor")
+            .wait()
+            .unwrap();
 
         // read new data
         let mut data = vec![];
@@ -238,7 +239,7 @@ impl Screen {
         if node.stricken && hide_stricken {
             return 0;
         }
-        let (width, bottom) = terminal_size().unwrap();
+        let (_, bottom) = terminal_size().unwrap();
         if bottom <= y {
             return 0;
         }
@@ -327,7 +328,6 @@ impl Screen {
                 }
             }
             self.with_node_mut(node_id, |n| n.rooted_coords = (x, y)).unwrap();
-            self.draw();
         }
     }
 
@@ -552,9 +552,9 @@ impl Screen {
             self.draw();
 
             // trace!("nodes:");
-            for (id, node) in &self.nodes {
-                // trace!("{} -> {:?} -> {}", id, node.children, node.parent_id);
-            }
+            // for (id, node) in &self.nodes {
+            // trace!("{} -> {:?} -> {}", id, node.children, node.parent_id);
+            // }
 
             if should_break {
                 self.cleanup();
@@ -888,7 +888,7 @@ impl Screen {
         }
         // maps from location to previous location
         let mut visited: HashMap<Coords, Coords> = HashMap::new();
-        let mut pq = PrioQueue::default();
+        let mut pq = BinaryHeap::new();
 
         // TODO start with dest, go backwards, that way we don't need to reverse
         // draw tree greedily
@@ -899,13 +899,13 @@ impl Screen {
                 if (!(neighbor.0 >= width) && !(neighbor.1 >= bottom) &&
                     !self.occupied(neighbor) || neighbor == dest) &&
                    !visited.contains_key(&neighbor) {
-                    let c = cost(neighbor, dest);
-                    pq.insert(c, neighbor);
+                    let c = std::u16::MAX - cost(neighbor, dest);
+                    pq.push((c, neighbor));
                     visited.insert(neighbor, cursor);
                 }
             }
-            if let Some(c) = pq.pop() {
-                cursor = c;
+            if let Some((_, coords)) = pq.pop() {
+                cursor = coords;
             } else {
                 // trace!("no path, possible node overlap");
                 return vec![];
