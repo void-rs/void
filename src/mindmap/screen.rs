@@ -561,7 +561,7 @@ impl Screen {
 
     fn drill_down(&mut self) {
         trace!("drill_down()");
-        if let Some(selected_id) = self.last_selected.take() {
+        if let Some(selected_id) = self.unselect() {
             self.drawing_root = selected_id;
         }
     }
@@ -948,7 +948,7 @@ impl Screen {
                                   style::Invert,
                                   header_text,
                                   style::Reset);
-            for _ in 0..(width as usize - header_text.len()) {
+            for _ in 0..(width as usize - header_text.len() + 10) {
                 sep.push('█');
             }
             println!("{}", sep);
@@ -1064,4 +1064,22 @@ fn log_cmd_output(output: process::Output) {
     debug!("status: {}", output.status);
     debug!("stdout: {}", String::from_utf8_lossy(&output.stdout));
     debug!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+}
+
+fn start_screensaver() {
+    std::process::Command::new("xscreensaver-command")
+        .arg("-activate")
+        .spawn()
+        .expect("command failed to start");
+}
+
+fn xmessage(msg: &str) {
+    std::process::Command::new("xmessage")
+        .arg(msg)
+        .spawn()
+        .expect("command failed to start");
+}
+
+fn play_bell() {
+    print!("\x07");
 }
