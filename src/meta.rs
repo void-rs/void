@@ -1,11 +1,10 @@
-use time;
-
 use std::io::{self, Read};
 use std::collections::HashMap;
 use std::num;
 
 use hyper;
 use hyper::client::Client;
+use time;
 
 #[derive(Debug, Clone)]
 pub struct Meta {

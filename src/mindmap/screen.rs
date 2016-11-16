@@ -2,24 +2,19 @@ use std;
 use std::env;
 use std::cmp;
 use std::fs::{File, rename, remove_file, OpenOptions};
-use std::collections::{BTreeMap, HashMap, BinaryHeap};
+use std::collections::HashMap;
 use std::process;
 use std::io::{Write, Read, Seek, SeekFrom, Stdout, stdout, stdin};
 
-use termion::{terminal_size, cursor, style, clear};
-use termion::color;
+use termion::{terminal_size, cursor};
 use termion::event::{Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
-use time;
-
 use rand;
 use rand::distributions::{IndependentSample, Range};
 
-use plot::plot_sparkline;
-use mindmap::{NodeID, Coords, Node, serialization, random_color, Dir};
-use logging;
+use mindmap::{cost, NodeID, Coords, Node, serialization, Renderer};
 
 pub struct Screen {
     pub max_id: u64,
@@ -29,11 +24,11 @@ pub struct Screen {
     pub work_path: Option<String>,
     pub show_logs: bool,
     pub show_meta: bool,
-    last_selected: Option<NodeID>,
-    drawing_arrow: Option<NodeID>,
+    pub last_selected: Option<NodeID>,
+    pub drawing_arrow: Option<NodeID>,
     dragging_from: Option<Coords>,
-    lookup: HashMap<Coords, NodeID>,
-    drawn_at: HashMap<NodeID, Coords>,
+    pub lookup: HashMap<Coords, NodeID>,
+    pub drawn_at: HashMap<NodeID, Coords>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
 }
 
@@ -71,7 +66,7 @@ impl Screen {
         id
     }
 
-    fn with_node<B, F>(&self, k: NodeID, mut f: F) -> Option<B>
+    pub fn with_node<B, F>(&self, k: NodeID, mut f: F) -> Option<B>
         where F: FnMut(&Node) -> B
     {
         self.nodes.get(&k).map(|node| f(node))
@@ -99,7 +94,7 @@ impl Screen {
                     Ctrl('l') => self.toggle_show_logs(),
                     Ctrl('f') => self.toggle_hide_stricken(),
                     Ctrl('x') => self.toggle_stricken(),
-                    Ctrl('a') => self.draw_arrow(),
+                    Ctrl('a') => self.add_or_remove_arrow(),
                     Ctrl('o') => self.drill_down(),
                     Ctrl('t') => self.pop_focus(),
                     Ctrl('q') => self.auto_arrange(),
@@ -114,13 +109,14 @@ impl Screen {
                         if self.last_selected.is_some() {
                             self.append(c);
                         } else {
-                            // match c {
-                            // 'h' => self.help_screen(),
-                            // 'l' => self.log_screen(),
-                            // 'm' => self.map_screen(),
-                            // 't' => self.task_screen(),
-                            // 'g' => self.graph_screen(),
-                            // }
+                            match c {
+                                // 'h' => self.help_screen(),
+                                'l' => self.toggle_show_logs(),
+                                // 'm' => self.map_screen(),
+                                // 't' => self.task_screen(),
+                                // 'g' => self.graph_screen(),
+                                _ => warn!("Weird event {:?}", evt),
+                            }
                         }
                     }
                     _ => warn!("Weird event {:?}", evt),
@@ -145,10 +141,10 @@ impl Screen {
         if let Some(selected_id) = self.last_selected {
             let content = self.with_node(selected_id, |n| n.content.clone())
                 .unwrap();
-            debug!("executing command: {}", content);
+            info!("executing command: {}", content);
             let mut split: Vec<&str> = content.split_whitespace().collect();
             if split.is_empty() {
-                debug!("cannot execute empty command");
+                error!("cannot execute empty command");
             }
             let head = split.remove(0);
 
@@ -183,7 +179,7 @@ impl Screen {
 
         // remove old tmp file
         if let Ok(_) = remove_file(&path) {
-            // trace!("removed stale tmp file");
+            warn!("removed stale tmp file");
         }
 
         // create new tmp file
@@ -225,91 +221,8 @@ impl Screen {
         self.start_raw_mode();
     }
 
-    // recursively draw node and children, returning how many have been drawn
-    fn draw_node(&mut self,
-                 node_id: NodeID,
-                 prefix: String,
-                 coords: Coords,
-                 last: bool,
-                 hide_stricken: bool)
-                 -> usize {
-        // trace!("drawing node {}", node_id);
-        let (x, y) = coords;
-        let node = self.with_node(node_id, |n| n.clone()).unwrap();
-        if node.stricken && hide_stricken {
-            return 0;
-        }
-        let (_, bottom) = terminal_size().unwrap();
-        if bottom <= y {
-            return 0;
-        }
-        print!("{}", cursor::Goto(x, y));
-        if node.selected {
-            print!("{}", style::Invert);
-        }
-        print!("{}", prefix);
-        if prefix != "" {
-            // only anchor will have blank prefix
-            if last {
-                print!("└─");
-            } else {
-                print!("├─");
-            }
-        }
-        if node.stricken {
-            print!("☠");
-        } else if node.collapsed {
-            print!("⊞");
-        } else if node.hide_stricken {
-            print!("⚔");
-        } else if prefix == "" {
-            print!("⚒");
-        } else {
-            print!(" ");
-        }
-        if prefix == "" {
-            print!(" ");
-        }
-
-        print!("{}", node.content);
-
-        println!("{}", style::Reset);
-        self.drawn_at.insert(node_id, (x, y));
-        for x in (x..(x + 3 + prefix.len() as u16 + node.content.len() as u16)).rev() {
-            // trace!("inserting {:?} at {:?}", node_id, (x, y));
-            self.lookup.insert((x, y), node_id);
-        }
-        let mut prefix = prefix;
-        if last {
-            prefix.push_str("   ");
-        } else if prefix == "" {
-            prefix.push_str("  ");
-        } else {
-            prefix.push_str("│  ");
-        }
-        let prefix = prefix;
-
-        let mut drawn = 1;
-        if !node.collapsed {
-            let n_children = node.children.len();
-            for (n, &child) in node.children
-                .iter()
-                .enumerate() {
-                let last = n + 1 == n_children;
-                let child_coords = (x, y + drawn as u16);
-                let child_drew = self.draw_node(child,
-                                                prefix.clone(),
-                                                child_coords,
-                                                last,
-                                                node.hide_stricken);
-                drawn += child_drew;
-            }
-        }
-        drawn
-    }
-
     fn auto_arrange(&mut self) {
-        // trace!("auto_arrange");
+        trace!("auto_arrange");
         let nodes = self.with_node(self.drawing_root, |n| n.children.clone()).unwrap();
         let (width, bottom) = terminal_size().unwrap();
         let between_x = Range::new(1, width);
@@ -331,21 +244,13 @@ impl Screen {
         }
     }
 
-    fn draw_from_root(&mut self) {
-        self.lookup.clear();
-        self.drawn_at.clear();
-        let anchors = self.with_node(self.drawing_root, |n| n.children.clone()).unwrap();
-        // trace!("drawing children of root({}): {:?}", self.drawing_root, anchors);
-        for child_id in anchors {
-            let coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
-            let hide_stricken = self.with_node(self.drawing_root, |n| n.hide_stricken).unwrap();
-            self.draw_node(child_id, "".to_owned(), coords, false, hide_stricken);
-        }
-    }
-
-    fn recursive_child_filter_map<F, B>(&self, node_id: NodeID, mut filter_map: &mut F) -> Vec<B>
+    pub fn recursive_child_filter_map<F, B>(&self,
+                                            node_id: NodeID,
+                                            mut filter_map: &mut F)
+                                            -> Vec<B>
         where F: FnMut(&Node) -> Option<B>
     {
+        trace!("recursive_child_filter_map({}, F...)", node_id);
         let mut ret = vec![];
 
         if let Some(node) = self.nodes.get(&node_id) {
@@ -362,111 +267,18 @@ impl Screen {
         ret
     }
 
-    fn print_header(&mut self) {
-        let mut header_text = self.with_node(self.drawing_root, |node| node.content.clone())
-            .unwrap();
-
-        let now = time::get_time().sec as u64;
-        let day_in_sec = 60 * 60 * 24;
-        let last_week = now - (day_in_sec * 7);
-        let tasks_finished_in_last_week = self.recursive_child_filter_map(self.drawing_root,
-                                                                          &mut |n: &Node| {
-            let f = n.meta.finish_time;
-            if let Some(t) = f {
-                if t > last_week {
-                    Some(t)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        });
-        let mut counts = BTreeMap::new();
-        for d in 0..7 {
-            let t = now - (d * day_in_sec);
-            let normalized_t = t / day_in_sec * day_in_sec;
-            counts.insert(normalized_t, 0);
-        }
-        for t in &tasks_finished_in_last_week {
-            let normalized_t = t / day_in_sec * day_in_sec;
-            let cur = counts.remove(&normalized_t).unwrap_or(0);
-            counts.insert(normalized_t, cur + 1);
-        }
-        let today_normalized = now / day_in_sec * day_in_sec;
-        let counts_clone = counts.clone();
-        let finished_today = counts_clone.get(&today_normalized).unwrap();
-        let week_line = counts.into_iter().map(|(_, v)| v).collect();
-        let plot = plot_sparkline(week_line);
-        let plot_line = format!("│{}│({} today)", plot, finished_today);
-        header_text.push_str(&*plot_line);
-
-
-        let (width, bottom) = terminal_size().unwrap();
-        if width > header_text.len() as u16 && bottom > 1 {
-            let mut sep = format!("{}{}{}{}",
-                                  cursor::Goto(0, 1),
-                                  style::Invert,
-                                  header_text,
-                                  style::Reset);
-            for _ in 0..(width as usize - header_text.len()) {
-                sep.push('█');
-            }
-            println!("{}", sep);
-        }
-
-
-    }
-
-    fn draw(&mut self) {
-        print!("{}", clear::All);
-        // print header
-        self.print_header();
-
-        // print visible nodes
-        self.draw_from_root();
-
-        // print logs
-        let (width, bottom) = terminal_size().unwrap();
-        if self.show_logs && width > 4 && bottom > 7 {
-            let mut sep = format!("{}{}logs{}",
-                                  cursor::Goto(0, bottom - 6),
-                                  style::Invert,
-                                  style::Reset);
-            for _ in 0..width - 4 {
-                sep.push('█');
-            }
-            println!("{}", sep);
-            {
-                let logs = logging::read_logs();
-                for msg in logs.iter().rev() {
-                    let line_width = cmp::min(msg.len(), width as usize);
-                    println!("\r{}", msg[..line_width as usize].to_owned());
-                }
-            }
-        }
-
-        // print arrows
-        for &(ref from, ref to) in &self.arrows {
-            let (path, (d1, d2)) = self.path_between_nodes(*from, *to);
-            self.draw_path(path, d1, d2);
-        }
-
-        print!("{}", cursor::Hide);
-        self.flush();
-    }
-
-    fn flush(&mut self) {
+    pub fn flush(&mut self) {
+        trace!("flush()");
         if let Some(mut s) = self.stdout.take() {
             s.flush().unwrap();
             self.stdout = Some(s);
         }
     }
 
-    fn pop_selected(&mut self) -> Option<NodeID> {
+    fn unselect(&mut self) -> Option<NodeID> {
+        trace!("unselect()");
         if self.dragging_from.is_none() {
             if let Some(selected_id) = self.last_selected.take() {
-                // trace!("popping selected");
                 self.with_node_mut(selected_id, |mut node| node.selected = false)
                     .map(|_| selected_id)
             } else {
@@ -478,11 +290,11 @@ impl Screen {
     }
 
     fn try_select(&mut self, coords: Coords) -> Option<NodeID> {
-        // trace!("trying_select({:?}", coords);
+        trace!("try_select({:?})", coords);
         if self.dragging_from.is_none() {
             if let Some(&node_id) = self.lookup(coords) {
                 return self.with_node_mut(node_id, |mut node| {
-                        // trace!("selected node {} at {:?}", node_id, coords);
+                        trace!("selected node {} at {:?}", node_id, coords);
                         node.selected = true;
                         node_id
                     })
@@ -492,26 +304,26 @@ impl Screen {
                         Some(id)
                     })
                     .or_else(|| {
-                        // trace!("found no node at {:?}", coords);
+                        trace!("found no node at {:?}", coords);
                         None
                     });
             }
         }
-        // trace!("selected no node at {:?}", coords);
+        trace!("selected no node at {:?}", coords);
         // //trace!("lookup is {:?}", self.lookup);
         None
     }
 
     fn toggle_stricken(&mut self) {
+        trace!("toggle_stricken()");
         if let Some(selected_id) = self.last_selected {
-            // trace!("toggle stricken");
             self.with_node_mut(selected_id, |node| node.toggle_stricken());
         }
     }
 
     fn toggle_hide_stricken(&mut self) {
+        trace!("toggle_hide_stricken()");
         if let Some(selected_id) = self.last_selected {
-            // trace!("toggle hide stricken");
             self.with_node_mut(selected_id, |node| node.toggle_hide_stricken());
         }
     }
@@ -528,11 +340,12 @@ impl Screen {
     }
 
     fn delete_selected(&mut self) {
+        trace!("delete_selected()");
         if let Some(selected_id) = self.last_selected.take() {
             let coords = self.drawn_at.remove(&selected_id);
             // remove ref from parent
             let parent_id = self.parent(selected_id).unwrap();
-            debug!("deleting node {} from parent {}", selected_id, parent_id);
+            trace!("deleting node {} from parent {}", selected_id, parent_id);
             self.with_node_mut(parent_id, |p| p.children.retain(|c| c != &selected_id)).unwrap();
             // remove children
             self.delete_recursive(selected_id);
@@ -540,6 +353,14 @@ impl Screen {
                 self.click_select(c);
             }
         }
+    }
+
+    fn draw(&mut self) {
+        trace!("draw()");
+        let (lookup, drawn_at) = Renderer(self).draw();
+        self.flush();
+        self.lookup = lookup;
+        self.drawn_at = drawn_at;
     }
 
     pub fn run(&mut self) {
@@ -562,11 +383,12 @@ impl Screen {
                 break;
             }
         }
+        trace!("leaving stdin.events() loop");
     }
 
     fn toggle_collapsed(&mut self) {
+        trace!("toggle_collapsed()");
         if let Some(selected_id) = self.last_selected {
-            // trace!("collapsed toggle");
             self.with_node_mut(selected_id, |node| node.toggle_collapsed());
         }
     }
@@ -604,8 +426,8 @@ impl Screen {
     }
 
     fn backspace(&mut self) {
+        trace!("backspace");
         if let Some(selected_id) = self.last_selected {
-            // trace!("backspace");
             self.with_node_mut(selected_id, |node| {
                 let newlen = std::cmp::max(node.content.len(), 1) - 1;
                 node.content = node.content.clone()[..newlen].to_owned();
@@ -614,27 +436,28 @@ impl Screen {
     }
 
     fn append(&mut self, c: char) {
+        trace!("append({})", c);
         if let Some(selected_id) = self.last_selected {
-            // trace!("append");
             self.with_node_mut(selected_id, |node| {
                 node.content.push(c);
             });
         }
     }
 
-    fn drawn_at(&self, node_id: NodeID) -> Option<&Coords> {
+    pub fn drawn_at(&self, node_id: NodeID) -> Option<&Coords> {
         self.drawn_at.get(&node_id)
     }
 
-    fn lookup(&self, coords: Coords) -> Option<&NodeID> {
+    pub fn lookup(&self, coords: Coords) -> Option<&NodeID> {
         self.lookup.get(&coords)
     }
 
     // returns true if a is a parent of b
     fn is_parent(&self, a: NodeID, b: NodeID) -> bool {
+        trace!("is_parent({}, {})", a, b);
         let mut ptr = b;
         loop {
-            // trace!("loop in is_parent");
+            trace!("loop in is_parent");
             if ptr == a {
                 return true;
             } else if ptr == 0 {
@@ -656,7 +479,11 @@ impl Screen {
         let mut ptr = node_id;
         loop {
             let id = self.parent(ptr)?;
-            // trace!("anchor loop id: {} ptr: {} selected: {} root: {}", id, ptr, node_id, self.drawing_root);
+            trace!("anchor loop id: {} ptr: {} selected: {} root: {}",
+                   id,
+                   ptr,
+                   node_id,
+                   self.drawing_root);
             if id != self.drawing_root {
                 ptr = id;
             } else {
@@ -667,10 +494,12 @@ impl Screen {
     }
 
     fn parent(&self, node_id: NodeID) -> Result<NodeID, String> {
+        trace!("parent({})", node_id);
         self.with_node(node_id, |n| n.parent_id).ok_or("node not found".to_owned())
     }
 
     fn move_selected(&mut self, from: Coords, to: Coords) {
+        trace!("move_selected({:?}, {:?})", from, to);
         let dx = to.0 as i16 - from.0 as i16;
         let dy = to.1 as i16 - from.1 as i16;
 
@@ -684,6 +513,7 @@ impl Screen {
             }
         } else {
             // nothing to drag, no work to do
+            trace!("leaving move_selected, no work to do");
             return;
         };
         if let Some(&new_parent) = self.lookup(to) {
@@ -699,7 +529,7 @@ impl Screen {
                 self.with_node_mut(selected_id, |s| s.parent_id = new_parent).unwrap();
             } else {
                 let ptr = self.anchor(selected_id).unwrap();
-                // trace!("move selected 2");
+                trace!("move selected 2");
                 self.with_node_mut(ptr, |mut root| {
                         let coords = root.rooted_coords;
                         let nx = cmp::max(coords.0 as i16 + dx, 1) as u16;
@@ -726,6 +556,7 @@ impl Screen {
                 })
                 .unwrap();
         }
+        trace!("leaving move_selected");
     }
 
     fn pop_focus(&mut self) {
@@ -734,14 +565,15 @@ impl Screen {
     }
 
     fn drill_down(&mut self) {
-        if let Some(selected_id) = self.last_selected {
+        trace!("drill_down()");
+        if let Some(selected_id) = self.last_selected.take() {
             self.drawing_root = selected_id;
         }
     }
 
     fn click_select(&mut self, coords: Coords) -> Option<NodeID> {
-        // trace!("click_select({:?})", coords);
-        self.pop_selected();
+        trace!("click_select({:?})", coords);
+        self.unselect();
         let result = self.try_select((coords.0, coords.1));
         self.dragging_from.take();
         result
@@ -794,35 +626,41 @@ impl Screen {
     }
 
     fn select_node(&mut self, node_id: NodeID) {
-        self.pop_selected();
-        // trace!("select_node");
+        trace!("select_node({})", node_id);
+        self.unselect();
         self.with_node_mut(node_id, |mut node| node.selected = true);
         self.last_selected = Some(node_id);
     }
 
     fn click(&mut self, coords: Coords) {
         let (x, y) = coords;
-        let old = self.pop_selected();
-        self.try_select((x, y));
+        let old = self.unselect();
+        let new = self.try_select((x, y));
         if old.is_none() && self.dragging_from.is_none() {
             self.create_anchor((x, y));
+        }
+        if old.is_some() && old == new {
+            self.drill_down();
         }
     }
 
     fn release(&mut self, coords: Coords) {
+        trace!("release({:?})", coords);
         let (x, y) = coords;
         if let Some((from_x, from_y)) = self.dragging_from.take() {
             self.move_selected((from_x, from_y), (x, y));
         }
+        trace!("leaving release");
     }
 
     fn save(&self) {
+        trace!("save()");
         let data = serialization::serialize_screen(self);
         if let Some(ref path) = self.work_path {
             let mut tmp_path = path.clone();
             tmp_path.push_str(".tmp");
             if let Ok(_) = remove_file(&tmp_path) {
-                // trace!("removed stale tmp file");
+                warn!("removed stale tmp file");
             }
             let mut f = File::create(&tmp_path).unwrap();
             f.write_all(&*data).unwrap();
@@ -833,6 +671,7 @@ impl Screen {
     }
 
     fn cleanup(&mut self) {
+        trace!("cleanup()");
         let (_, bottom) = terminal_size().unwrap();
         print!("{}", cursor::Goto(0, bottom));
         println!("{}", cursor::Show);
@@ -845,11 +684,11 @@ impl Screen {
         }
     }
 
-    fn occupied(&self, coords: Coords) -> bool {
+    pub fn occupied(&self, coords: Coords) -> bool {
         self.lookup.contains_key(&coords)
     }
 
-    fn draw_arrow(&mut self) {
+    pub fn add_or_remove_arrow(&mut self) {
         if let Some(from) = self.drawing_arrow.take() {
             if let Some(arrow) = self.last_selected.map(|to| (from, to)) {
                 let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
@@ -869,162 +708,6 @@ impl Screen {
             self.drawing_arrow = self.last_selected;
         }
     }
-
-    fn path(&self, start: Coords, dest: Coords) -> Vec<Coords> {
-        let (width, bottom) = terminal_size().unwrap();
-        if start.0 >= width || dest.0 >= width || start.1 >= bottom || dest.1 >= bottom {
-            // trace!("coordinate for arrow is off-screen, returning no path");
-            return vec![];
-        }
-        // trace!("path({:?}, {:?} (screen size: {} x {})", start, dest, width, bottom);
-        fn perms(c: Coords) -> Vec<Coords> {
-            vec![(c.0 + 1, c.1),
-                 (cmp::max(c.0, 1) - 1, c.1),
-                 (c.0, c.1 + 1),
-                 // we ensure Y is >= 1, since Goto will panic otherwise
-                 (c.0, cmp::max(c.1, 2) - 1)]
-        }
-        // maps from location to previous location
-        let mut visited: HashMap<Coords, Coords> = HashMap::new();
-        let mut pq = BinaryHeap::new();
-
-        // TODO start with dest, go backwards, that way we don't need to reverse
-        // draw tree greedily
-        let mut cursor = start;
-        // trace!("starting draw");
-        while cursor != dest {
-            for neighbor in perms(cursor) {
-                if (!(neighbor.0 >= width) && !(neighbor.1 >= bottom) &&
-                    !self.occupied(neighbor) || neighbor == dest) &&
-                   !visited.contains_key(&neighbor) {
-                    let c = std::u16::MAX - cost(neighbor, dest);
-                    pq.push((c, neighbor));
-                    visited.insert(neighbor, cursor);
-                }
-            }
-            if let Some((_, coords)) = pq.pop() {
-                cursor = coords;
-            } else {
-                // trace!("no path, possible node overlap");
-                return vec![];
-            }
-            // for tracing: show entire search path
-            // self.draw_path(visited.clone().keys().map(|k| *k).collect());
-        }
-        // trace!("done draw, starting backtrack");
-
-        let mut back_cursor = dest;
-        let mut path = vec![dest];
-        while back_cursor != start {
-            let prev = visited.get(&back_cursor).unwrap();
-            path.push(*prev);
-            back_cursor = *prev;
-        }
-        path.reverse();
-        // trace!("leaving path()");
-        path
-    }
-
-    fn draw_path(&self, path: Vec<Coords>, start_dir: Dir, dest_dir: Dir) {
-        print!("{}", random_color());
-        if path.len() == 1 {
-            print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
-        } else if path.len() > 1 {
-            let first = if path[1].1 > path[0].1 {
-                match start_dir {
-                    Dir::R => '┐',
-                    Dir::L => '┌',
-                }
-            } else if path[1].1 < path[0].1 {
-                match start_dir {
-                    Dir::R => '┘',
-                    Dir::L => '└',
-                }
-            } else {
-                '─'
-            };
-
-            print!("{}{}", cursor::Goto(path[0].0, path[0].1), first);
-            for items in path.windows(3) {
-                let (p, this, n) = (items[0], items[1], items[2]);
-                let c = if p.0 == n.0 {
-                    '│'
-                } else if p.1 == n.1 {
-                    '─'
-                } else if (this.1 < p.1 && this.0 < n.0) || (this.0 < p.0 && this.1 < n.1) {
-                    '┌' // up+right or left+down
-                } else if (this.0 > p.0 && this.1 > n.1) || (this.1 > p.1 && this.0 > n.0) {
-                    '┘' // right+up or down+left
-                } else if (this.0 > p.0 && this.1 < n.1) || (this.1 < p.1 && this.0 > n.0) {
-                    '┐' // right+down or up+left
-                } else {
-                    '└' // down+right or left+up
-                };
-
-                print!("{}{}", cursor::Goto(this.0, this.1), c)
-            }
-            let (end_x, end_y) = (path[path.len() - 1].0, path[path.len() - 1].1);
-            let end_char = match dest_dir {
-                Dir::L => '>',
-                Dir::R => '<',
-            };
-            print!("{}{}", cursor::Goto(end_x, end_y), end_char);
-        }
-        print!("{}", color::Fg(color::Reset));
-    }
-
-    fn path_between_nodes(&self, start: NodeID, to: NodeID) -> (Vec<Coords>, (Dir, Dir)) {
-        // trace!("getting path between {} and {}", start, to);
-        let startbounds = self.bounds_for_lookup(start);
-        let tobounds = self.bounds_for_lookup(to);
-        if startbounds.is_none() || tobounds.is_none() {
-            // trace!("path_between_nodes exiting early, point not drawn");
-            return (vec![], (Dir::R, Dir::R));
-        }
-        let (s1, s2) = startbounds.unwrap();
-        let (t1, t2) = tobounds.unwrap();
-
-        let init = (self.path(s2, t2), (Dir::R, Dir::R));
-        let paths = vec![
-            (self.path(s1, t2), (Dir::L, Dir::R)),
-            (self.path(s2, t1), (Dir::R, Dir::L)),
-            (self.path(s1, t1), (Dir::L, Dir::L)),
-        ];
-        paths.into_iter()
-            .fold(init, |(spath, sdirs), (path, dirs)| {
-                if path.len() < spath.len() {
-                    (path, dirs)
-                } else {
-                    (spath, sdirs)
-                }
-            })
-    }
-
-    // correctness depends on invariant of the leftmost element being the
-    // value in self.drawn_at
-    fn bounds_for_lookup(&self, node_id: NodeID) -> Option<(Coords, Coords)> {
-        if let Some(&left) = self.drawn_at(node_id) {
-            let mut rx = left.0;
-            while let Some(&cursor) = self.lookup((rx + 1, left.1)) {
-                if cursor == node_id {
-                    rx += 1;
-                } else {
-                    break;
-                }
-            }
-            // intentionally add 1 to the right side to prevent cluttering
-            let right = (rx + 1, left.1);
-            Some((left, right))
-        } else {
-            None
-        }
-    }
-}
-
-fn cost(c1: Coords, c2: Coords) -> u16 {
-    let xcost = cmp::max(c1.0, c2.0) - cmp::min(c1.0, c2.0);
-    let ycost = cmp::max(c1.1, c2.1) - cmp::min(c1.1, c2.1);
-    xcost + ycost
 }
 
 fn log_cmd_output(output: process::Output) {
