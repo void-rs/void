@@ -1,7 +1,6 @@
 mod serialization;
 mod screen;
 mod node;
-mod renderer;
 
 use std::cmp;
 use std::collections::HashMap;
@@ -11,7 +10,6 @@ use rand::{self, Rng};
 pub use self::serialization::{serialize_screen, deserialize_screen};
 pub use self::screen::Screen;
 pub use self::node::Node;
-pub use self::renderer::Renderer;
 pub use logging::init_screen_log;
 pub use meta::Meta;
 
