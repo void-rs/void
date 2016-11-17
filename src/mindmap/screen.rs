@@ -156,18 +156,21 @@ impl Screen {
                 return;
             }
 
-            let output = if head.starts_with("http") {
-                process::Command::new("firefox")
+            if head.starts_with("http") {
+                let cmd = process::Command::new("firefox")
                     .arg(head)
-                    .output()
-                    .expect(&*format!("command failed to start: {}", content))
+                    .spawn();
+                if cmd.is_err() {
+                    error!("command failed to start: {}", content);
+                }
             } else {
-                process::Command::new(head)
+                let cmd = process::Command::new(head)
                     .args(&split[..])
-                    .output()
-                    .expect(&*format!("command failed to start: {}", content))
-            };
-            log_cmd_output(output);
+                    .spawn();
+                if cmd.is_err() {
+                    error!("command failed to start: {}", content);
+                }
+            }
         }
     }
 
