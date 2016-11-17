@@ -292,9 +292,19 @@ impl Screen {
     fn unselect(&mut self) -> Option<NodeID> {
         trace!("unselect()");
         if self.dragging_from.is_none() {
-            if let Some(selected_id) = self.last_selected.take() {
-                self.with_node_mut(selected_id, |mut node| node.selected = false)
-                    .map(|_| selected_id)
+            if let Some(selected_id) = self.last_selected {
+                if let Some(is_empty) = self.with_node(selected_id, |n| n.content.is_empty()) {
+                    if is_empty {
+                        self.delete_selected();
+                        None
+                    } else {
+                        self.last_selected.take();
+                        self.with_node_mut(selected_id, |mut node| node.selected = false).unwrap();
+                        Some(selected_id)
+                    }
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -315,6 +325,7 @@ impl Screen {
                     .and_then(|id| {
                         self.last_selected = Some(node_id);
                         self.dragging_from = Some(coords);
+                        self.dragging_to = Some(coords);
                         Some(id)
                     })
                     .or_else(|| {
@@ -345,6 +356,7 @@ impl Screen {
     }
 
     fn delete_recursive(&mut self, node_id: NodeID) {
+        debug!("deleting node {}", node_id);
         if let Some(node) = self.nodes.remove(&node_id) {
             // clean up any arrow state
             self.arrows.retain(|&(ref from, ref to)| from != &node_id && to != &node_id);
@@ -536,12 +548,15 @@ impl Screen {
                 self.with_node_mut(new_parent, |np| np.children.push(selected_id)).unwrap();
                 self.with_node_mut(selected_id, |s| s.parent_id = new_parent).unwrap();
             } else {
+                // we're here because we released the drag
+                // with the cursor over a child, so rather
+                // than create a cycle, we move the subtree.
                 let ptr = self.anchor(selected_id).unwrap();
                 trace!("move selected 2");
                 self.with_node_mut(ptr, |mut root| {
-                        let coords = root.rooted_coords;
-                        let nx = cmp::max(coords.0 as i16 + dx, 1) as u16;
-                        let ny = cmp::max(coords.1 as i16 + dy, 1) as u16;
+                        let (ox, oy) = root.rooted_coords;
+                        let nx = cmp::max(ox as i16 + dx, 1) as u16;
+                        let ny = cmp::max(oy as i16 + dy, 1) as u16;
                         root.rooted_coords = (nx, ny);
                     })
                     .unwrap();
@@ -556,10 +571,7 @@ impl Screen {
             let root = self.drawing_root;
             self.with_node_mut(root, |dr| dr.children.push(selected_id)).unwrap();
             self.with_node_mut(selected_id, |s| {
-                    let coords = s.rooted_coords;
-                    let nx = cmp::max(coords.0 as i16 + dx, 1) as u16;
-                    let ny = cmp::max(coords.1 as i16 + dy, 1) as u16;
-                    s.rooted_coords = (nx, ny);
+                    s.rooted_coords = to;
                     s.parent_id = root;
                 })
                 .unwrap();
@@ -781,7 +793,7 @@ impl Screen {
                         self.draw_path(path, direction1, direction2);
                     }
                 } else {
-                    warn!("dragging_from set, but NOT gragging_to");
+                    warn!("dragging_from set, but NOT dragging_to");
                 }
             }
         }
