@@ -33,6 +33,8 @@ pub struct Screen {
     pub lookup: HashMap<Coords, NodeID>,
     pub drawn_at: HashMap<NodeID, Coords>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
+    // screen dimensions as detected during the current draw() cycle
+    dims: Coords,
 }
 
 impl Default for Screen {
@@ -53,6 +55,7 @@ impl Default for Screen {
             dragging_from: None,
             work_path: None,
             max_id: 0,
+            dims: (0, 0),
         };
         screen.nodes.insert(0, root);
         screen
@@ -101,7 +104,11 @@ impl Screen {
                     Ctrl('o') => self.drill_down(),
                     Ctrl('t') => self.pop_focus(),
                     Ctrl('q') => self.auto_arrange(),
-                    Alt('\u{1b}') | Ctrl('c') | Ctrl('d') => return false,
+                    // when Esc is hit, \u{1b}, try to unselect
+                    // and if nothing is unselected then it's
+                    // time to exit.
+                    Alt('\u{1b}') => return self.unselect().is_some(),
+                    Ctrl('c') | Ctrl('d') => return false,
                     Ctrl('s') | Ctrl('w') => self.save(),
                     Up => self.select_up(),
                     Down => self.select_down(),
@@ -230,9 +237,8 @@ impl Screen {
     fn auto_arrange(&mut self) {
         trace!("auto_arrange");
         let nodes = self.with_node(self.drawing_root, |n| n.children.clone()).unwrap();
-        let (width, bottom) = terminal_size().unwrap();
-        let between_x = Range::new(1, width);
-        let between_y = Range::new(2, bottom - 7);
+        let between_x = Range::new(1, self.dims.0);
+        let between_y = Range::new(2, self.dims.1 - 7);
         let mut rng = rand::thread_rng();
         for node_id in nodes {
             let (mut x, mut y) = (0, 0);
@@ -600,9 +606,8 @@ impl Screen {
     fn find_node<F>(&mut self, sort_fn: F) -> NodeID
         where F: Fn(Coords, Coords) -> bool
     {
-        let (width, bottom) = terminal_size().unwrap();
         let selected_id = self.last_selected.unwrap_or(0);
-        let default_coords = (width / 2u16, bottom / 2u16);
+        let default_coords = (self.dims.0 / 2u16, self.dims.1 / 2u16);
         let cur = self.drawn_at(selected_id).unwrap_or(&default_coords);
         let (id, _) = self.drawn_at
             .iter()
@@ -670,8 +675,7 @@ impl Screen {
 
     fn cleanup(&mut self) {
         trace!("cleanup()");
-        let (_, bottom) = terminal_size().unwrap();
-        print!("{}", cursor::Goto(0, bottom));
+        print!("{}", cursor::Goto(0, self.dims.1));
         println!("{}", cursor::Show);
         self.stdout.take().unwrap().flush().unwrap();
     }
@@ -716,6 +720,8 @@ impl Screen {
     // *
 
     pub fn draw(&mut self) {
+        self.dims = terminal_size().unwrap();
+
         trace!("draw()");
         self.lookup.clear();
         self.drawn_at.clear();
@@ -729,20 +735,19 @@ impl Screen {
         self.draw_children_of_root();
 
         // print logs
-        let (width, bottom) = terminal_size().unwrap();
-        if self.show_logs && width > 4 && bottom > 7 {
+        if self.show_logs && self.dims.0 > 4 && self.dims.1 > 7 {
             let mut sep = format!("{}{}logs{}",
-                                  cursor::Goto(0, bottom - 6),
+                                  cursor::Goto(0, self.dims.1 - 6),
                                   style::Invert,
                                   style::Reset);
-            for _ in 0..width - 4 {
+            for _ in 0..self.dims.0 - 4 {
                 sep.push('█');
             }
             println!("{}", sep);
             {
                 let logs = logging::read_logs();
                 for msg in logs.iter().rev() {
-                    let line_width = cmp::min(msg.len(), width as usize);
+                    let line_width = cmp::min(msg.len(), self.dims.0 as usize);
                     println!("\r{}", msg[..line_width as usize].to_owned());
                 }
             }
@@ -767,7 +772,12 @@ impl Screen {
         for child_id in anchors {
             let coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
             let hide_stricken = self.with_node(self.drawing_root, |n| n.hide_stricken).unwrap();
-            self.draw_node(child_id, "".to_owned(), coords, false, hide_stricken);
+            self.draw_node(child_id,
+                           "".to_owned(),
+                           coords,
+                           false,
+                           hide_stricken,
+                           random_color());
         }
     }
 
@@ -777,7 +787,8 @@ impl Screen {
                  prefix: String,
                  coords: Coords,
                  last: bool,
-                 hide_stricken: bool)
+                 hide_stricken: bool,
+                 color: String)
                  -> usize {
         trace!("draw_node({})", node_id);
         let (x, y) = coords;
@@ -785,11 +796,11 @@ impl Screen {
         if node.stricken && hide_stricken {
             return 0;
         }
-        let (_, bottom) = terminal_size().unwrap();
-        if bottom <= y {
+        if self.dims.1 <= y {
             return 0;
         }
         print!("{}", cursor::Goto(x, y));
+        print!("{}", color);
         if node.selected {
             print!("{}", style::Invert);
         }
@@ -816,7 +827,10 @@ impl Screen {
         if prefix == "" {
             print!(" ");
         }
-
+        // keep color for selected & tree root Fg
+        if !node.selected && prefix != "" {
+            print!("{}", color::Fg(color::Reset));
+        }
         print!("{}", node.content);
 
         println!("{}", style::Reset);
@@ -847,7 +861,8 @@ impl Screen {
                                                 prefix.clone(),
                                                 child_coords,
                                                 last,
-                                                node.hide_stricken);
+                                                node.hide_stricken,
+                                                color.clone());
                 drawn += child_drew;
             }
         }
@@ -944,14 +959,13 @@ impl Screen {
         header_text.push_str(&*plot_line);
 
 
-        let (width, bottom) = terminal_size().unwrap();
-        if width > header_text.len() as u16 && bottom > 1 {
+        if self.dims.0 > header_text.len() as u16 && self.dims.1 > 1 {
             let mut sep = format!("{}{}{}{}",
                                   cursor::Goto(0, 1),
                                   style::Invert,
                                   header_text,
                                   style::Reset);
-            for _ in 0..(width as usize - header_text.len() + 10) {
+            for _ in 0..(self.dims.0 as usize - header_text.len() + 10) {
                 sep.push('█');
             }
             println!("{}", sep);
@@ -986,16 +1000,16 @@ impl Screen {
     }
 
     fn path(&self, start: Coords, dest: Coords) -> Vec<Coords> {
-        let (width, bottom) = terminal_size().unwrap();
-        if start.0 >= width || dest.0 >= width || start.1 >= bottom || dest.1 >= bottom {
+        if start.0 >= self.dims.0 || dest.0 >= self.dims.0 || start.1 >= self.dims.1 ||
+           dest.1 >= self.dims.1 {
             trace!("coordinate for arrow is off-screen, returning no path");
             return vec![];
         }
         trace!("path({:?}, {:?} (screen size: {} x {})",
                start,
                dest,
-               width,
-               bottom);
+               self.dims.0,
+               self.dims.1);
         fn perms(c: Coords) -> Vec<Coords> {
             vec![(c.0 + 1, c.1),
                  (cmp::max(c.0, 1) - 1, c.1),
@@ -1011,7 +1025,7 @@ impl Screen {
         trace!("starting draw");
         while cursor != dest {
             for neighbor in perms(cursor) {
-                if (!(neighbor.0 >= width) && !(neighbor.1 >= bottom) &&
+                if (!(neighbor.0 >= self.dims.0) && !(neighbor.1 >= self.dims.1) &&
                     !self.occupied(neighbor) || neighbor == dest) &&
                    !visited.contains_key(&neighbor) {
                     let c = std::u16::MAX - cost(neighbor, dest);
