@@ -30,6 +30,7 @@ pub struct Screen {
     pub last_selected: Option<NodeID>,
     pub drawing_arrow: Option<NodeID>,
     dragging_from: Option<Coords>,
+    dragging_to: Option<Coords>,
     pub lookup: HashMap<Coords, NodeID>,
     pub drawn_at: HashMap<NodeID, Coords>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
@@ -53,6 +54,7 @@ impl Default for Screen {
             drawing_root: 0,
             stdout: None,
             dragging_from: None,
+            dragging_to: None,
             work_path: None,
             max_id: 0,
             dims: (0, 0),
@@ -320,6 +322,8 @@ impl Screen {
                         None
                     });
             }
+        } else {
+            self.dragging_to = Some(coords);
         }
         trace!("selected no node at {:?}", coords);
         // //trace!("lookup is {:?}", self.lookup);
@@ -580,6 +584,7 @@ impl Screen {
         self.unselect();
         let result = self.try_select((coords.0, coords.1));
         self.dragging_from.take();
+        self.dragging_to.take();
         result
     }
 
@@ -651,6 +656,7 @@ impl Screen {
         trace!("release({:?})", coords);
         let (x, y) = coords;
         if let Some((from_x, from_y)) = self.dragging_from.take() {
+            self.dragging_to.take();
             self.move_selected((from_x, from_y), (x, y));
         }
         trace!("leaving release");
@@ -757,6 +763,27 @@ impl Screen {
         for &(ref from, ref to) in &self.arrows {
             let (path, (direction1, direction2)) = self.path_between_nodes(*from, *to);
             self.draw_path(path, direction1, direction2);
+        }
+
+        // conditionally print drag dest arrow
+        if let Some(from) = self.dragging_from {
+            // we only care if we're dragging a node
+            if let Some(from_node) = self.lookup(from) {
+                // we're either dragging to a new parent node, or to a new space
+                if let Some(to) = self.dragging_to {
+                    if let Some(to_node) = self.lookup(to) {
+                        let (path, (direction1, direction2)) =
+                            self.path_between_nodes(*from_node, *to_node);
+                        self.draw_path(path, direction1, direction2);
+                    } else {
+                        let (path, (direction1, direction2)) =
+                            self.path_from_node_to_point(*from_node, to);
+                        self.draw_path(path, direction1, direction2);
+                    }
+                } else {
+                    warn!("dragging_from set, but NOT gragging_to");
+                }
+            }
         }
 
         print!("{}", cursor::Hide);
@@ -972,8 +999,31 @@ impl Screen {
         }
     }
 
+    fn path_from_node_to_point(&self, start: NodeID, to: Coords) -> (Vec<Coords>, (Dir, Dir)) {
+        // TODO this is mostly copypasta from path_between_nodes, DRY
+        trace!("getting path between node {} and point {:?}", start, to);
+        let startbounds = self.bounds_for_lookup(start);
+        if startbounds.is_none() {
+            trace!("path_from_node_to_point exiting early, point not drawn");
+            return (vec![], (Dir::R, Dir::R));
+        }
+        let (s1, s2) = startbounds.unwrap();
+        let init = (self.path(s2, to), (Dir::R, Dir::R));
+        let paths = vec![
+            (self.path(s1, to), (Dir::L, Dir::R)),
+        ];
+        paths.into_iter()
+            .fold(init, |(spath, sdirs), (path, dirs)| {
+                if path.len() < spath.len() {
+                    (path, dirs)
+                } else {
+                    (spath, sdirs)
+                }
+            })
+    }
+
     fn path_between_nodes(&self, start: NodeID, to: NodeID) -> (Vec<Coords>, (Dir, Dir)) {
-        trace!("getting path between {} and {}", start, to);
+        trace!("getting path between nodes {} and {}", start, to);
         let startbounds = self.bounds_for_lookup(start);
         let tobounds = self.bounds_for_lookup(to);
         if startbounds.is_none() || tobounds.is_none() {
