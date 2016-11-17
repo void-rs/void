@@ -846,12 +846,7 @@ impl Screen {
             print!("⊞");
         } else if node.hide_stricken {
             print!("⚔");
-        } else if prefix == "" {
-            print!("⚒");
         } else {
-            print!(" ");
-        }
-        if prefix == "" {
             print!(" ");
         }
         // keep color for selected & tree root Fg
@@ -870,7 +865,7 @@ impl Screen {
         if last {
             prefix.push_str("   ");
         } else if prefix == "" {
-            prefix.push_str("  ");
+            prefix.push_str(" ");
         } else {
             prefix.push_str("│  ");
         }

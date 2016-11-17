@@ -1,4 +1,6 @@
 flamegraph.svg
+out*
+perf.data
 *.swp
 target
 Cargo.lock
