@@ -11,8 +11,6 @@ use termion::event::{Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
-use rand;
-use rand::distributions::{IndependentSample, Range};
 use time;
 
 use mindmap::{cost, NodeID, Coords, Node, random_color, serialization, Dir, Pack};
@@ -240,10 +238,10 @@ impl Screen {
         trace!("auto_arrange");
         let mut real_estate = Pack {
             children: None,
-            top: 2,
-            left: 1,
-            bottom: std::u16::MAX,
-            right: self.dims.0,
+            top: 2, // leave room for header
+            left: 1, // 1-indexed screen
+            bottom: std::u16::MAX, // make this "bottomless" since we can paginate
+            right: self.dims.0 - 1,
             elem: None,
         };
 
@@ -1036,7 +1034,8 @@ impl Screen {
                                   style::Invert,
                                   header_text,
                                   style::Reset);
-            for _ in 0..(self.dims.0 as usize - header_text.len() + 10) {
+            let text_len = header_text.chars().count();
+            for _ in 0..(self.dims.0 as usize - text_len) {
                 sep.push('█');
             }
             println!("{}", sep);

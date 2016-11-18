@@ -56,10 +56,11 @@ pub struct Pack {
 
 impl Pack {
     // for best results, sort elements by height before insertion
-    // because that's where we can bend
     pub fn insert(&mut self, dim: Coords) -> Option<Coords> {
         if !self.is_leaf() {
             let (mut right, mut below) = *self.children.take().unwrap();
+            // must start with right, because we have "infinite" height
+            // due to paging
             let res = right.insert(dim).or_else(|| below.insert(dim));
             self.children = Some(Box::new((right, below)));
             res
