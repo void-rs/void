@@ -5,6 +5,7 @@ use std::fs::{File, rename, remove_file, OpenOptions};
 use std::collections::{BTreeMap, HashMap, BinaryHeap};
 use std::process;
 use std::io::{Write, Read, Seek, SeekFrom, Stdout, stdout, stdin};
+use std::fmt::Write as FmtWrite;
 
 use termion::{terminal_size, color, cursor, style, clear};
 use termion::event::{Event, MouseEvent};
@@ -34,6 +35,9 @@ pub struct Screen {
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
     // screen dimensions as detected during the current draw() cycle
     dims: Coords,
+    lowest_drawn: u16,
+    // where we start drawing from
+    view_y: u16,
 }
 
 impl Default for Screen {
@@ -55,7 +59,9 @@ impl Default for Screen {
             dragging_to: None,
             work_path: None,
             max_id: 0,
-            dims: (0, 0),
+            dims: terminal_size().unwrap(),
+            lowest_drawn: 0,
+            view_y: 0,
         };
         screen.nodes.insert(0, root);
         screen
@@ -419,6 +425,7 @@ impl Screen {
         let stdin = stdin();
         for c in stdin.events() {
             let evt = c.unwrap();
+            self.dims = terminal_size().unwrap();
             let should_break = !self.handle_event(evt);
             self.draw();
 
@@ -634,11 +641,13 @@ impl Screen {
         result
     }
 
+    // TODO update for pagination
     fn select_up(&mut self) {
         let node_id = self.find_node(|cur, other| cur.1 > other.1);
         self.select_node(node_id);
     }
 
+    // TODO update for pagination
     fn select_down(&mut self) {
         let node_id = self.find_node(|cur, other| cur.1 < other.1);
         self.select_node(node_id);
@@ -772,15 +781,14 @@ impl Screen {
     // *
 
     pub fn draw(&mut self) {
-        self.dims = terminal_size().unwrap();
-
         trace!("draw()");
         self.lookup.clear();
         self.drawn_at.clear();
+        self.lowest_drawn = 0;
 
         trace!("draw()");
         print!("{}", clear::All);
-        // print header
+
         self.print_header();
 
         // print visible nodes
@@ -832,8 +840,32 @@ impl Screen {
             }
         }
 
+        // show scrollbar if we've drawn anything below the bottom of the screen
+        if self.lowest_drawn > self.dims.1 {
+            self.draw_scrollbar();
+        }
+
         print!("{}", cursor::Hide);
         self.flush();
+    }
+
+    fn draw_scrollbar(&self) {
+        let bar_height = self.dims.1 - 1;
+        let normalized_lowest = cmp::max(self.lowest_drawn, 1) as f64;
+        let fraction_viewable = self.dims.1 as f64 / normalized_lowest;
+        let shade_start_fraction = self.view_y as f64 / normalized_lowest;
+
+        let shade_amount = (bar_height as f64 * fraction_viewable) as usize;
+        let shade_start = (bar_height as f64 * shade_start_fraction) as usize;
+        let shade_end = shade_start + shade_amount;
+
+        for (i, y) in (2..bar_height + 2).enumerate() {
+            if i >= shade_start && i < shade_end {
+                print!("{}┃", cursor::Goto(self.dims.0, y));
+            } else {
+                print!("{}│", cursor::Goto(self.dims.0, y));
+            }
+        }
     }
 
     fn draw_children_of_root(&mut self) {
@@ -870,43 +902,60 @@ impl Screen {
         if node.stricken && hide_stricken {
             return 0;
         }
-        if self.dims.1 <= y {
-            return 0;
-        }
-        print!("{}", cursor::Goto(x, y));
-        print!("{}", color);
+        let mut buf = String::new();
+        write!(&mut buf, "{}", cursor::Goto(x, y)).unwrap();
+        write!(&mut buf, "{}", color).unwrap();
         if node.selected {
-            print!("{}", style::Invert);
+            write!(&mut buf, "{}", style::Invert).unwrap();
         }
-        print!("{}", prefix);
+        write!(&mut buf, "{}", prefix).unwrap();
         if prefix != "" {
             // only anchor will have blank prefix
             if last {
-                print!("└─");
+                write!(&mut buf, "└─").unwrap();
             } else {
-                print!("├─");
+                write!(&mut buf, "├─").unwrap();
             }
         }
         if node.stricken {
-            print!("☠");
+            write!(&mut buf, "☠").unwrap();
         } else if node.collapsed {
-            print!("⊞");
+            write!(&mut buf, "⊞").unwrap();
         } else if node.hide_stricken {
-            print!("⚔");
+            write!(&mut buf, "⚔").unwrap();
         } else {
-            print!(" ");
+            write!(&mut buf, " ").unwrap();
         }
         // keep color for selected & tree root Fg
         if !node.selected && prefix != "" {
-            print!("{}", color::Fg(color::Reset));
+            write!(&mut buf, "{}", color::Fg(color::Reset)).unwrap();
         }
-        print!("{}", node.content);
+        write!(&mut buf, "{}", node.content).unwrap();
 
-        println!("{}", style::Reset);
+        // only actually print it if we're in-view
+        if self.dims.1 >= y {
+            let max_width = (self.dims.0 - 1 - x) as usize;
+            if false {
+                // buf.chars().count() > max_width {
+                let chars = buf.chars();
+                let oldlen = chars.clone().count();
+                let mut truncated: String = chars.take(cmp::max(max_width, 1) - 1).collect();
+                truncated.push('…');
+                print!("{}", truncated);
+            } else {
+                print!("{}", buf);
+            }
+        }
+
+        print!("{}", style::Reset);
+
         self.drawn_at.insert(node_id, (x, y));
         for x in (x..(x + 3 + prefix.len() as u16 + node.content.len() as u16)).rev() {
             trace!("inserting {:?} at {:?}", node_id, (x, y));
             self.lookup.insert((x, y), node_id);
+            if y > self.lowest_drawn {
+                self.lowest_drawn = y;
+            }
         }
         let mut prefix = prefix;
         if last {
