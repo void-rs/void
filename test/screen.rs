@@ -1,9 +1,8 @@
-use termion::event::{Key, Event, MouseEvent, MouseButton};
-
-use quickcheck::{Arbitrary, Gen, QuickCheck, StdGen};
 use rand;
+use termion::event::{Key, Event, MouseEvent, MouseButton};
+use quickcheck::{Arbitrary, Gen, QuickCheck, StdGen};
 
-use super::*;
+use climate::*;
 
 #[derive(Debug, Clone)]
 struct Op {
@@ -73,3 +72,11 @@ fn qc_merge_converges() {
         .max_tests(10_000)
         .quickcheck(prop_handle_events as fn(OpVec) -> bool);
 }
+
+// TODO Arguments: (OpVec { ops: [Op { event: Key(Up) }, Op { event: Key(Backspace) }, Op { event: Key(Backspace) }, Op { event: Key(Backspace) }, Op { event: Key(Backspace) }, Op { event: Key(Down) }] })
+
+// TODO make a ton of one char nodes with no children and autosort
+
+// TODO backspace on unicode
+
+// TODO drag & select & sort & resize & arrow specific qc

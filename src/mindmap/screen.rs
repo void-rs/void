@@ -15,7 +15,7 @@ use rand;
 use rand::distributions::{IndependentSample, Range};
 use time;
 
-use mindmap::{cost, NodeID, Coords, Node, random_color, serialization, Dir};
+use mindmap::{cost, NodeID, Coords, Node, random_color, serialization, Dir, Pack};
 use plot::plot_sparkline;
 use logging;
 
@@ -90,7 +90,7 @@ impl Screen {
     }
 
     // return of false signals to the caller that we are done in this view
-    fn handle_event(&mut self, evt: Event) -> bool {
+    pub fn handle_event(&mut self, evt: Event) -> bool {
         use termion::event::Key::*;
         match evt {
             Event::Key(ke) => {
@@ -238,22 +238,24 @@ impl Screen {
 
     fn auto_arrange(&mut self) {
         trace!("auto_arrange");
+        let mut real_estate = Pack {
+            children: None,
+            top: 2,
+            left: 1,
+            bottom: std::u16::MAX,
+            right: self.dims.0,
+            elem: None,
+        };
+
         let nodes = self.with_node(self.drawing_root, |n| n.children.clone()).unwrap();
-        let between_x = Range::new(1, self.dims.0);
-        let between_y = Range::new(2, self.dims.1 - 7);
-        let mut rng = rand::thread_rng();
-        for node_id in nodes {
-            let (mut x, mut y) = (0, 0);
-            for _ in 1..20 {
-                // try 20 times to place in non-overlapping way
-                x = between_x.ind_sample(&mut rng);
-                y = between_y.ind_sample(&mut rng);
-                if self.lookup((x, y)).is_none() {
-                    // seems to be empty
-                    // TODO test this for children
-                    break;
-                }
-            }
+        let mut node_dims: Vec<(NodeID, Coords)> = nodes.into_iter()
+            .map(|n| (n, self.drawable_subtree_dims(n).unwrap()))
+            .collect();
+        node_dims.sort_by_key(|&(_, (_, y))| y);
+        node_dims.reverse();
+
+        for (node_id, dims) in node_dims {
+            let (x, y) = real_estate.insert(dims).unwrap();
             self.with_node_mut(node_id, |n| n.rooted_coords = (x, y)).unwrap();
         }
     }
@@ -281,6 +283,34 @@ impl Screen {
         ret
     }
 
+    fn drawable_subtree_dims(&self, node_id: NodeID) -> Option<(u16, u16)> {
+        if let Some(widths) = self.drawable_subtree_widths(node_id, 0) {
+            let height = widths.len() as u16;
+            let max_width = widths.into_iter().max().unwrap();
+            Some((max_width, height))
+        } else {
+            None
+        }
+    }
+
+    fn drawable_subtree_widths(&self, node_id: NodeID, depth: usize) -> Option<Vec<u16>> {
+        if let Some(node) = self.nodes.get(&node_id) {
+            let width = 1 + (3 * depth as u16) + node.content.len() as u16;
+            let mut ret = vec![width];
+            if !node.collapsed {
+                for &child in &node.children {
+                    // ASSUMES node.children are all valid
+                    let mut child_widths = self.drawable_subtree_widths(child, depth + 1)
+                        .unwrap();
+                    ret.append(&mut child_widths);
+                }
+            }
+            Some(ret)
+        } else {
+            None
+        }
+    }
+
     pub fn flush(&mut self) {
         trace!("flush()");
         if let Some(mut s) = self.stdout.take() {
@@ -299,7 +329,8 @@ impl Screen {
                         None
                     } else {
                         self.last_selected.take();
-                        self.with_node_mut(selected_id, |mut node| node.selected = false).unwrap();
+                        self.with_node_mut(selected_id, |mut node| node.selected = false)
+                            .unwrap();
                         Some(selected_id)
                     }
                 } else {
@@ -374,7 +405,8 @@ impl Screen {
             // remove ref from parent
             let parent_id = self.parent(selected_id).unwrap();
             trace!("deleting node {} from parent {}", selected_id, parent_id);
-            self.with_node_mut(parent_id, |p| p.children.retain(|c| c != &selected_id)).unwrap();
+            self.with_node_mut(parent_id, |p| p.children.retain(|c| c != &selected_id))
+                .unwrap();
             // remove children
             self.delete_recursive(selected_id);
             if let Some(c) = coords {
@@ -449,8 +481,11 @@ impl Screen {
         trace!("backspace");
         if let Some(selected_id) = self.last_selected {
             self.with_node_mut(selected_id, |node| {
-                let newlen = std::cmp::max(node.content.len(), 1) - 1;
-                node.content = node.content.clone()[..newlen].to_owned();
+                let content = node.content.clone();
+                let chars = content.chars();
+                let oldlen = chars.clone().count();
+                let truncated: String = chars.take(cmp::max(oldlen, 1) - 1).collect();
+                node.content = truncated;
             });
         }
     }
@@ -567,7 +602,8 @@ impl Screen {
             // 2. add to drawing_root's children
             // 3. update rooted_coords
             let old_parent = self.parent(selected_id).unwrap();
-            self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &selected_id)).unwrap();
+            self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &selected_id))
+                .unwrap();
             let root = self.drawing_root;
             self.with_node_mut(root, |dr| dr.children.push(selected_id)).unwrap();
             self.with_node_mut(selected_id, |s| {
@@ -810,7 +846,8 @@ impl Screen {
                anchors);
         for child_id in anchors {
             let coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
-            let hide_stricken = self.with_node(self.drawing_root, |n| n.hide_stricken).unwrap();
+            let hide_stricken = self.with_node(self.drawing_root, |n| n.hide_stricken)
+                .unwrap();
             self.draw_node(child_id,
                            "".to_owned(),
                            coords,
