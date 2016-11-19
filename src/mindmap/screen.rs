@@ -99,6 +99,8 @@ impl Screen {
         match evt {
             Event::Key(ke) => {
                 match ke {
+                    PageUp => self.scroll_up(),
+                    PageDown => self.scroll_down(),
                     Char('\n') => self.toggle_collapsed(),
                     Char('\t') => self.create_child(),
                     Delete => self.delete_selected(),
@@ -140,8 +142,14 @@ impl Screen {
             }
             Event::Mouse(me) => {
                 match me {
-                    MouseEvent::Press(_, x, y) => self.click((x, y)),
-                    MouseEvent::Release(x, y) => self.release((x, y)),
+                    MouseEvent::Press(_, x, y) => {
+                        let internal_coords = self.screen_to_internal_xy((x, y));
+                        self.click_screen(internal_coords)
+                    }
+                    MouseEvent::Release(x, y) => {
+                        let internal_coords = self.screen_to_internal_xy((x, y));
+                        self.release(internal_coords)
+                    }
                     MouseEvent::Hold(..) => {
                         // this isn't supported in some terminals
                         // (urxvt...) so don't rely on it
@@ -346,6 +354,23 @@ impl Screen {
         } else {
             None
         }
+    }
+
+    fn internal_to_screen_xy(&self, coords: Coords) -> Option<Coords> {
+        // + 2 compensates for header
+        if coords.1 < self.view_y + 2 {
+            // coords are above screen
+            None
+        } else if coords.1 > self.view_y + self.dims.1 {
+            // coords are below screen
+            None
+        } else {
+            Some((coords.0, coords.1 - self.view_y))
+        }
+    }
+
+    fn screen_to_internal_xy(&self, coords: Coords) -> Coords {
+        (coords.0, coords.1 + self.view_y)
     }
 
     fn try_select(&mut self, coords: Coords) -> Option<NodeID> {
@@ -635,35 +660,45 @@ impl Screen {
     fn click_select(&mut self, coords: Coords) -> Option<NodeID> {
         trace!("click_select({:?})", coords);
         self.unselect();
-        let result = self.try_select((coords.0, coords.1));
+        let result = self.try_select(coords);
         self.dragging_from.take();
         self.dragging_to.take();
         result
     }
 
+    fn scroll_up(&mut self) {
+        self.view_y = cmp::max(self.view_y, self.dims.1 / 2) - self.dims.1 / 2;
+    }
+
+    fn scroll_down(&mut self) {
+        if self.lowest_drawn > self.view_y + self.dims.1 {
+            self.view_y = cmp::min(self.view_y + self.dims.1 / 2, self.lowest_drawn);
+        }
+    }
+
     // TODO update for pagination
     fn select_up(&mut self) {
-        let node_id = self.find_node(|cur, other| cur.1 > other.1);
+        let node_id = self.find_visible_node(|cur, other| cur.1 > other.1);
         self.select_node(node_id);
     }
 
     // TODO update for pagination
     fn select_down(&mut self) {
-        let node_id = self.find_node(|cur, other| cur.1 < other.1);
+        let node_id = self.find_visible_node(|cur, other| cur.1 < other.1);
         self.select_node(node_id);
     }
 
     fn select_left(&mut self) {
-        let node_id = self.find_node(|cur, other| cur.0 > other.0);
+        let node_id = self.find_visible_node(|cur, other| cur.0 > other.0);
         self.select_node(node_id);
     }
 
     fn select_right(&mut self) {
-        let node_id = self.find_node(|cur, other| cur.0 < other.0);
+        let node_id = self.find_visible_node(|cur, other| cur.0 < other.0);
         self.select_node(node_id);
     }
 
-    fn find_node<F>(&mut self, sort_fn: F) -> NodeID
+    fn find_visible_node<F>(&mut self, sort_fn: F) -> NodeID
         where F: Fn(Coords, Coords) -> bool
     {
         let selected_id = self.last_selected.unwrap_or(0);
@@ -672,7 +707,10 @@ impl Screen {
         let (id, _) = self.drawn_at
             .iter()
             .filter_map(|(&n, &nc)| {
-                if sort_fn(*cur, nc) {
+                if nc.1 < self.view_y || nc.1 > self.view_y + self.dims.1 {
+                    // only show visible
+                    None
+                } else if sort_fn(*cur, nc) {
                     Some((n, cost(*cur, nc)))
                 } else {
                     None
@@ -695,24 +733,22 @@ impl Screen {
         self.last_selected = Some(node_id);
     }
 
-    fn click(&mut self, coords: Coords) {
-        let (x, y) = coords;
+    fn click_screen(&mut self, coords: Coords) {
         let old = self.unselect();
-        let new = self.try_select((x, y));
+        let new = self.try_select(coords);
         if old.is_none() && self.dragging_from.is_none() {
-            self.create_anchor((x, y));
+            self.create_anchor(coords);
         }
         if old.is_some() && old == new {
             self.drill_down();
         }
     }
 
-    fn release(&mut self, coords: Coords) {
-        trace!("release({:?})", coords);
-        let (x, y) = coords;
-        if let Some((from_x, from_y)) = self.dragging_from.take() {
+    fn release(&mut self, to: Coords) {
+        trace!("release({:?})", to);
+        if let Some(from) = self.dragging_from.take() {
             self.dragging_to.take();
-            self.move_selected((from_x, from_y), (x, y));
+            self.move_selected(from, to);
         }
         trace!("leaving release");
     }
@@ -875,12 +911,12 @@ impl Screen {
                self.drawing_root,
                anchors);
         for child_id in anchors {
-            let coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
+            let child_coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
             let hide_stricken = self.with_node(self.drawing_root, |n| n.hide_stricken)
                 .unwrap();
             self.draw_node(child_id,
                            "".to_owned(),
-                           coords,
+                           child_coords,
                            false,
                            hide_stricken,
                            random_color());
@@ -891,49 +927,50 @@ impl Screen {
     fn draw_node(&mut self,
                  node_id: NodeID,
                  prefix: String,
-                 coords: Coords,
+                 internal_coords: Coords,
                  last: bool,
                  hide_stricken: bool,
                  color: String)
                  -> usize {
         trace!("draw_node({})", node_id);
-        let (x, y) = coords;
         let node = self.with_node(node_id, |n| n.clone()).unwrap();
         if node.stricken && hide_stricken {
             return 0;
         }
-        let mut buf = String::new();
-        write!(&mut buf, "{}", cursor::Goto(x, y)).unwrap();
-        write!(&mut buf, "{}", color).unwrap();
-        if node.selected {
-            write!(&mut buf, "{}", style::Invert).unwrap();
-        }
-        write!(&mut buf, "{}", prefix).unwrap();
-        if prefix != "" {
-            // only anchor will have blank prefix
-            if last {
-                write!(&mut buf, "└─").unwrap();
-            } else {
-                write!(&mut buf, "├─").unwrap();
-            }
-        }
-        if node.stricken {
-            write!(&mut buf, "☠").unwrap();
-        } else if node.collapsed {
-            write!(&mut buf, "⊞").unwrap();
-        } else if node.hide_stricken {
-            write!(&mut buf, "⚔").unwrap();
-        } else {
-            write!(&mut buf, " ").unwrap();
-        }
-        // keep color for selected & tree root Fg
-        if !node.selected && prefix != "" {
-            write!(&mut buf, "{}", color::Fg(color::Reset)).unwrap();
-        }
-        write!(&mut buf, "{}", node.content).unwrap();
 
         // only actually print it if we're in-view
-        if self.dims.1 >= y {
+        if let Some(screen_coords) = self.internal_to_screen_xy(internal_coords) {
+            let (x, y) = screen_coords;
+            let mut buf = String::new();
+            write!(&mut buf, "{}", cursor::Goto(x, y)).unwrap();
+            write!(&mut buf, "{}", color).unwrap();
+            if node.selected {
+                write!(&mut buf, "{}", style::Invert).unwrap();
+            }
+            write!(&mut buf, "{}", prefix).unwrap();
+            if prefix != "" {
+                // only anchor will have blank prefix
+                if last {
+                    write!(&mut buf, "└─").unwrap();
+                } else {
+                    write!(&mut buf, "├─").unwrap();
+                }
+            }
+            if node.stricken {
+                write!(&mut buf, "☠").unwrap();
+            } else if node.collapsed {
+                write!(&mut buf, "⊞").unwrap();
+            } else if node.hide_stricken {
+                write!(&mut buf, "⚔").unwrap();
+            } else {
+                write!(&mut buf, " ").unwrap();
+            }
+            // keep color for selected & tree root Fg
+            if !node.selected && prefix != "" {
+                write!(&mut buf, "{}", color::Fg(color::Reset)).unwrap();
+            }
+            write!(&mut buf, "{}", node.content).unwrap();
+
             let max_width = (self.dims.0 - 1 - x) as usize;
             if false {
                 // buf.chars().count() > max_width {
@@ -949,12 +986,14 @@ impl Screen {
 
         print!("{}", style::Reset);
 
-        self.drawn_at.insert(node_id, (x, y));
-        for x in (x..(x + 3 + prefix.len() as u16 + node.content.len() as u16)).rev() {
-            trace!("inserting {:?} at {:?}", node_id, (x, y));
-            self.lookup.insert((x, y), node_id);
-            if y > self.lowest_drawn {
-                self.lowest_drawn = y;
+        self.drawn_at.insert(node_id, internal_coords);
+        for x in (internal_coords.0..(internal_coords.0 + 3 + prefix.len() as u16 +
+                                      node.content.len() as u16))
+            .rev() {
+            trace!("inserting {:?} at {:?}", node_id, internal_coords);
+            self.lookup.insert((x, internal_coords.1), node_id);
+            if internal_coords.1 > self.lowest_drawn {
+                self.lowest_drawn = internal_coords.1;
             }
         }
         let mut prefix = prefix;
@@ -974,7 +1013,7 @@ impl Screen {
                 .iter()
                 .enumerate() {
                 let last = n + 1 == n_children;
-                let child_coords = (x, y + drawn as u16);
+                let child_coords = (internal_coords.0, internal_coords.1 + drawn as u16);
                 let child_drew = self.draw_node(child,
                                                 prefix.clone(),
                                                 child_coords,
@@ -987,7 +1026,9 @@ impl Screen {
         drawn
     }
 
-    fn draw_path(&self, path: Vec<Coords>, start_dir: Dir, dest_dir: Dir) {
+    fn draw_path(&self, internal_path: Vec<Coords>, start_dir: Dir, dest_dir: Dir) {
+        let path: Vec<_> =
+            internal_path.iter().filter_map(|&c| self.internal_to_screen_xy(c)).collect();
         trace!("draw_path({:?}, {:?}, {:?})", path, start_dir, dest_dir);
         print!("{}", random_color());
         if path.len() == 1 {
@@ -1142,11 +1183,6 @@ impl Screen {
     }
 
     fn path(&self, start: Coords, dest: Coords) -> Vec<Coords> {
-        if start.0 >= self.dims.0 || dest.0 >= self.dims.0 || start.1 >= self.dims.1 ||
-           dest.1 >= self.dims.1 {
-            trace!("coordinate for arrow is off-screen, returning no path");
-            return vec![];
-        }
         trace!("path({:?}, {:?} (screen size: {} x {})",
                start,
                dest,
@@ -1167,7 +1203,7 @@ impl Screen {
         trace!("starting draw");
         while cursor != dest {
             for neighbor in perms(cursor) {
-                if (!(neighbor.0 >= self.dims.0) && !(neighbor.1 >= self.dims.1) &&
+                if (!(neighbor.0 >= self.dims.0) && !(neighbor.1 >= self.dims.1 + self.view_y) &&
                     !self.occupied(neighbor) || neighbor == dest) &&
                    !visited.contains_key(&neighbor) {
                     let c = std::u16::MAX - cost(neighbor, dest);
