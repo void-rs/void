@@ -789,11 +789,11 @@ impl Screen {
         let mut leaf_children = vec![];
         while let Some(node_id) = to_view.pop() {
             self.with_node(node_id, |n| {
-                for &c in n.children.iter() {
+                for &c in &n.children {
                     assert!(!seen.contains(&c));
-                    seen.insert(c.clone());
+                    seen.insert(c);
                 }
-                if n.children.len() == 0 {
+                if n.children.is_empty() {
                     leaf_children.push(node_id);
                 }
             });
@@ -801,7 +801,7 @@ impl Screen {
 
         // no parent loops
         debug!("testing that 0 is the ancestor of all nodes");
-        for (&node_id, node) in &self.nodes {
+        for &node_id in self.nodes.keys() {
             assert!(self.is_parent(0, node_id));
         }
 
