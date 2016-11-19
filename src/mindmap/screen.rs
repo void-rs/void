@@ -2,7 +2,7 @@ use std;
 use std::env;
 use std::cmp;
 use std::fs::{File, rename, remove_file, OpenOptions};
-use std::collections::{BTreeMap, HashMap, BinaryHeap};
+use std::collections::{BTreeMap, HashMap, BinaryHeap, HashSet};
 use std::process;
 use std::io::{Write, Read, Seek, SeekFrom, Stdout, stdout, stdin};
 use std::fmt::Write as FmtWrite;
@@ -12,6 +12,7 @@ use termion::event::{Event, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
+use libc::getpid;
 use time;
 
 use mindmap::{cost, NodeID, Coords, Node, random_color, serialization, Dir, Pack};
@@ -200,8 +201,8 @@ impl Screen {
             .unwrap()
             .unwrap_or("".to_owned());
 
-        // TODO add PID to path
-        let path = "/tmp/climate_buffer.tmp";
+        let pid = unsafe { getpid() };
+        let path = format!("/tmp/climate_buffer.tmp.{}", pid);
         debug!("trying to open {} in editor", path);
 
         // remove old tmp file
@@ -213,7 +214,7 @@ impl Screen {
         let mut f = OpenOptions::new()
             .write(true)
             .create_new(true)
-            .open(path)
+            .open(&path)
             .unwrap();
         f.write_all(text.as_bytes()).unwrap();
         f.seek(SeekFrom::Start(0)).unwrap();
@@ -224,7 +225,7 @@ impl Screen {
         // open text editor
         let ed = env::var("EDITOR").unwrap_or("vim".to_owned());
         process::Command::new(ed)
-            .arg(path)
+            .arg(&path)
             .spawn()
             .expect("failed to open text editor")
             .wait()
@@ -233,7 +234,7 @@ impl Screen {
         // read new data
         let mut data = vec![];
         {
-            let mut f = File::open(path).unwrap();
+            let mut f = File::open(&path).unwrap();
             f.read_to_end(&mut data).unwrap();
             // f closed as it slides out of scope
         }
@@ -267,7 +268,10 @@ impl Screen {
         node_dims.reverse();
 
         for (node_id, dims) in node_dims {
-            let (x, y) = real_estate.insert(dims).unwrap();
+            // add some spacing around this tree to space out
+            // placement a little bit
+            let padded_dims = (dims.0 + 2, dims.1 + 2);
+            let (x, y) = real_estate.insert(padded_dims).unwrap();
             self.with_node_mut(node_id, |n| n.rooted_coords = (x, y)).unwrap();
         }
     }
@@ -358,11 +362,8 @@ impl Screen {
 
     fn internal_to_screen_xy(&self, coords: Coords) -> Option<Coords> {
         // + 2 compensates for header
-        if coords.1 < self.view_y + 2 {
-            // coords are above screen
-            None
-        } else if coords.1 > self.view_y + self.dims.1 {
-            // coords are below screen
+        if coords.1 < self.view_y + 2 || coords.1 > self.view_y + self.dims.1 {
+            // coords are above or below screen
             None
         } else {
             Some((coords.0, coords.1 - self.view_y))
@@ -371,6 +372,18 @@ impl Screen {
 
     fn screen_to_internal_xy(&self, coords: Coords) -> Coords {
         (coords.0, coords.1 + self.view_y)
+    }
+
+    fn coords_are_visible(&self, (_, y): Coords) -> bool {
+        cmp::max(y, 1) - 1 > self.view_y && y < self.view_y + self.dims.1 + 1
+    }
+
+    fn node_is_visible(&self, node: NodeID) -> Option<bool> {
+        if let Some(&coords) = self.drawn_at(node) {
+            Some(self.coords_are_visible(coords))
+        } else {
+            None
+        }
     }
 
     fn try_select(&mut self, coords: Coords) -> Option<NodeID> {
@@ -668,23 +681,37 @@ impl Screen {
 
     fn scroll_up(&mut self) {
         self.view_y = cmp::max(self.view_y, self.dims.1 / 2) - self.dims.1 / 2;
+        self.unselect();
     }
 
     fn scroll_down(&mut self) {
         if self.lowest_drawn > self.view_y + self.dims.1 {
             self.view_y = cmp::min(self.view_y + self.dims.1 / 2, self.lowest_drawn);
+            self.unselect();
+        }
+    }
+
+    fn scroll_to_node(&mut self, node_id: NodeID) {
+        if let Some(&(_, y)) = self.drawn_at(node_id) {
+            self.view_y = cmp::max(y, self.dims.1 / 2) - self.dims.1 / 2;
         }
     }
 
     // TODO update for pagination
     fn select_up(&mut self) {
         let node_id = self.find_visible_node(|cur, other| cur.1 > other.1);
+        if node_id != 0 && !self.node_is_visible(node_id).unwrap() {
+            self.scroll_to_node(node_id);
+        }
         self.select_node(node_id);
     }
 
     // TODO update for pagination
     fn select_down(&mut self) {
         let node_id = self.find_visible_node(|cur, other| cur.1 < other.1);
+        if node_id != 0 && !self.node_is_visible(node_id).unwrap() {
+            self.scroll_to_node(node_id);
+        }
         self.select_node(node_id);
     }
 
@@ -702,16 +729,17 @@ impl Screen {
         where F: Fn(Coords, Coords) -> bool
     {
         let selected_id = self.last_selected.unwrap_or(0);
-        let default_coords = (self.dims.0 / 2u16, self.dims.1 / 2u16);
-        let cur = self.drawn_at(selected_id).unwrap_or(&default_coords);
+        let default_coords = (self.dims.0 / 2, self.dims.1 / 2);
+        let rel_def_coords = self.screen_to_internal_xy(default_coords);
+        let cur = self.drawn_at(selected_id).unwrap_or(&rel_def_coords);
         let (id, _) = self.drawn_at
             .iter()
-            .filter_map(|(&n, &nc)| {
-                if nc.1 < self.view_y || nc.1 > self.view_y + self.dims.1 {
-                    // only show visible
+            .filter_map(|(&node, &(x, y))| {
+                let visible = y > self.view_y && y < self.view_y + self.dims.1 + 2;
+                if !visible {
                     None
-                } else if sort_fn(*cur, nc) {
-                    Some((n, cost(*cur, nc)))
+                } else if sort_fn(*cur, (x, y)) {
+                    Some((node, cost(*cur, (x, y))))
                 } else {
                     None
                 }
@@ -753,8 +781,35 @@ impl Screen {
         trace!("leaving release");
     }
 
+    fn assert_node_consistency(&self) {
+        // a child should be a child of at most one node
+        debug!("testing that no nodes have multiple parents");
+        let mut seen = HashSet::new();
+        let mut to_view = vec![0];
+        let mut leaf_children = vec![];
+        while let Some(node_id) = to_view.pop() {
+            self.with_node(node_id, |n| {
+                for &c in n.children.iter() {
+                    assert!(!seen.contains(&c));
+                    seen.insert(c.clone());
+                }
+                if n.children.len() == 0 {
+                    leaf_children.push(node_id);
+                }
+            });
+        }
+
+        // no parent loops
+        debug!("testing that 0 is the ancestor of all nodes");
+        for (&node_id, node) in &self.nodes {
+            assert!(self.is_parent(0, node_id));
+        }
+
+    }
+
     fn save(&self) {
         trace!("save()");
+        self.assert_node_consistency();
         let data = serialization::serialize_screen(self);
         if let Some(ref path) = self.work_path {
             let mut tmp_path = path.clone();
@@ -912,6 +967,7 @@ impl Screen {
                anchors);
         for child_id in anchors {
             let child_coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
+            let child_color = self.with_node(child_id, |n| n.color.clone()).unwrap();
             let hide_stricken = self.with_node(self.drawing_root, |n| n.hide_stricken)
                 .unwrap();
             self.draw_node(child_id,
@@ -919,7 +975,7 @@ impl Screen {
                            child_coords,
                            false,
                            hide_stricken,
-                           random_color());
+                           child_color);
         }
     }
 
@@ -1253,19 +1309,6 @@ impl Screen {
             None
         }
     }
-}
-
-fn log_cmd_output(output: process::Output) {
-    debug!("status: {}", output.status);
-    debug!("stdout: {}", String::from_utf8_lossy(&output.stdout));
-    debug!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-}
-
-fn start_screensaver() {
-    std::process::Command::new("xscreensaver-command")
-        .arg("-activate")
-        .spawn()
-        .expect("command failed to start");
 }
 
 fn xmessage(msg: &str) {

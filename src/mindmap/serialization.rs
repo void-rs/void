@@ -1,6 +1,6 @@
 use protobuf::{self, Message};
 
-use mindmap::{Screen, Node, Meta};
+use mindmap::{Screen, Node, Meta, random_color};
 use pb;
 
 pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
@@ -99,6 +99,7 @@ fn deserialize_node(node_pb: &pb::Node) -> Node {
         } else {
             None
         },
+        color: random_color(),
     }
 }
 
