@@ -1,6 +1,19 @@
 # void
 
-> "The primary thing when you take a sword in your hands is your intention to cut the enemy, whatever the means. Whenever you parry, hit, spring, strike or touch the enemy’s cutting sword, you must cut the enemy in the same movement. It is essential to attain this. If you think only of hitting, springing, striking or touching the enemy, you will not be able actually to cut him. More than anything, you must be thinking of carrying your movement through to cutting him. ...When you appreciate the power of nature, knowing the rhythm of any situation, you will be able to hit the enemy naturally and strike naturally. All this is the Way of the Void." - Miyamoto Musashi
+> The primary thing when you take a sword in your 
+hands is your intention to cut the enemy, whatever 
+the means. Whenever you parry, hit, spring, strike 
+or touch the enemy’s cutting sword, you must cut 
+the enemy in the same movement. It is essential to 
+attain this. If you think only of hitting, springing, 
+striking or touching the enemy, you will not be able 
+actually to cut him. More than anything, you must 
+be thinking of carrying your movement through to 
+cutting him. ...When you appreciate the power of 
+nature, knowing the rhythm of any situation, you 
+will be able to hit the enemy naturally and strike 
+naturally. All this is the Way of the Void.
+- Miyamoto Musashi
 
 ![](/demo.gif)
 
@@ -8,7 +21,8 @@
 
 `cargo install voidmap`
 
-if you don't have cargo, an easy way to get and manage it is [via rustup](https://www.rustup.rs/).
+if you don't have cargo, an easy way to get and manage 
+it is [via rustup](https://www.rustup.rs/).
 
 #### invocation
 
@@ -46,6 +60,23 @@ de-select node | Esc
 save | ^x
 exit | Esc with nothing selected
 exit | ^c
+
+#### known bugs
+
+doesn't properly handle very long text. if you want to embed 
+an essay, create a node that begins with `txt: ` and hit `^v` 
+to open its contents.
+
+#### optional configuration
+
+setting the `LOGFILE` environment variable will allow you to
+log debugging info to a file.
+
+setting the `EDITOR` environment variable will allow you to
+specify which text editor is opened when hitting `^v` on a 
+node whose name begins with `txt: `.  defaults to vim.
+
+#### notes
 
 This came about in the midst of an (ongoing) obsessive inquiry into a
 cluster of topics roughly related to "effectiveness" while stumbling
