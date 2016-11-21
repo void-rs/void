@@ -4,6 +4,16 @@
 
 ![](/demo.gif)
 
+#### install
+
+`cargo install voidmap`
+
+if you don't have cargo, an easy way to get and manage it is [via rustup](https://www.rustup.rs/).
+
+#### invocation
+
+`void [/path/to/savefile]`
+
 #### keys
 
 feature | control 
