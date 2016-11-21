@@ -1,4 +1,4 @@
-use mindmap::{Coords, NodeID, Meta, random_color};
+use {Coords, NodeID, Meta, random_fg_color};
 
 #[derive(Debug,Clone)]
 pub struct Node {
@@ -30,7 +30,7 @@ impl Default for Node {
             hide_stricken: false,
             meta: Meta::default(),
             free_text: None,
-            color: random_color(),
+            color: random_fg_color(),
         }
     }
 }

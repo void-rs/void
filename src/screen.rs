@@ -4,18 +4,18 @@ use std::cmp;
 use std::fs::{File, rename, remove_file, OpenOptions};
 use std::collections::{BTreeMap, HashMap, BinaryHeap, HashSet};
 use std::process;
-use std::io::{Write, Read, Seek, SeekFrom, Stdout, stdout, stdin};
+use std::io::{self, Write, Read, Seek, SeekFrom, Stdout, stdout, stdin};
 use std::fmt::Write as FmtWrite;
 
 use termion::{terminal_size, color, cursor, style, clear};
-use termion::event::{Event, MouseEvent};
+use termion::event::{Event, Key, MouseEvent};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
 use libc::getpid;
 use time;
 
-use mindmap::{cost, NodeID, Coords, Node, random_color, serialization, Dir, Pack};
+use {cost, NodeID, Coords, Node, random_fg_color, serialization, Dir, Pack};
 use plot::plot_sparkline;
 use logging;
 
@@ -39,6 +39,8 @@ pub struct Screen {
     lowest_drawn: u16,
     // where we start drawing from
     view_y: u16,
+    // when we drill down then pop up, we should go to last focus, stored here
+    focus_stack: Vec<NodeID>,
 }
 
 impl Default for Screen {
@@ -63,6 +65,7 @@ impl Default for Screen {
             dims: terminal_size().unwrap(),
             lowest_drawn: 0,
             view_y: 0,
+            focus_stack: vec![],
         };
         screen.nodes.insert(0, root);
         screen
@@ -102,40 +105,36 @@ impl Screen {
                 match ke {
                     PageUp => self.scroll_up(),
                     PageDown => self.scroll_down(),
-                    Char('\n') => self.toggle_collapsed(),
-                    Char('\t') => self.create_child(),
                     Delete => self.delete_selected(),
-                    Ctrl('e') => self.exec_selected(),
-                    Ctrl('l') => self.toggle_show_logs(),
-                    Ctrl('f') => self.toggle_hide_stricken(),
-                    Ctrl('x') => self.toggle_stricken(),
-                    Ctrl('a') => self.add_or_remove_arrow(),
-                    Ctrl('o') => self.drill_down(),
-                    Ctrl('t') => self.pop_focus(),
-                    Ctrl('q') => self.auto_arrange(),
-                    // when Esc is hit, \u{1b}, try to unselect
-                    // and if nothing is unselected then it's
-                    // time to exit.
-                    Alt('\u{1b}') => return self.unselect().is_some(),
-                    Ctrl('c') | Ctrl('d') => return false,
-                    Ctrl('s') | Ctrl('w') => self.save(),
                     Up => self.select_up(),
                     Down => self.select_down(),
                     Left => self.select_left(),
                     Right => self.select_right(),
                     Backspace => self.backspace(),
+                    Char('\n') => self.toggle_collapsed(),
+                    Char('\t') => self.create_child(),
+                    Ctrl('v') => self.exec_selected(),
+                    Ctrl('w') => self.drill_down(),
+                    Ctrl('q') => self.pop_focus(),
+                    Ctrl('f') => self.prefix_jump_prompt(),
+                    Ctrl('a') => self.toggle_stricken(),
+                    Ctrl('h') => self.toggle_hide_stricken(),
+                    Ctrl('r') => self.add_or_remove_arrow(),
+                    Ctrl('p') => self.auto_arrange(),
+                    Ctrl('t') => self.create_sibling(),
+                    Ctrl('c') => return false,
+                    Ctrl('x') => self.save(),
+                    Ctrl('l') => self.toggle_show_logs(),
+                    Ctrl('e') => self.enter_cmd(),
+                    // when Esc is hit, \u{1b}, try to unselect
+                    // and if nothing is unselected then it's
+                    // time to exit.
+                    Alt('\u{1b}') => return self.unselect().is_some(),
                     Char(c) => {
                         if self.last_selected.is_some() {
                             self.append(c);
                         } else {
-                            match c {
-                                // 'h' => self.help_screen(),
-                                'l' => self.toggle_show_logs(),
-                                // 'm' => self.map_screen(),
-                                // 't' => self.task_screen(),
-                                // 'g' => self.graph_screen(),
-                                _ => warn!("Weird event {:?}", evt),
-                            }
+                            self.prefix_jump_to(c.to_string());
                         }
                     }
                     _ => warn!("Weird event {:?}", evt),
@@ -160,6 +159,111 @@ impl Screen {
             e => warn!("Weird event {:?}", e),
         }
         true
+    }
+
+    fn single_key_prompt(&mut self, prompt: &str) -> io::Result<Key> {
+        trace!("prompt({})", prompt);
+        let mut stdin: Box<Read> = Box::new(stdin());
+        let mut buf = String::new();
+        print!("{}{}{}{}",
+               style::Invert,
+               cursor::Goto(0, self.dims.1),
+               clear::AfterCursor,
+               prompt);
+        self.cleanup();
+        self.start_raw_mode();
+        let res = stdin.keys().nth(0).unwrap();
+        debug!("read prompt: {:?}", res);
+        res
+    }
+
+    fn prompt(&mut self, prompt: &str) -> io::Result<Option<String>> {
+        trace!("prompt({})", prompt);
+        let mut stdin: Box<Read> = Box::new(stdin());
+        let mut buf = String::new();
+        print!("{}{}{}{}",
+               style::Invert,
+               cursor::Goto(0, self.dims.1),
+               clear::AfterCursor,
+               prompt);
+        self.cleanup();
+        let res = stdin.read_line();
+        self.start_raw_mode();
+        debug!("read prompt: {:?}", res);
+        res
+    }
+
+    fn enter_cmd(&mut self) {
+        trace!("enter_cmd()");
+        let cmd = self.prompt("cmd: ");
+
+        //
+
+        //
+
+        //
+    }
+
+    fn prefix_jump_prompt(&mut self) {
+        trace!("prefix_jump_prompt()");
+
+        let prefix = match self.single_key_prompt("prefix: ") {
+            Ok(Key::Char(c)) => c.to_string(),
+            _ => return,
+        };
+        self.prefix_jump_to(prefix)
+    }
+
+    fn prefix_jump_to(&mut self, prefix: String) {
+        let chars = "arstqwfpgdbvcxzoienyuljhkm1234567890ARSTQWFPGDVCXZOIENYULJHBKM";
+        // get visible nodes that contain prefix
+        let nodes = self.find_visible_nodes(|node_id| {
+            self.with_node(node_id, |n| n.content.starts_with(&*prefix)).unwrap()
+        });
+
+        if nodes.len() == 1 {
+            let node_id = nodes[0];
+            self.select_node(node_id);
+            return;
+        }
+
+        // map an alphanumeric char to each candidate NodeID
+        let mapping: HashMap<&str, NodeID> =
+            chars.split("").skip(1).zip(nodes.into_iter()).collect();
+        // print the hilighted char at each choice
+        self.draw();
+        for (&c, &node_id) in &mapping {
+            let &coords = self.drawn_at(node_id).unwrap();
+            let (x, y) = self.internal_to_screen_xy(coords).unwrap();
+            print!("{}{}{}{}",
+                   cursor::Goto(x, y),
+                   style::Invert,
+                   c,
+                   style::Reset);
+        }
+
+        // read the choice
+        let choice = match self.single_key_prompt("choice: ") {
+            Ok(Key::Char(c)) => c.to_string(),
+            _ => return,
+        };
+
+        // jump or exit
+        if let Some(&node_id) = mapping.get(&*choice) {
+            debug!("jumping to node {}", node_id);
+            self.select_node(node_id);
+        }
+    }
+
+    fn find_visible_nodes<F>(&self, mut filter: F) -> Vec<NodeID>
+        where F: FnMut(NodeID) -> bool
+    {
+        self.drawn_at
+            .keys()
+            .filter(|&node_id| self.node_is_visible(*node_id).unwrap())
+            .filter(|&node_id| filter(*node_id))
+            .map(|&node_id| node_id)
+            .collect()
     }
 
     fn exec_selected(&mut self) {
@@ -202,7 +306,7 @@ impl Screen {
             .unwrap_or("".to_owned());
 
         let pid = unsafe { getpid() };
-        let path = format!("/tmp/climate_buffer.tmp.{}", pid);
+        let path = format!("/tmp/void_buffer.tmp.{}", pid);
         debug!("trying to open {} in editor", path);
 
         // remove old tmp file
@@ -342,22 +446,17 @@ impl Screen {
                 if let Some(is_empty) = self.with_node(selected_id, |n| n.content.is_empty()) {
                     if is_empty {
                         self.delete_selected();
-                        None
+                        return None;
                     } else {
                         self.last_selected.take();
                         self.with_node_mut(selected_id, |mut node| node.selected = false)
                             .unwrap();
-                        Some(selected_id)
+                        return Some(selected_id);
                     }
-                } else {
-                    None
                 }
-            } else {
-                None
             }
-        } else {
-            None
         }
+        None
     }
 
     fn internal_to_screen_xy(&self, coords: Coords) -> Option<Coords> {
@@ -444,6 +543,7 @@ impl Screen {
         trace!("delete_selected()");
         if let Some(selected_id) = self.last_selected.take() {
             let coords = self.drawn_at.remove(&selected_id);
+            debug!("coords: {:?}", coords);
             // remove ref from parent
             let parent_id = self.parent(selected_id).unwrap();
             trace!("deleting node {} from parent {}", selected_id, parent_id);
@@ -452,6 +552,8 @@ impl Screen {
             // remove children
             self.delete_recursive(selected_id);
             if let Some(c) = coords {
+                // need to draw here or there will be nothing to click_select below
+                self.draw();
                 self.click_select(c);
             }
         }
@@ -498,6 +600,23 @@ impl Screen {
             self.with_node_mut(node_id, |node| node.parent_id = selected_id);
             let added = self.with_node_mut(selected_id, |selected| {
                 selected.children.push(node_id);
+            });
+            if added.is_some() {
+                self.select_node(node_id);
+            } else {
+                self.delete_recursive(node_id);
+            }
+        }
+    }
+
+    fn create_sibling(&mut self) {
+        if let Some(selected_id) = self.last_selected {
+            let node_id = self.new_node();
+            let parent_id = self.parent(selected_id).unwrap();
+
+            self.with_node_mut(node_id, |node| node.parent_id = parent_id);
+            let added = self.with_node_mut(parent_id, |parent| {
+                parent.children.push(node_id);
             });
             if added.is_some() {
                 self.select_node(node_id);
@@ -576,7 +695,7 @@ impl Screen {
         // the rooted_coords for.
         let mut ptr = node_id;
         loop {
-            let id = self.parent(ptr)?;
+            let id = self.parent(ptr).ok_or("node has no parent")?;
             trace!("anchor loop id: {} ptr: {} selected: {} root: {}",
                    id,
                    ptr,
@@ -591,9 +710,9 @@ impl Screen {
         Ok(ptr)
     }
 
-    fn parent(&self, node_id: NodeID) -> Result<NodeID, String> {
+    fn parent(&self, node_id: NodeID) -> Option<NodeID> {
         trace!("parent({})", node_id);
-        self.with_node(node_id, |n| n.parent_id).ok_or("node not found".to_owned())
+        self.with_node(node_id, |n| n.parent_id)
     }
 
     fn move_selected(&mut self, from: Coords, to: Coords) {
@@ -659,14 +778,18 @@ impl Screen {
     }
 
     fn pop_focus(&mut self) {
-        let parent_id = self.parent(self.drawing_root).unwrap();
-        self.drawing_root = parent_id;
+        self.drawing_root = self.focus_stack.pop().unwrap_or(0);
+        self.view_y = 0;
     }
 
     fn drill_down(&mut self) {
         trace!("drill_down()");
         if let Some(selected_id) = self.unselect() {
-            self.drawing_root = selected_id;
+            if selected_id != self.drawing_root {
+                self.focus_stack.insert(0, self.drawing_root);
+                self.drawing_root = selected_id;
+                self.view_y = 0;
+            }
         }
     }
 
@@ -697,35 +820,37 @@ impl Screen {
         }
     }
 
-    // TODO update for pagination
     fn select_up(&mut self) {
-        let node_id = self.find_visible_node(|cur, other| cur.1 > other.1);
-        if node_id != 0 && !self.node_is_visible(node_id).unwrap() {
-            self.scroll_to_node(node_id);
+        if let Some(node_id) = self.find_relative_node(|cur, other| cur.1 > other.1) {
+            if node_id != 0 && !self.node_is_visible(node_id).unwrap() {
+                self.scroll_to_node(node_id);
+            }
+            self.select_node(node_id);
         }
-        self.select_node(node_id);
     }
 
-    // TODO update for pagination
     fn select_down(&mut self) {
-        let node_id = self.find_visible_node(|cur, other| cur.1 < other.1);
-        if node_id != 0 && !self.node_is_visible(node_id).unwrap() {
-            self.scroll_to_node(node_id);
+        if let Some(node_id) = self.find_relative_node(|cur, other| cur.1 < other.1) {
+            if node_id != 0 && !self.node_is_visible(node_id).unwrap() {
+                self.scroll_to_node(node_id);
+            }
+            self.select_node(node_id);
         }
-        self.select_node(node_id);
     }
 
     fn select_left(&mut self) {
-        let node_id = self.find_visible_node(|cur, other| cur.0 > other.0);
-        self.select_node(node_id);
+        if let Some(node_id) = self.find_relative_node(|cur, other| cur.0 > other.0) {
+            self.select_node(node_id);
+        }
     }
 
     fn select_right(&mut self) {
-        let node_id = self.find_visible_node(|cur, other| cur.0 < other.0);
-        self.select_node(node_id);
+        if let Some(node_id) = self.find_relative_node(|cur, other| cur.0 < other.0) {
+            self.select_node(node_id);
+        }
     }
 
-    fn find_visible_node<F>(&mut self, sort_fn: F) -> NodeID
+    fn find_relative_node<F>(&mut self, sort_fn: F) -> Option<NodeID>
         where F: Fn(Coords, Coords) -> bool
     {
         let selected_id = self.last_selected.unwrap_or(0);
@@ -744,9 +869,9 @@ impl Screen {
                     None
                 }
             })
-            .fold((0, 0), |(acc_id, acc_cost), (id, cost)| {
+            .fold((None, 0), |(acc_id, acc_cost), (id, cost)| {
                 if acc_cost == 0 || cost < acc_cost {
-                    (id, cost)
+                    (Some(id), cost)
                 } else {
                     (acc_id, acc_cost)
                 }
@@ -827,8 +952,7 @@ impl Screen {
 
     fn cleanup(&mut self) {
         trace!("cleanup()");
-        print!("{}", cursor::Goto(0, self.dims.1));
-        println!("{}", cursor::Show);
+        print!("{}", cursor::Show);
         self.stdout.take().unwrap().flush().unwrap();
     }
 
@@ -1027,7 +1151,7 @@ impl Screen {
             }
             write!(&mut buf, "{}", node.content).unwrap();
 
-            let max_width = (self.dims.0 - 1 - x) as usize;
+            let max_width = (cmp::max(self.dims.0, 1 + x) - 1 - x) as usize;
             if false {
                 // buf.chars().count() > max_width {
                 let chars = buf.chars();
@@ -1086,7 +1210,7 @@ impl Screen {
         let path: Vec<_> =
             internal_path.iter().filter_map(|&c| self.internal_to_screen_xy(c)).collect();
         trace!("draw_path({:?}, {:?}, {:?})", path, start_dir, dest_dir);
-        print!("{}", random_color());
+        print!("{}", random_fg_color());
         if path.len() == 1 {
             print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
         } else if path.len() > 1 {

@@ -1,10 +1,10 @@
 [package]
-name = "climate"
-version = "0.1.0"
+name = "voidmap"
+version = "0.2.0"
 authors = ["Tyler Neely <t@jujit.su>"]
-description = "practical command-line interfaces"
+description = "cli mind-map + task tracker + tsdb"
 license = "GPL-3.0"
-homepage = "https://github.com/spacejam/climate"
+homepage = "https://github.com/spacejam/void"
 keywords = ["cli", "commandline", "visualization", "ui"]
 
 [[test]]

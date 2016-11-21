@@ -1,4 +1,4 @@
-use mindmap::Coords;
+use Coords;
 
 #[derive(Debug)]
 pub struct Pack {

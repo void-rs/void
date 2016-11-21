@@ -1,5 +1,5 @@
 use std::sync::RwLock;
-
+use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
 
@@ -27,13 +27,14 @@ impl log::Log for ScreenLogger {
                            record.location().line(),
                            record.args());
 
-        // TODO configure this
-        let mut f = OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open("/home/t/src/climate/debug.log")
-            .unwrap();
-        f.write_all(line.as_bytes()).unwrap();
+        let ed = env::var("LOGFILE").map(|p| {
+            let mut f = OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(p)
+                .unwrap();
+            f.write_all(line.as_bytes()).unwrap();
+        });
     }
 }
 
