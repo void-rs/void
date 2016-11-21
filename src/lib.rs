@@ -1,6 +1,3 @@
-#![feature(plugin)]
-#![plugin(clippy)]
-
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
@@ -12,7 +9,6 @@ extern crate rand;
 extern crate quickcheck;
 extern crate termion;
 extern crate protobuf;
-extern crate rsdb;
 extern crate libc;
 
 mod logging;

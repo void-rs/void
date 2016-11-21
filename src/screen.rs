@@ -196,12 +196,6 @@ impl Screen {
         if let Ok(Some(cmd)) = self.prompt("cmd: ") {
             debug!("received command {:?}", cmd);
         }
-
-        //
-
-        //
-
-        //
     }
 
     fn prefix_jump_prompt(&mut self) {

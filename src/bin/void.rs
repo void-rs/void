@@ -1,5 +1,3 @@
-#![feature(plugin)]
-#![plugin(clippy)]
 extern crate getopts;
 extern crate voidmap;
 
