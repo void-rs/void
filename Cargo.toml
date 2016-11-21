@@ -1,6 +1,6 @@
 [package]
 name = "voidmap"
-version = "0.2.3"
+version = "0.2.4"
 authors = ["Tyler Neely <t@jujit.su>"]
 description = "cli mind-map + task tracker + tsdb"
 license = "GPL-3.0"
@@ -14,7 +14,6 @@ path = "test/test.rs"
 
 [dependencies]
 termion = "1.1"
-quickcheck = "0.3"
 log = "0.3"
 lazy_static = "0.2"
 time = "0.1"
@@ -24,3 +23,6 @@ getopts = "0.2"
 protobuf = "1.0"
 rand = "0.3"
 libc = "0.2"
+
+[dev-dependencies]
+quickcheck = "0.3"

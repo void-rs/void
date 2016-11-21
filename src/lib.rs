@@ -6,7 +6,6 @@ extern crate log;
 extern crate time;
 extern crate hyper;
 extern crate rand;
-extern crate quickcheck;
 extern crate termion;
 extern crate protobuf;
 extern crate libc;

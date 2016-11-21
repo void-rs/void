@@ -33,13 +33,13 @@ it is [via rustup](https://www.rustup.rs/).
 feature | control 
 --- | ---
 new node (freeform) | click blank space 
-new node (child of selected) | tab
-new node (sibling of selected) | ^t
+new node (sibling of selected) | Enter
+new node (child of selected) | Tab
 delete selected node and its children | Delete
 mark selected node complete | ^a
 drill-down into selected node | ^w
 pop up selection | ^q
-hide children of selected | Enter
+hide children of selected | ^t
 open text editor for `txt:...` node | ^v
 prefix-jump with no selection | type a letter
 prefix-jump with other selected | ^f
