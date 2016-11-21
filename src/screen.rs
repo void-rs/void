@@ -40,7 +40,7 @@ pub struct Screen {
     // where we start drawing from
     view_y: u16,
     // when we drill down then pop up, we should go to last focus, stored here
-    focus_stack: Vec<NodeID>,
+    focus_stack: Vec<(NodeID, NodeID)>,
 }
 
 impl Default for Screen {
@@ -781,15 +781,20 @@ impl Screen {
 
     fn pop_focus(&mut self) {
         self.unselect();
-        self.drawing_root = self.focus_stack.pop().unwrap_or(0);
-        self.view_y = 0;
+        let (root, selected) = self.focus_stack.pop().unwrap_or((0, 0));
+        self.drawing_root = root;
+        self.select_node(selected);
+        if !self.scroll_to_node(selected) {
+            self.view_y = 0;
+        }
     }
 
     fn drill_down(&mut self) {
         trace!("drill_down()");
         if let Some(selected_id) = self.unselect() {
             if selected_id != self.drawing_root {
-                self.focus_stack.push(self.drawing_root);
+                let breadcrumb = (self.drawing_root, selected_id);
+                self.focus_stack.push(breadcrumb);
                 self.drawing_root = selected_id;
                 self.view_y = 0;
             }
@@ -817,9 +822,12 @@ impl Screen {
         }
     }
 
-    fn scroll_to_node(&mut self, node_id: NodeID) {
+    fn scroll_to_node(&mut self, node_id: NodeID) -> bool {
         if let Some(&(_, y)) = self.drawn_at(node_id) {
             self.view_y = cmp::max(y, self.dims.1 / 2) - self.dims.1 / 2;
+            true
+        } else {
+            false
         }
     }
 

@@ -30,36 +30,22 @@ it is [via rustup](https://www.rustup.rs/).
 
 #### keys
 
-feature | control 
---- | ---
-new node (freeform) | click blank space 
-new node (sibling of selected) | Enter
-new node (child of selected) | Tab
-delete selected node and its children | Delete
-mark selected node complete | ^a
-drill-down into selected node | ^w
-pop up selection | ^q
-hide children of selected | ^t
-open text editor for `txt:...` node | ^v
-prefix-jump with no selection | type a letter
-prefix-jump with other selected | ^f
-hide completed children of node | ^h
-select arrow start/destination | ^r
-erase arrow | select start, ^r, then destination, ^r
-show debug log | ^l
-reparent node | drag node to new parent
-move subtree | drag parent to new location
-auto-arrange nodes in view | ^p
-scroll up | PgUp
-scroll down | PgDn
-select up | Up
-select down | Down
-select subtree to left | Left
-select subtree to right | Right
-de-select node | Esc
-save | ^x
-exit | Esc with nothing selected
-exit | ^c
+feature | control | feature | control
+--- | --- | --- | ---
+new node (freeform) | click blank space | new node (sibling of selected) | Enter
+new node (child of selected) | Tab | delete selected node and its children | Delete
+mark selected node complete | ^a | drill-down into selected node | ^w
+pop up selection | ^q | hide children of selected | ^t
+open text editor for `txt:...` node | ^v | prefix-jump with no selection | type a letter
+prefix-jump with other selected | ^f | hide completed children of node | ^h
+select arrow start/destination | ^r | erase arrow | select start, ^r, then destination, ^r
+show debug log | ^l | reparent node | drag node to new parent
+move subtree | drag parent to new location | auto-arrange nodes in view | ^p
+scroll up | PgUp | scroll down | PgDn
+select up | Up | select down | Down
+select subtree to left | Left | select subtree to right | Right
+de-select node | Esc | save | ^x
+exit | Esc with nothing selected | exit | ^c
 
 #### known bugs
 

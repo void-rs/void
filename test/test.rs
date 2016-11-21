@@ -1,4 +1,3 @@
-extern crate quickcheck;
 extern crate voidmap;
 extern crate termion;
 extern crate quickcheck;
