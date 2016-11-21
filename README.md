@@ -9,10 +9,15 @@ cluster of topics roughly related to "effectiveness" while stumbling
 through various mountain ranges and cities in central europe and the
 american northeast.
 
-* conversations with [@matthiasn](https://github.com/matthiasn) and being introduced to his wonderful [iWasWhere](https://github.com/matthiasn/iWasWhere) system
-* [writings of eliezer s. yudkowsky](https://wiki.lesswrong.com/wiki/Rationality:_From_AI_to_Zombies), thinking fast and slow, the optimism bias, [how to solve it](https://en.wikipedia.org/wiki/How_to_Solve_It)
+* conversations with [@matthiasn](https://github.com/matthiasn) and being introduced
+to his wonderful [iWasWhere](https://github.com/matthiasn/iWasWhere) system
+* [writings of eliezer s. yudkowsky](https://wiki.lesswrong.com/wiki/Rationality:_From_AI_to_Zombies),
+thinking fast and slow, the optimism bias, [how to solve it](https://en.wikipedia.org/wiki/How_to_Solve_It)
 * [various subtopics of operations research](https://en.wikipedia.org/wiki/Operations_research#Problems_addressed)
-* occult mindfulness: undoing yourself with energized meditation, prometheus rising
+* occult mindfulness: [undoing yourself with energized meditation]
+(http://heruka.altervista.org/X_files/Undoing%20Yourself%20With%20Energized%20Meditation%20And%20Other%20Devices%20-%20Christopher%20S%20Hyatt.pdf),
+[prometheus rising](http://www.principiadiscordia.com/downloads/04%20Prometheus%20Rising.pdf)
 * military C2 theory, recognition/metacognition, OODA, etc... [A Review of Time Critical Decision Making Models and 
 Human Cognitive Processes](https://pdfs.semanticscholar.org/2eb9/e12955dfafd4ab5d9337b416e31f5afca834.pdf)
-* personal productivity literature: pomodoro, GTD, eat that frog, flow
+* personal productivity literature: [pomodoro](http://baomee.info/pdf/technique/1.pdf), [GTD](https://en.wikipedia.org/wiki/Getting_Things_Done),
+[eat that frog](http://www.actnow.ie/files/BookSummaryEatThatFrog.pdf), [flow](http://216.119.127.164/edgeware/archive/think/main_filing15.htm)
