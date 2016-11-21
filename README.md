@@ -13,7 +13,7 @@ cutting him. ...When you appreciate the power of
 nature, knowing the rhythm of any situation, you 
 will be able to hit the enemy naturally and strike 
 naturally. All this is the Way of the Void.
-- Miyamoto Musashi
+-Miyamoto Musashi
 
 ![](/demo.gif)
 
@@ -65,7 +65,8 @@ exit | ^c
 
 doesn't properly handle very long text. if you want to embed 
 an essay, create a node that begins with `txt: ` and hit `^v` 
-to open its contents.
+to open its contents in an external text editor, specifiable
+by setting the `EDITOR` env var.
 
 #### optional configuration
 
