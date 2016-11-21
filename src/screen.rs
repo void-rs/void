@@ -1156,7 +1156,7 @@ impl Screen {
             if false {
                 // buf.chars().count() > max_width {
                 let chars = buf.chars();
-                let oldlen = chars.clone().count();
+                // let oldlen = chars.clone().count();
                 let mut truncated: String = chars.take(cmp::max(max_width, 1) - 1).collect();
                 truncated.push('…');
                 print!("{}", truncated);
