@@ -19,7 +19,7 @@ pub struct Node {
 impl Default for Node {
     fn default() -> Node {
         Node {
-            rooted_coords: (1, 1),
+            rooted_coords: (1, 2),
             id: 0,
             parent_id: 0,
             content: String::new(),

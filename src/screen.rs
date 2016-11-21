@@ -103,6 +103,10 @@ impl Screen {
         match evt {
             Event::Key(ke) => {
                 match ke {
+                    // when Esc is hit, try to unselect
+                    // and if nothing is unselected then it's
+                    // time to exit.
+                    Esc => return self.unselect().is_some(),
                     PageUp => self.scroll_up(),
                     PageDown => self.scroll_down(),
                     Delete => self.delete_selected(),
@@ -126,10 +130,6 @@ impl Screen {
                     Ctrl('x') => self.save(),
                     Ctrl('l') => self.toggle_show_logs(),
                     Ctrl('e') => self.enter_cmd(),
-                    // when Esc is hit, \u{1b}, try to unselect
-                    // and if nothing is unselected then it's
-                    // time to exit.
-                    Alt('\u{1b}') => return self.unselect().is_some(),
                     Char(c) => {
                         if self.last_selected.is_some() {
                             self.append(c);
@@ -611,8 +611,12 @@ impl Screen {
 
     fn create_sibling(&mut self) {
         if let Some(selected_id) = self.last_selected {
-            let node_id = self.new_node();
             let parent_id = self.parent(selected_id).unwrap();
+            if parent_id == self.drawing_root {
+                // don't want to deal with this case right now
+                return;
+            }
+            let node_id = self.new_node();
 
             self.with_node_mut(node_id, |node| node.parent_id = parent_id);
             let added = self.with_node_mut(parent_id, |parent| {
@@ -744,6 +748,10 @@ impl Screen {
                     .unwrap();
                 self.with_node_mut(new_parent, |np| np.children.push(selected_id)).unwrap();
                 self.with_node_mut(selected_id, |s| s.parent_id = new_parent).unwrap();
+                if self.with_node(new_parent, |np| np.collapsed).unwrap() {
+                    // if the destination is collapsed, deselect this node
+                    self.unselect();
+                }
             } else {
                 // we're here because we released the drag
                 // with the cursor over a child, so rather
@@ -778,6 +786,7 @@ impl Screen {
     }
 
     fn pop_focus(&mut self) {
+        self.unselect();
         self.drawing_root = self.focus_stack.pop().unwrap_or(0);
         self.view_y = 0;
     }
@@ -786,7 +795,7 @@ impl Screen {
         trace!("drill_down()");
         if let Some(selected_id) = self.unselect() {
             if selected_id != self.drawing_root {
-                self.focus_stack.insert(0, self.drawing_root);
+                self.focus_stack.push(self.drawing_root);
                 self.drawing_root = selected_id;
                 self.view_y = 0;
             }
