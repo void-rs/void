@@ -4,6 +4,39 @@
 
 ![](/demo.gif)
 
+#### keys
+
+feature | control 
+--- | ---
+new node (freeform) | click blank space 
+new node (child of selected) | tab
+new node (sibling of selected) | ^t
+delete selected node and its children | Delete
+mark selected node complete | ^a
+drill-down into selected node | ^w
+pop up selection | ^q
+hide children of selected | Enter
+open text editor for `txt:...` node | ^v
+prefix-jump with no selection | type a letter
+prefix-jump with other selected | ^f
+hide completed children of node | ^h
+select arrow start/destination | ^r
+erase arrow | select start, ^r, then destination, ^r
+show debug log | ^l
+reparent node | drag node to new parent
+move subtree | drag parent to new location
+auto-arrange nodes in view | ^p
+scroll up | PgUp
+scroll down | PgDn
+select up | Up
+select down | Down
+select subtree to left | Left
+select subtree to right | Right
+de-select node | Esc
+save | ^x
+exit | Esc with nothing selected
+exit | ^c
+
 This came about in the midst of an (ongoing) obsessive inquiry into a
 cluster of topics roughly related to "effectiveness" while stumbling
 through various mountain ranges and cities in central europe and the
@@ -21,3 +54,4 @@ thinking fast and slow, the optimism bias, [how to solve it](https://en.wikipedi
 Human Cognitive Processes](https://pdfs.semanticscholar.org/2eb9/e12955dfafd4ab5d9337b416e31f5afca834.pdf)
 * personal productivity literature: [pomodoro](http://baomee.info/pdf/technique/1.pdf), [GTD](https://en.wikipedia.org/wiki/Getting_Things_Done),
 [eat that frog](http://www.actnow.ie/files/BookSummaryEatThatFrog.pdf), [flow](http://216.119.127.164/edgeware/archive/think/main_filing15.htm)
+
