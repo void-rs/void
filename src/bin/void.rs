@@ -7,7 +7,7 @@ extern crate voidmap;
 extern crate log;
 
 use std::fs::File;
-use std::io::{Error, ErrorKind, Read};
+use std::io::Read;
 
 use voidmap::{Screen, deserialize_screen, init_screen_log};
 

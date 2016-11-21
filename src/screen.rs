@@ -163,8 +163,7 @@ impl Screen {
 
     fn single_key_prompt(&mut self, prompt: &str) -> io::Result<Key> {
         trace!("prompt({})", prompt);
-        let mut stdin: Box<Read> = Box::new(stdin());
-        let mut buf = String::new();
+        let stdin: Box<Read> = Box::new(stdin());
         print!("{}{}{}{}",
                style::Invert,
                cursor::Goto(0, self.dims.1),
@@ -180,7 +179,6 @@ impl Screen {
     fn prompt(&mut self, prompt: &str) -> io::Result<Option<String>> {
         trace!("prompt({})", prompt);
         let mut stdin: Box<Read> = Box::new(stdin());
-        let mut buf = String::new();
         print!("{}{}{}{}",
                style::Invert,
                cursor::Goto(0, self.dims.1),
@@ -195,7 +193,9 @@ impl Screen {
 
     fn enter_cmd(&mut self) {
         trace!("enter_cmd()");
-        let cmd = self.prompt("cmd: ");
+        if let Ok(Some(cmd)) = self.prompt("cmd: ") {
+            debug!("received command {:?}", cmd);
+        }
 
         //
 
@@ -262,7 +262,7 @@ impl Screen {
             .keys()
             .filter(|&node_id| self.node_is_visible(*node_id).unwrap())
             .filter(|&node_id| filter(*node_id))
-            .map(|&node_id| node_id)
+            .cloned()
             .collect()
     }
 
@@ -870,9 +870,7 @@ impl Screen {
             .iter()
             .filter_map(|(&node, &(x, y))| {
                 let visible = y > self.view_y && y < self.view_y + self.dims.1 + 2;
-                if !visible {
-                    None
-                } else if sort_fn(*cur, (x, y)) {
+                if visible && sort_fn(*cur, (x, y)) {
                     Some((node, cost(*cur, (x, y))))
                 } else {
                     None
@@ -1442,15 +1440,4 @@ impl Screen {
             None
         }
     }
-}
-
-fn xmessage(msg: &str) {
-    std::process::Command::new("xmessage")
-        .arg(msg)
-        .spawn()
-        .expect("command failed to start");
-}
-
-fn play_bell() {
-    print!("\x07");
 }

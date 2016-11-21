@@ -27,14 +27,14 @@ impl log::Log for ScreenLogger {
                            record.location().line(),
                            record.args());
 
-        let ed = env::var("LOGFILE").map(|p| {
+        if let Ok(path) = env::var("LOGFILE") {
             let mut f = OpenOptions::new()
                 .append(true)
                 .create(true)
-                .open(p)
+                .open(path)
                 .unwrap();
             f.write_all(line.as_bytes()).unwrap();
-        });
+        }
     }
 }
 
