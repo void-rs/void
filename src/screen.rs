@@ -117,6 +117,7 @@ impl Screen {
                     Backspace => self.backspace(),
                     Char('\n') => self.create_sibling(),
                     Char('\t') => self.create_child(),
+                    Ctrl('n') => self.create_free_node(),
                     Ctrl('v') => self.exec_selected(),
                     Ctrl('w') => self.drill_down(),
                     Ctrl('q') => self.pop_focus(),
@@ -125,6 +126,7 @@ impl Screen {
                     Ctrl('h') => self.toggle_hide_stricken(),
                     Ctrl('r') => self.add_or_remove_arrow(),
                     Ctrl('p') => self.auto_arrange(),
+                    Ctrl('z') => self.toggle_auto_arrange(),
                     Ctrl('t') => self.toggle_collapsed(),
                     Ctrl('c') => return false,
                     Ctrl('x') => self.save(),
@@ -553,6 +555,16 @@ impl Screen {
         }
     }
 
+    fn should_auto_arrange(&self) -> bool {
+        self.with_node(self.drawing_root, |n| n.auto_arrange).unwrap()
+    }
+
+    fn toggle_auto_arrange(&mut self) {
+        let root = self.drawing_root;
+        self.with_node_mut(root, |mut n| n.auto_arrange = !n.auto_arrange)
+            .unwrap()
+    }
+
     pub fn run(&mut self) {
         self.start_raw_mode();
         self.draw();
@@ -561,12 +573,19 @@ impl Screen {
             let evt = c.unwrap();
             self.dims = terminal_size().unwrap();
             let should_break = !self.handle_event(evt);
+
+            if self.should_auto_arrange() {
+                self.auto_arrange();
+                self.scroll_to_selected();
+            }
+
             self.draw();
 
             // trace!("nodes:");
             // for (id, node) in &self.nodes {
             // trace!("{} -> {:?} -> {}", id, node.children, node.parent_id);
             // }
+
 
             if should_break {
                 self.cleanup();
@@ -624,6 +643,35 @@ impl Screen {
         }
     }
 
+    fn create_free_node(&mut self) {
+        let min_width = self.dims.0 / 3;
+        let mut y_cursor = self.view_y + 2;
+        let mut from_x = None;
+        'outer: loop {
+            trace!("in create_free_node loop");
+            // go down until we find a spot
+            // that's wide enough, then create
+            // an anchor there.
+            let mut width = 0;
+            for x in 1..self.dims.0 {
+                if self.lookup((x, y_cursor)).is_none() {
+                    width += 1;
+                    if from_x.is_none() {
+                        from_x = Some(x)
+                    }
+                    if width >= min_width {
+                        break 'outer;
+                    }
+                } else {
+                    from_x = None;
+                    width = 0;
+                }
+            }
+            y_cursor += 1;
+        }
+        self.create_anchor((from_x.unwrap(), y_cursor));
+    }
+
     fn create_anchor(&mut self, coords: Coords) {
         let root = self.drawing_root;
         let node_id = self.new_node();
@@ -632,9 +680,7 @@ impl Screen {
             node.parent_id = root;
         });
         self.with_node_mut(root, |root| root.children.push(node_id));
-        // need to draw here to populate drawn_at for select to work below
-        self.draw();
-        self.try_select(coords);
+        self.select_node(node_id);
     }
 
     fn backspace(&mut self) {
@@ -819,6 +865,12 @@ impl Screen {
         if self.lowest_drawn > self.view_y + self.dims.1 {
             self.view_y = cmp::min(self.view_y + self.dims.1 / 2, self.lowest_drawn);
             self.unselect();
+        }
+    }
+
+    fn scroll_to_selected(&mut self) {
+        if let Some(selected_id) = self.last_selected {
+            self.scroll_to_node(selected_id);
         }
     }
 
@@ -1013,7 +1065,7 @@ impl Screen {
         trace!("draw()");
         print!("{}", clear::All);
 
-        self.print_header();
+        self.draw_header();
 
         // print visible nodes
         self.draw_children_of_root();
@@ -1266,10 +1318,14 @@ impl Screen {
         print!("{}", color::Fg(color::Reset));
     }
 
-    fn print_header(&self) {
-        trace!("print_header()");
+    fn draw_header(&self) {
+        trace!("draw_header()");
         let mut header_text = self.with_node(self.drawing_root, |node| node.content.clone())
             .unwrap();
+
+        if self.should_auto_arrange() {
+            header_text.push_str(" [auto-arrange] ");
+        }
 
         let now = time::get_time().sec as u64;
         let day_in_sec = 60 * 60 * 24;

@@ -14,6 +14,7 @@ pub struct Node {
     pub meta: Meta,
     pub free_text: Option<String>,
     pub color: String,
+    pub auto_arrange: bool,
 }
 
 impl Default for Node {
@@ -31,6 +32,7 @@ impl Default for Node {
             meta: Meta::default(),
             free_text: None,
             color: random_fg_color(),
+            auto_arrange: false,
         }
     }
 }

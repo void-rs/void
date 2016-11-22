@@ -100,6 +100,7 @@ fn deserialize_node(node_pb: &pb::Node) -> Node {
             None
         },
         color: random_fg_color(),
+        auto_arrange: false,
     }
 }
 
