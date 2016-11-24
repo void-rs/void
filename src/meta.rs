@@ -6,6 +6,13 @@ use hyper;
 use hyper::client::Client;
 use time;
 
+lazy_static! {
+    static ref LOC: (f32, f32) = gps_query().unwrap_or_else(|e| {
+                error!("failed to get gps: {:?}", e);
+                (0.0, 0.0)
+            });
+}
+
 #[derive(Debug, Clone)]
 pub struct Meta {
     pub ctime: u64,
@@ -21,10 +28,7 @@ impl Default for Meta {
             ctime: time::get_time().sec as u64,
             mtime: 0,
             finish_time: None,
-            gps: gps_query().unwrap_or_else(|e| {
-                error!("failed to get gps: {:?}", e);
-                (0.0, 0.0)
-            }),
+            gps: *LOC,
             tags: HashMap::new(),
         }
     }

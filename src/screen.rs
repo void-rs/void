@@ -109,7 +109,7 @@ impl Screen {
                     Esc => return self.unselect().is_some(),
                     PageUp => self.scroll_up(),
                     PageDown => self.scroll_down(),
-                    Delete => self.delete_selected(),
+                    Delete => self.delete_selected(true),
                     Up => self.select_up(),
                     Down => self.select_down(),
                     Left => self.select_left(),
@@ -441,7 +441,7 @@ impl Screen {
             if let Some(selected_id) = self.last_selected {
                 if let Some(is_empty) = self.with_node(selected_id, |n| n.content.is_empty()) {
                     if is_empty {
-                        self.delete_selected();
+                        self.delete_selected(false);
                         return None;
                     } else {
                         self.last_selected.take();
@@ -535,7 +535,7 @@ impl Screen {
         }
     }
 
-    fn delete_selected(&mut self) {
+    fn delete_selected(&mut self, reselect: bool) {
         trace!("delete_selected()");
         if let Some(selected_id) = self.last_selected.take() {
             let coords = self.drawn_at.remove(&selected_id);
@@ -548,9 +548,11 @@ impl Screen {
             // remove children
             self.delete_recursive(selected_id);
             if let Some(c) = coords {
-                // need to draw here or there will be nothing to click_select below
-                self.draw();
-                self.click_select(c);
+                if reselect {
+                    // need to draw here or there will be nothing to click_select below
+                    self.draw();
+                    self.click_select(c);
+                }
             }
         }
     }
@@ -571,7 +573,9 @@ impl Screen {
         let stdin = stdin();
         for c in stdin.events() {
             let evt = c.unwrap();
+
             self.dims = terminal_size().unwrap();
+
             let should_break = !self.handle_event(evt);
 
             if self.should_auto_arrange() {
@@ -580,12 +584,6 @@ impl Screen {
             }
 
             self.draw();
-
-            // trace!("nodes:");
-            // for (id, node) in &self.nodes {
-            // trace!("{} -> {:?} -> {}", id, node.children, node.parent_id);
-            // }
-
 
             if should_break {
                 self.cleanup();
