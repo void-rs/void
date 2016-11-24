@@ -876,7 +876,10 @@ impl Screen {
 
     fn scroll_to_node(&mut self, node_id: NodeID) -> bool {
         if let Some(&(_, y)) = self.drawn_at(node_id) {
-            self.view_y = cmp::max(y, self.dims.1 / 2) - self.dims.1 / 2;
+            if y < self.view_y || y > (self.view_y + self.dims.1) {
+                // move only if necessary
+                self.view_y = cmp::max(y, self.dims.1 / 2) - self.dims.1 / 2;
+            }
             true
         } else {
             false
@@ -923,8 +926,7 @@ impl Screen {
         let (id, _) = self.drawn_at
             .iter()
             .filter_map(|(&node, &(x, y))| {
-                let visible = y > self.view_y && y < self.view_y + self.dims.1 + 2;
-                if visible && sort_fn(*cur, (x, y)) {
+                if sort_fn(*cur, (x, y)) {
                     Some((node, cost(*cur, (x, y))))
                 } else {
                     None
