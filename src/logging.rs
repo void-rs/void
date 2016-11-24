@@ -40,7 +40,7 @@ impl log::Log for ScreenLogger {
 
 pub fn init_screen_log() -> Result<(), SetLoggerError> {
     log::set_logger(|max_log_level| {
-        max_log_level.set(LogLevelFilter::Debug);
+        max_log_level.set(LogLevelFilter::Info);
         Box::new(ScreenLogger)
     })
 }

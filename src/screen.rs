@@ -580,7 +580,6 @@ impl Screen {
 
             if self.should_auto_arrange() {
                 self.auto_arrange();
-                self.scroll_to_selected();
             }
 
             self.draw();
@@ -828,9 +827,6 @@ impl Screen {
         let (root, selected) = self.focus_stack.pop().unwrap_or((0, 0));
         self.drawing_root = root;
         self.select_node(selected);
-        if !self.scroll_to_node(selected) {
-            self.view_y = 0;
-        }
     }
 
     fn drill_down(&mut self) {
@@ -866,9 +862,11 @@ impl Screen {
         }
     }
 
-    fn scroll_to_selected(&mut self) {
+    fn scroll_to_selected(&mut self) -> bool {
         if let Some(selected_id) = self.last_selected {
-            self.scroll_to_node(selected_id);
+            self.scroll_to_node(selected_id)
+        } else {
+            false
         }
     }
 
@@ -885,36 +883,30 @@ impl Screen {
     }
 
     fn select_up(&mut self) {
-        if let Some(node_id) = self.find_relative_node(|cur, other| cur.1 > other.1) {
-            if node_id != 0 && !self.node_is_visible(node_id).unwrap() {
-                self.scroll_to_node(node_id);
-            }
-            self.select_node(node_id);
-        }
+        self.select_relative(|cur, other| cur.1 > other.1);
     }
 
     fn select_down(&mut self) {
-        if let Some(node_id) = self.find_relative_node(|cur, other| cur.1 < other.1) {
-            if node_id != 0 && !self.node_is_visible(node_id).unwrap() {
-                self.scroll_to_node(node_id);
-            }
-            self.select_node(node_id);
-        }
+        self.select_relative(|cur, other| cur.1 < other.1);
     }
 
     fn select_left(&mut self) {
-        if let Some(node_id) = self.find_relative_node(|cur, other| cur.0 > other.0) {
-            self.select_node(node_id);
-        }
+        self.select_relative(|cur, other| cur.0 > other.0);
     }
 
     fn select_right(&mut self) {
-        if let Some(node_id) = self.find_relative_node(|cur, other| cur.0 < other.0) {
+        self.select_relative(|cur, other| cur.0 < other.0);
+    }
+
+    fn select_relative<F>(&mut self, filter_fn: F)
+        where F: Fn(Coords, Coords) -> bool
+    {
+        if let Some(node_id) = self.find_relative_node(filter_fn) {
             self.select_node(node_id);
         }
     }
 
-    fn find_relative_node<F>(&mut self, sort_fn: F) -> Option<NodeID>
+    fn find_relative_node<F>(&mut self, filter_fn: F) -> Option<NodeID>
         where F: Fn(Coords, Coords) -> bool
     {
         let selected_id = self.last_selected.unwrap_or(0);
@@ -925,7 +917,7 @@ impl Screen {
             .iter()
             .fold((None, std::u16::MAX),
                   |(acc_id, acc_cost), (&node_id, &(x, y))| {
-                if sort_fn(*cur, (x, y)) {
+                if filter_fn(*cur, (x, y)) {
                     let cost = cost(*cur, (x, y));
                     if cost < acc_cost {
                         (Some(node_id), cost)
@@ -939,11 +931,30 @@ impl Screen {
         id
     }
 
+    fn node_cost(&self, node1: NodeID, node2: NodeID) -> Option<u16> {
+        if let Some((l1, r1)) = self.bounds_for_lookup(node1) {
+            if let Some((l2, r2)) = self.bounds_for_lookup(node2) {
+                let possibilities = vec![(l1, l2), (l1, r2), (r1, l2), (r1, r2)];
+                return possibilities.into_iter().map(|(one, two)| cost(one, two)).min();
+            }
+        }
+        None
+    }
+
     fn select_node(&mut self, node_id: NodeID) {
         trace!("select_node({})", node_id);
         self.unselect();
-        self.with_node_mut(node_id, |mut node| node.selected = true);
-        self.last_selected = Some(node_id);
+        if node_id != 0 {
+            self.with_node_mut(node_id, |mut node| node.selected = true);
+            self.last_selected = Some(node_id);
+
+            // draw() needed to make visible / scroll accurate
+            self.draw();
+
+            if !self.node_is_visible(node_id).unwrap() {
+                self.scroll_to_selected();
+            }
+        }
     }
 
     fn click_screen(&mut self, coords: Coords) {
@@ -1049,9 +1060,9 @@ impl Screen {
 
     // *
     // *
-    // *
-    // * Drawing Functionality
-    // *
+    // *┌──┐
+    // *│  Drawing Functionality
+    // *└──────────────>
     // *
     // *
 
