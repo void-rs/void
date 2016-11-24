@@ -1,6 +1,6 @@
 [package]
 name = "voidmap"
-version = "0.2.4"
+version = "0.2.5"
 authors = ["Tyler Neely <t@jujit.su>"]
 description = "cli mind-map + task tracker + tsdb"
 license = "GPL-3.0"
