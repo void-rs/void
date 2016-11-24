@@ -38,7 +38,7 @@ delete selected node and its children | Delete | move subtree | drag parent to n
 arrange nodes in view | ^p | auto-arrange nodes in view from now on | ^z
 mark selected node complete | ^a | drill-down into selected node | ^w
 pop up selection | ^q | hide children of selected | ^t
-open text editor for `txt:...` node | ^v | prefix-jump with no selection | type a letter
+open text editor for `txt:...` node | ^k | prefix-jump with no selection | type a letter
 prefix-jump with other selected | ^f | hide completed children of node | ^h
 select arrow start/destination | ^r | erase arrow | select start, ^r, then destination, ^r
 show debug log | ^l | reparent node | drag node to new parent
@@ -47,7 +47,7 @@ select up | Up | select down | Down
 select subtree to left | Left | select subtree to right | Right
 de-select node | Esc | save | ^x
 exit | Esc with nothing selected | exit | ^c
-
+jump to weighted next task | ^v
 #### known bugs
 
 doesn't properly handle very long text. if you want to embed 

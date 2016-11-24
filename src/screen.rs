@@ -14,6 +14,8 @@ use termion::raw::{IntoRawMode, RawTerminal};
 
 use libc::getpid;
 use time;
+use regex::Regex;
+use rand::{self, Rng};
 
 use {cost, NodeID, Coords, Node, random_fg_color, serialization, Dir, Pack};
 use plot::plot_sparkline;
@@ -21,18 +23,19 @@ use logging;
 
 pub struct Screen {
     pub max_id: u64,
-    pub drawing_root: NodeID,
     pub nodes: HashMap<NodeID, Node>,
     pub arrows: Vec<(NodeID, NodeID)>,
     pub work_path: Option<String>,
-    pub show_logs: bool,
-    pub show_meta: bool,
-    pub last_selected: Option<NodeID>,
-    pub drawing_arrow: Option<NodeID>,
+
+    // non-pub members are ephemeral
+    drawing_root: NodeID,
+    show_logs: bool,
+    last_selected: Option<NodeID>,
+    drawing_arrow: Option<NodeID>,
+    lookup: HashMap<Coords, NodeID>,
+    drawn_at: HashMap<NodeID, Coords>,
     dragging_from: Option<Coords>,
     dragging_to: Option<Coords>,
-    pub lookup: HashMap<Coords, NodeID>,
-    pub drawn_at: HashMap<NodeID, Coords>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
     // screen dimensions as detected during the current draw() cycle
     dims: Coords,
@@ -40,7 +43,7 @@ pub struct Screen {
     // where we start drawing from
     view_y: u16,
     // when we drill down then pop up, we should go to last focus, stored here
-    focus_stack: Vec<(NodeID, NodeID)>,
+    focus_stack: Vec<(NodeID, NodeID, u16)>,
 }
 
 impl Default for Screen {
@@ -55,7 +58,6 @@ impl Default for Screen {
             lookup: HashMap::new(),
             drawn_at: HashMap::new(),
             show_logs: false,
-            show_meta: true,
             drawing_root: 0,
             stdout: None,
             dragging_from: None,
@@ -118,7 +120,7 @@ impl Screen {
                     Char('\n') => self.create_sibling(),
                     Char('\t') => self.create_child(),
                     Ctrl('n') => self.create_free_node(),
-                    Ctrl('v') => self.exec_selected(),
+                    Ctrl('k') => self.exec_selected(),
                     Ctrl('w') => self.drill_down(),
                     Ctrl('q') => self.pop_focus(),
                     Ctrl('f') => self.prefix_jump_prompt(),
@@ -132,6 +134,7 @@ impl Screen {
                     Ctrl('x') => self.save(),
                     Ctrl('l') => self.toggle_show_logs(),
                     Ctrl('e') => self.enter_cmd(),
+                    Ctrl('v') => self.auto_task(),
                     Char(c) => {
                         if self.last_selected.is_some() {
                             self.append(c);
@@ -161,6 +164,106 @@ impl Screen {
             e => warn!("Weird event {:?}", e),
         }
         true
+    }
+
+    fn auto_task(&mut self) {
+        // find all leaf children of incomplete tasks
+        // if a parent is complete, the children are complete
+        // if all children are complete, but the parent isn't,
+        // we need to finish the parent
+        let mut task_roots = vec![];
+        let mut to_explore = vec![self.drawing_root];
+        while let Some(node_id) = to_explore.pop() {
+            let mut node = self.with_node(node_id, |n| n.clone()).unwrap();
+            if node.stricken {
+                // pass
+            } else if node.content.contains("#task") {
+                task_roots.push(node.id);
+            } else {
+                to_explore.append(&mut node.children);
+            }
+        }
+
+        let mut leaves = vec![];
+        while let Some(root_id) = task_roots.pop() {
+            let node = self.with_node(root_id, |n| n.clone()).unwrap();
+            let mut incomplete_children: Vec<_> = node.children
+                .iter()
+                .cloned()
+                .filter(|&c| self.with_node(c, |c| !c.stricken).unwrap())
+                .collect();
+            if incomplete_children.is_empty() {
+                leaves.push(root_id);
+            } else {
+                task_roots.append(&mut incomplete_children);
+            }
+        }
+
+        if leaves.is_empty() {
+            info!("no tasks to jump to! create some first");
+            return;
+        }
+
+        // weight based on priority of most important ancestor
+
+        let mut prio_pairs = vec![];
+        let mut total_prio = 0;
+        for &leaf in &leaves {
+            let prio = self.lineage(leaf)
+                .iter()
+                .filter_map(|&p| self.node_priority(p))
+                .max()
+                .unwrap_or(1);
+            total_prio += prio;
+            prio_pairs.push((prio, leaf));
+        }
+
+        let mut idx: usize = rand::thread_rng().gen_range(0, total_prio);
+
+        let mut choice = None;
+        for &(prio, leaf) in &prio_pairs {
+            if prio > idx {
+                choice = Some(leaf);
+                break;
+            }
+            idx -= prio;
+        }
+        let choice = choice.unwrap();
+
+        // jump to highest view where node is visible
+        let mut cursor = choice;
+        loop {
+            trace!("in auto_task loop");
+            let parent = self.parent(cursor).unwrap();
+            let collapsed = self.with_node(parent, |p| p.collapsed).unwrap();
+            cursor = parent;
+            if parent == 0 || collapsed {
+                break;
+            }
+        }
+
+        // save old location and jump
+        let old_select = self.unselect().unwrap_or(0);
+        let breadcrumb = (self.drawing_root, old_select, self.view_y);
+        self.focus_stack.push(breadcrumb);
+        self.drawing_root = cursor;
+        self.select_node(choice);
+    }
+
+    fn node_priority(&self, node_id: NodeID) -> Option<usize> {
+        lazy_static! {
+            static ref RE: Regex = Regex::new(r"#prio=(\d+)").unwrap();
+        }
+        self.with_node(node_id, |n| n.content.clone())
+            .and_then(|c| {
+                if RE.is_match(&*c) {
+                    RE.captures_iter(&*c)
+                        .nth(0)
+                        .and_then(|n| n.at(1).unwrap().parse::<usize>().ok())
+                } else {
+                    None
+                }
+            })
     }
 
     fn single_key_prompt(&mut self, prompt: &str) -> io::Result<Key> {
@@ -710,6 +813,20 @@ impl Screen {
         self.lookup.get(&coords)
     }
 
+    fn lineage(&self, node_id: NodeID) -> Vec<NodeID> {
+        let mut lineage = vec![node_id];
+        let mut cursor = node_id;
+        while let Some(parent) = self.parent(cursor) {
+            lineage.push(parent);
+            if parent == 0 {
+                break;
+            }
+            cursor = parent;
+        }
+        lineage.reverse();
+        lineage
+    }
+
     // returns true if a is a parent of b
     fn is_parent(&self, a: NodeID, b: NodeID) -> bool {
         trace!("is_parent({}, {})", a, b);
@@ -824,8 +941,9 @@ impl Screen {
 
     fn pop_focus(&mut self) {
         self.unselect();
-        let (root, selected) = self.focus_stack.pop().unwrap_or((0, 0));
+        let (root, selected, view_y) = self.focus_stack.pop().unwrap_or((0, 0, 0));
         self.drawing_root = root;
+        self.view_y = view_y;
         self.select_node(selected);
     }
 
@@ -833,7 +951,7 @@ impl Screen {
         trace!("drill_down()");
         if let Some(selected_id) = self.unselect() {
             if selected_id != self.drawing_root {
-                let breadcrumb = (self.drawing_root, selected_id);
+                let breadcrumb = (self.drawing_root, selected_id, self.view_y);
                 self.focus_stack.push(breadcrumb);
                 self.drawing_root = selected_id;
                 self.view_y = 0;

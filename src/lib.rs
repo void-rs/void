@@ -3,6 +3,7 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 
+extern crate regex;
 extern crate time;
 extern crate hyper;
 extern crate rand;

@@ -23,6 +23,7 @@ getopts = "0.2"
 protobuf = "1.0"
 rand = "0.3"
 libc = "0.2"
+regex = "0.1"
 
 [dev-dependencies]
 quickcheck = "0.3"
