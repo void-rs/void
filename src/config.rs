@@ -149,7 +149,7 @@ impl Default for Config {
 
 impl Config {
     pub fn maybe_parsed_from_env() -> io::Result<Config> {
-        if let Ok(p) = env::var("CONF") {
+        if let Ok(p) = env::var("KEYFILE") {
             Config::parse_file(p)
         } else {
             Ok(Config::default())

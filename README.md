@@ -62,7 +62,7 @@ de-select node | Esc | save | C-x
 exit | Esc with nothing selected | exit | C-c
 jump to weighted next task | C-v
 
-can be customized by setting the `CONF` env var to the path of a [key configuration file](default.keys)
+can be customized by setting the `KEYFILE` env var to the path of a [key configuration file](default.keys)
 
 #### known bugs
 
@@ -79,6 +79,9 @@ log debugging info to a file.
 setting the `EDITOR` environment variable will allow you to
 specify which text editor is opened when hitting `C-k` on a
 node whose name begins with `txt: `.  defaults to vim.
+
+setting the `KEYFILE` environment variable to the path of a
+[keyfile](default.keys) allows you to customize the controls
 
 #### notes
 
