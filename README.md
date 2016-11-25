@@ -79,7 +79,7 @@ jump to weighted next task | ^v
 #### known bugs
 
 doesn't properly handle very long text. if you want to embed 
-an essay, create a node that begins with `txt: ` and hit `^v` 
+an essay, create a node that begins with `txt: ` and hit `^k` 
 to open its contents in an external text editor, specifiable
 by setting the `EDITOR` env var.
 
@@ -89,7 +89,7 @@ setting the `LOGFILE` environment variable will allow you to
 log debugging info to a file.
 
 setting the `EDITOR` environment variable will allow you to
-specify which text editor is opened when hitting `^v` on a 
+specify which text editor is opened when hitting `^k` on a 
 node whose name begins with `txt: `.  defaults to vim.
 
 #### notes
