@@ -192,7 +192,13 @@ impl Config {
     pub fn map(&self, e: Event) -> Option<Action> {
         use termion::event::Key::*;
         match e {
-            Event::Key(Char(c)) => Some(Action::Char(c)),
+            Event::Key(Char(c)) => {
+                if let Some(action) = self.config.get(&Char(c)).cloned() {
+                    Some(action)
+                } else {
+                    Some(Action::Char(c))
+                }
+            }
             Event::Mouse(MouseEvent::Press(_, x, y)) => Some(Action::LeftClick(x, y)),
             Event::Mouse(MouseEvent::Release(x, y)) => Some(Action::Release(x, y)),
             Event::Mouse(MouseEvent::Hold(_, _)) => None,
