@@ -2,7 +2,7 @@
 name = "voidmap"
 version = "0.2.7"
 authors = ["Tyler Neely <t@jujit.su>"]
-description = "cli mind-map + task tracker + tsdb"
+description = "terminal mind-map + task tracker + tsdb"
 license = "GPL-3.0"
 homepage = "https://github.com/spacejam/void"
 keywords = ["cli", "commandline", "visualization", "ui"]
