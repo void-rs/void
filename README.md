@@ -1,5 +1,32 @@
 # void
 
+## Problems
+
+This is an attempt to address several cognitive defects.
+
+1. frequently fall out of creative flow
+1. day-to-day work lacks coherence
+1. failure to integrate learnings into a cohesive perspective
+1. execution of tasks lacks focus and motivation
+1. unclear how my efforts are impacting goals
+
+## Perspectives
+
+* things we measure tend to improve
+* we should minimize decisions to prevent fatigue
+* we should regularly reevaluate priorities
+* flexible cores can be bent to many uses
+
+## Implementation
+
+* everything is a tree
+* you can collapse subtrees
+* you can drill-down the screen focus arbitrarily
+* trees of tasks can be marked with `#task`, all children of marked nodes are implicitly subtasks
+* tasks can be prioritized with `#prio=<n>`, all children implicitly inherit the lowest ancestor's priority
+* a task can be chosen automatically, with priorities weighting a random selection. you should delete it or do it, don't get into the habit of drawing again until you see something you like.  you chose the priorities, and you should keep them up-to-date.
+* you can draw arrows between nodes for mind-mapping functionality
+
 > The primary thing when you take a sword in your 
 hands is your intention to cut the enemy, whatever 
 the means. Whenever you parry, hit, spring, strike 

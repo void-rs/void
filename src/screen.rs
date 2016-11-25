@@ -1069,8 +1069,10 @@ impl Screen {
             // draw() needed to make visible / scroll accurate
             self.draw();
 
-            if !self.node_is_visible(node_id).unwrap() {
-                self.scroll_to_selected();
+            if let Some(visible) = self.node_is_visible(node_id) {
+                if !visible {
+                    self.scroll_to_selected();
+                }
             }
         }
     }
