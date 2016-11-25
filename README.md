@@ -76,6 +76,9 @@ select subtree to left | Left | select subtree to right | Right
 de-select node | Esc | save | C-x
 exit | Esc with nothing selected | exit | C-c
 jump to weighted next task | C-v
+
+can be customized by setting the `CONF` env var to the path of a [key configuration file](default.keys)
+
 #### known bugs
 
 doesn't properly handle very long text. if you want to embed

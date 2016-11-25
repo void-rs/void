@@ -8,7 +8,7 @@ use std::io::{self, Write, Read, Seek, SeekFrom, Stdout, stdout, stdin};
 use std::fmt::Write as FmtWrite;
 
 use termion::{terminal_size, color, cursor, style, clear};
-use termion::event::{Event, Key, MouseEvent};
+use termion::event::{Event, Key};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
@@ -17,7 +17,7 @@ use time;
 use regex::Regex;
 use rand::{self, Rng};
 
-use {cost, NodeID, Coords, Node, random_fg_color, serialization, Dir, Pack};
+use {Config, Action, cost, NodeID, Coords, Node, random_fg_color, serialization, Dir, Pack};
 use plot::plot_sparkline;
 use logging;
 
@@ -26,11 +26,12 @@ pub struct Screen {
     pub nodes: HashMap<NodeID, Node>,
     pub arrows: Vec<(NodeID, NodeID)>,
     pub work_path: Option<String>,
+    pub config: Config,
 
     // non-pub members are ephemeral
     drawing_root: NodeID,
     show_logs: bool,
-    last_selected: Option<NodeID>,
+    selected: Option<NodeID>,
     drawing_arrow: Option<NodeID>,
     lookup: HashMap<Coords, NodeID>,
     drawn_at: HashMap<NodeID, Coords>,
@@ -51,8 +52,9 @@ impl Default for Screen {
         let mut root = Node::default();
         root.content = "home".to_owned();
         let mut screen = Screen {
+            config: Config::default(),
             arrows: vec![],
-            last_selected: None,
+            selected: None,
             drawing_arrow: None,
             nodes: HashMap::new(),
             lookup: HashMap::new(),
@@ -101,69 +103,71 @@ impl Screen {
 
     // return of false signals to the caller that we are done in this view
     pub fn handle_event(&mut self, evt: Event) -> bool {
-        use termion::event::Key::*;
-        match evt {
-            Event::Key(ke) => {
-                match ke {
-                    // when Esc is hit, try to unselect
-                    // and if nothing is unselected then it's
-                    // time to exit.
-                    Esc => return self.unselect().is_some(),
-                    PageUp => self.scroll_up(),
-                    PageDown => self.scroll_down(),
-                    Delete => self.delete_selected(true),
-                    Up => self.select_up(),
-                    Down => self.select_down(),
-                    Left => self.select_left(),
-                    Right => self.select_right(),
-                    Backspace => self.backspace(),
-                    Char('\n') => self.create_sibling(),
-                    Char('\t') => self.create_child(),
-                    Ctrl('n') => self.create_free_node(),
-                    Ctrl('k') => self.exec_selected(),
-                    Ctrl('w') => self.drill_down(),
-                    Ctrl('q') => self.pop_focus(),
-                    Ctrl('f') => self.prefix_jump_prompt(),
-                    Ctrl('a') => self.toggle_stricken(),
-                    Ctrl('h') => self.toggle_hide_stricken(),
-                    Ctrl('r') => self.add_or_remove_arrow(),
-                    Ctrl('p') => self.auto_arrange(),
-                    Ctrl('z') => self.toggle_auto_arrange(),
-                    Ctrl('t') => self.toggle_collapsed(),
-                    Ctrl('c') => return false,
-                    Ctrl('x') => self.save(),
-                    Ctrl('l') => self.toggle_show_logs(),
-                    Ctrl('e') => self.enter_cmd(),
-                    Ctrl('v') => self.auto_task(),
-                    Char(c) => {
-                        if self.last_selected.is_some() {
+        match self.config.map(evt) {
+            Some(e) => {
+                match e {
+                    Action::LeftClick(x, y) => {
+                        let internal_coords = self.screen_to_internal_xy((x, y));
+                        self.click_screen(internal_coords)
+                    }
+                    Action::Release(x, y) => {
+                        let internal_coords = self.screen_to_internal_xy((x, y));
+                        self.release(internal_coords)
+                    }
+                    Action::Char(c) => {
+                        if self.selected.is_some() {
                             self.append(c);
                         } else {
                             self.prefix_jump_to(c.to_string());
                         }
                     }
-                    _ => warn!("Weird event {:?}", evt),
+                    Action::UnselectRet => return self.unselect().is_some(),
+                    Action::ScrollUp => self.scroll_up(),
+                    Action::ScrollDown => self.scroll_down(),
+                    Action::DeleteSelected => self.delete_selected(true),
+                    Action::SelectUp => self.select_up(),
+                    Action::SelectDown => self.select_down(),
+                    Action::SelectLeft => self.select_left(),
+                    Action::SelectRight => self.select_right(),
+                    Action::EraseChar => self.backspace(),
+                    Action::CreateSibling => self.create_sibling(),
+                    Action::CreateChild => self.create_child(),
+                    Action::CreateFreeNode => self.create_free_node(),
+                    Action::ExecSelected => self.exec_selected(),
+                    Action::DrillDown => self.drill_down(),
+                    Action::PopUp => self.pop_focus(),
+                    Action::PrefixJump => self.prefix_jump_prompt(),
+                    Action::ToggleCompleted => self.toggle_stricken(),
+                    Action::ToggleHideCompleted => self.toggle_hide_stricken(),
+                    Action::Arrow => self.add_or_remove_arrow(),
+                    Action::Arrange => self.arrange(),
+                    Action::AutoArrange => self.toggle_auto_arrange(),
+                    Action::ToggleCollapsed => self.toggle_collapsed(),
+                    Action::Quit => return false,
+                    Action::Save => self.save(),
+                    Action::ToggleShowLogs => self.toggle_show_logs(),
+                    Action::EnterCmd => self.enter_cmd(),
+                    Action::FindTask => self.auto_task(),
+                    Action::YankPasteNode => self.cut_paste(),
                 }
             }
-            Event::Mouse(me) => {
-                match me {
-                    MouseEvent::Press(_, x, y) => {
-                        let internal_coords = self.screen_to_internal_xy((x, y));
-                        self.click_screen(internal_coords)
-                    }
-                    MouseEvent::Release(x, y) => {
-                        let internal_coords = self.screen_to_internal_xy((x, y));
-                        self.release(internal_coords)
-                    }
-                    MouseEvent::Hold(..) => {
-                        // this isn't supported in some terminals
-                        // (urxvt...) so don't rely on it
-                    }
-                }
-            }
-            e => warn!("Weird event {:?}", e),
+            None => warn!("received unknown input"),
         }
         true
+    }
+
+    fn cut_paste(&mut self) {
+        if let Some(dragging_from) = self.dragging_from.take() {
+            if let Some(dragging_to) = self.dragging_to.take() {
+                self.move_selected(dragging_from, dragging_to);
+            }
+        } else {
+            if let Some(selected_id) = self.selected {
+                if let Some(&coords) = self.drawn_at(selected_id) {
+                    self.dragging_from = Some(coords);
+                }
+            }
+        }
     }
 
     fn auto_task(&mut self) {
@@ -366,7 +370,7 @@ impl Screen {
     }
 
     fn exec_selected(&mut self) {
-        if let Some(selected_id) = self.last_selected {
+        if let Some(selected_id) = self.selected {
             let content = self.with_node(selected_id, |n| n.content.clone())
                 .unwrap();
             info!("executing command: {}", content);
@@ -452,8 +456,8 @@ impl Screen {
         self.start_raw_mode();
     }
 
-    fn auto_arrange(&mut self) {
-        trace!("auto_arrange");
+    fn arrange(&mut self) {
+        trace!("arrange");
         let mut real_estate = Pack {
             children: None,
             top: 2, // leave room for header
@@ -541,13 +545,13 @@ impl Screen {
     fn unselect(&mut self) -> Option<NodeID> {
         trace!("unselect()");
         if self.dragging_from.is_none() {
-            if let Some(selected_id) = self.last_selected {
+            if let Some(selected_id) = self.selected {
                 if let Some(is_empty) = self.with_node(selected_id, |n| n.content.is_empty()) {
                     if is_empty {
                         self.delete_selected(false);
                         return None;
                     } else {
-                        self.last_selected.take();
+                        self.selected.take();
                         self.with_node_mut(selected_id, |mut node| node.selected = false)
                             .unwrap();
                         return Some(selected_id);
@@ -594,7 +598,7 @@ impl Screen {
                         node_id
                     })
                     .and_then(|id| {
-                        self.last_selected = Some(node_id);
+                        self.selected = Some(node_id);
                         self.dragging_from = Some(coords);
                         self.dragging_to = Some(coords);
                         Some(id)
@@ -614,14 +618,14 @@ impl Screen {
 
     fn toggle_stricken(&mut self) {
         trace!("toggle_stricken()");
-        if let Some(selected_id) = self.last_selected {
+        if let Some(selected_id) = self.selected {
             self.with_node_mut(selected_id, |node| node.toggle_stricken());
         }
     }
 
     fn toggle_hide_stricken(&mut self) {
         trace!("toggle_hide_stricken()");
-        if let Some(selected_id) = self.last_selected {
+        if let Some(selected_id) = self.selected {
             self.with_node_mut(selected_id, |node| node.toggle_hide_stricken());
         }
     }
@@ -640,7 +644,7 @@ impl Screen {
 
     fn delete_selected(&mut self, reselect: bool) {
         trace!("delete_selected()");
-        if let Some(selected_id) = self.last_selected.take() {
+        if let Some(selected_id) = self.selected.take() {
             let coords = self.drawn_at.remove(&selected_id);
             debug!("coords: {:?}", coords);
             // remove ref from parent
@@ -682,7 +686,7 @@ impl Screen {
             let should_break = !self.handle_event(evt);
 
             if self.should_auto_arrange() {
-                self.auto_arrange();
+                self.arrange();
             }
 
             self.draw();
@@ -698,7 +702,7 @@ impl Screen {
 
     fn toggle_collapsed(&mut self) {
         trace!("toggle_collapsed()");
-        if let Some(selected_id) = self.last_selected {
+        if let Some(selected_id) = self.selected {
             self.with_node_mut(selected_id, |node| node.toggle_collapsed());
         }
     }
@@ -708,7 +712,7 @@ impl Screen {
     }
 
     fn create_child(&mut self) {
-        if let Some(selected_id) = self.last_selected {
+        if let Some(selected_id) = self.selected {
             let node_id = self.new_node();
             self.with_node_mut(node_id, |node| node.parent_id = selected_id);
             let added = self.with_node_mut(selected_id, |selected| {
@@ -723,7 +727,7 @@ impl Screen {
     }
 
     fn create_sibling(&mut self) {
-        if let Some(selected_id) = self.last_selected {
+        if let Some(selected_id) = self.selected {
             let parent_id = self.parent(selected_id).unwrap();
             if parent_id == self.drawing_root {
                 // don't want to deal with this case right now
@@ -785,7 +789,7 @@ impl Screen {
 
     fn backspace(&mut self) {
         trace!("backspace");
-        if let Some(selected_id) = self.last_selected {
+        if let Some(selected_id) = self.selected {
             self.with_node_mut(selected_id, |node| {
                 let content = node.content.clone();
                 let chars = content.chars();
@@ -798,7 +802,7 @@ impl Screen {
 
     fn append(&mut self, c: char) {
         trace!("append({})", c);
-        if let Some(selected_id) = self.last_selected {
+        if let Some(selected_id) = self.selected {
             self.with_node_mut(selected_id, |node| {
                 node.content.push(c);
             });
@@ -878,7 +882,7 @@ impl Screen {
         let dx = to.0 as i16 - from.0 as i16;
         let dy = to.1 as i16 - from.1 as i16;
 
-        let selected_id = if let Some(selected_id) = self.last_selected {
+        let selected_id = if let Some(selected_id) = self.selected {
             if self.is_parent(self.drawing_root, selected_id) {
                 selected_id
             } else {
@@ -981,7 +985,7 @@ impl Screen {
     }
 
     fn scroll_to_selected(&mut self) -> bool {
-        if let Some(selected_id) = self.last_selected {
+        if let Some(selected_id) = self.selected {
             self.scroll_to_node(selected_id)
         } else {
             false
@@ -1027,7 +1031,7 @@ impl Screen {
     fn find_relative_node<F>(&mut self, filter_fn: F) -> Option<NodeID>
         where F: Fn(Coords, Coords) -> bool
     {
-        let selected_id = self.last_selected.unwrap_or(0);
+        let selected_id = self.selected.unwrap_or(0);
         let default_coords = (self.dims.0 / 2, self.dims.1 / 2);
         let rel_def_coords = self.screen_to_internal_xy(default_coords);
         let cur = self.drawn_at(selected_id).unwrap_or(&rel_def_coords);
@@ -1064,7 +1068,7 @@ impl Screen {
         self.unselect();
         if node_id != 0 {
             self.with_node_mut(node_id, |mut node| node.selected = true);
-            self.last_selected = Some(node_id);
+            self.selected = Some(node_id);
 
             // draw() needed to make visible / scroll accurate
             self.draw();
@@ -1159,7 +1163,7 @@ impl Screen {
 
     pub fn add_or_remove_arrow(&mut self) {
         if let Some(from) = self.drawing_arrow.take() {
-            if let Some(arrow) = self.last_selected.map(|to| (from, to)) {
+            if let Some(arrow) = self.selected.map(|to| (from, to)) {
                 let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
                     if nl1 == &arrow.0 && nl2 == &arrow.1 {
                         true
@@ -1174,7 +1178,7 @@ impl Screen {
                 }
             }
         } else {
-            self.drawing_arrow = self.last_selected;
+            self.drawing_arrow = self.selected;
         }
     }
 

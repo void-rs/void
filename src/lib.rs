@@ -2,6 +2,8 @@
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate maplit;
 
 extern crate regex;
 extern crate time;
@@ -21,6 +23,7 @@ mod plot;
 mod task;
 mod colors;
 mod pb;
+mod config;
 
 use std::cmp;
 use std::collections::HashMap;
@@ -30,6 +33,7 @@ pub use self::screen::Screen;
 pub use self::node::Node;
 pub use self::pack::Pack;
 pub use self::colors::random_fg_color;
+pub use self::config::{Config, Action};
 pub use logging::init_screen_log;
 pub use meta::Meta;
 

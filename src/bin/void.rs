@@ -7,7 +7,7 @@ extern crate log;
 use std::fs::File;
 use std::io::Read;
 
-use voidmap::{Screen, deserialize_screen, init_screen_log};
+use voidmap::{Screen, Config, deserialize_screen, init_screen_log};
 
 fn print_usage(program: &str) {
     println!("Usage: {} /path/to/workfile", program);
@@ -40,5 +40,9 @@ fn main() {
 
     let mut screen = saved_screen.unwrap_or_else(Screen::default);
     screen.work_path = path.clone();
+
+    let config = Config::maybe_parsed_from_env().unwrap();
+    screen.config = config;
+
     screen.run();
 }
