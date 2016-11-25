@@ -28,18 +28,18 @@ This is an attempt to address several cognitive defects.
 * completed subtasks for a particular view are plotted on a sparkline at the top of the screen for the past week. this will become dramatically more flexible in the future.
 * you can draw arrows between nodes for mind-mapping functionality
 
-> The primary thing when you take a sword in your 
-hands is your intention to cut the enemy, whatever 
-the means. Whenever you parry, hit, spring, strike 
-or touch the enemy’s cutting sword, you must cut 
-the enemy in the same movement. It is essential to 
-attain this. If you think only of hitting, springing, 
-striking or touching the enemy, you will not be able 
-actually to cut him. More than anything, you must 
-be thinking of carrying your movement through to 
-cutting him. ...When you appreciate the power of 
-nature, knowing the rhythm of any situation, you 
-will be able to hit the enemy naturally and strike 
+> The primary thing when you take a sword in your
+hands is your intention to cut the enemy, whatever
+the means. Whenever you parry, hit, spring, strike
+or touch the enemy’s cutting sword, you must cut
+the enemy in the same movement. It is essential to
+attain this. If you think only of hitting, springing,
+striking or touching the enemy, you will not be able
+actually to cut him. More than anything, you must
+be thinking of carrying your movement through to
+cutting him. ...When you appreciate the power of
+nature, knowing the rhythm of any situation, you
+will be able to hit the enemy naturally and strike
 naturally. All this is the Way of the Void.
 -Miyamoto Musashi
 
@@ -49,7 +49,7 @@ naturally. All this is the Way of the Void.
 
 `cargo install voidmap`
 
-if you don't have cargo, an easy way to get and manage 
+if you don't have cargo, an easy way to get and manage
 it is [via rustup](https://www.rustup.rs/).
 
 #### invocation
@@ -60,26 +60,26 @@ it is [via rustup](https://www.rustup.rs/).
 
 feature | control | feature | control
 --- | --- | --- | ---
-new node | ^n | new node (child of selected) | Tab
+new node | C-n | new node (child of selected) | Tab
 new node (freeform) | click blank space | new node (sibling of selected) | Enter
 delete selected node and its children | Delete | move subtree | drag parent to new location
-arrange nodes in view | ^p | auto-arrange nodes in view from now on | ^z
-mark selected node complete | ^a | drill-down into selected node | ^w
-pop up selection | ^q | hide children of selected | ^t
-open text editor for `txt:...` node | ^k | prefix-jump with no selection | type a letter
-prefix-jump with other selected | ^f | hide completed children of node | ^h
-select arrow start/destination | ^r | erase arrow | select start, ^r, then destination, ^r
-show debug log | ^l | reparent node | drag node to new parent
+arrange nodes in view | C-p | auto-arrange nodes in view from now on | C-z
+mark selected node complete | C-a | drill-down into selected node | C-w
+pop up selection | C-q | hide children of selected | C-t
+open text editor for `txt:...` node | C-k | prefix-jump with no selection | type a letter
+prefix-jump with other selected | C-f | hide completed children of node | C-h
+select arrow start/destination | C-r | erase arrow | select start, C-r, then destination, C-r
+show debug log | C-l | reparent node | drag node to new parent
 scroll up | PgUp | scroll down | PgDn
 select up | Up | select down | Down
 select subtree to left | Left | select subtree to right | Right
-de-select node | Esc | save | ^x
-exit | Esc with nothing selected | exit | ^c
-jump to weighted next task | ^v
+de-select node | Esc | save | C-x
+exit | Esc with nothing selected | exit | C-c
+jump to weighted next task | C-v
 #### known bugs
 
-doesn't properly handle very long text. if you want to embed 
-an essay, create a node that begins with `txt: ` and hit `^k` 
+doesn't properly handle very long text. if you want to embed
+an essay, create a node that begins with `txt: ` and hit `C-k`
 to open its contents in an external text editor, specifiable
 by setting the `EDITOR` env var.
 
@@ -89,7 +89,7 @@ setting the `LOGFILE` environment variable will allow you to
 log debugging info to a file.
 
 setting the `EDITOR` environment variable will allow you to
-specify which text editor is opened when hitting `^k` on a 
+specify which text editor is opened when hitting `C-k` on a
 node whose name begins with `txt: `.  defaults to vim.
 
 #### notes
@@ -107,7 +107,7 @@ thinking fast and slow, the optimism bias, [how to solve it](https://en.wikipedi
 * occult mindfulness: [undoing yourself with energized meditation]
 (http://heruka.altervista.org/X_files/Undoing%20Yourself%20With%20Energized%20Meditation%20And%20Other%20Devices%20-%20Christopher%20S%20Hyatt.pdf),
 [prometheus rising](http://www.principiadiscordia.com/downloads/04%20Prometheus%20Rising.pdf)
-* military C2 theory, recognition/metacognition, OODA, etc... [A Review of Time Critical Decision Making Models and 
+* military C2 theory, recognition/metacognition, OODA, etc... [A Review of Time Critical Decision Making Models and
 Human Cognitive Processes](https://pdfs.semanticscholar.org/2eb9/e12955dfafd4ab5d9337b416e31f5afca834.pdf)
 * personal productivity literature: [pomodoro](http://baomee.info/pdf/technique/1.pdf), [GTD](https://en.wikipedia.org/wiki/Getting_Things_Done),
 [eat that frog](http://www.actnow.ie/files/BookSummaryEatThatFrog.pdf), [flow](http://216.119.127.164/edgeware/archive/think/main_filing15.htm)
