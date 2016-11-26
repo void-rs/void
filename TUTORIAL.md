@@ -1,3 +1,10 @@
+# install
+
+`cargo install voidmap`
+
+if you don't have cargo, an easy way to get and manage
+it is [via rustup](https://www.rustup.rs/).
+
 # basic node creation
 1. C-n # create new node
 1. type some text to populate it (empty nodes are automatically deleted when unselected)

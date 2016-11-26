@@ -2,6 +2,8 @@
 
 [![Build Status](https://travis-ci.org/spacejam/void.svg?branch=master)](https://travis-ci.org/spacejam/void)
 
+[tutorial](TUTORIAL.md)
+
 ![](/demo.gif)
 
 ## Problems
