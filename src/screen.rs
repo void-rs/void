@@ -68,7 +68,7 @@ impl Default for Screen {
             dragging_to: None,
             work_path: None,
             max_id: 0,
-            dims: terminal_size().unwrap(),
+            dims: (1, 1),
             lowest_drawn: 0,
             view_y: 0,
             focus_stack: vec![],
@@ -296,6 +296,7 @@ impl Screen {
         if self.is_test {
             return Err(Error::new(ErrorKind::Other, "can't prompt in test"));
         }
+
         let mut stdin: Box<Read> = Box::new(stdin());
         print!("{}{}{}{}{}",
                style::Invert,

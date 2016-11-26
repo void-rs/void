@@ -1,3 +1,8 @@
+use std::os::unix::io::AsRawFd;
+use std::fs::OpenOptions;
+
+use libc::dup2;
+
 use rand;
 use termion::event::{Key, Event, MouseEvent, MouseButton};
 use quickcheck::{Arbitrary, Gen, QuickCheck, StdGen};
@@ -91,7 +96,18 @@ fn prop_handle_events(ops: OpVec, dims: (u16, u16)) -> bool {
 }
 
 #[test]
-fn qc_merge_converges() {
+fn qc_input_events_dont_crash_void() {
+    // redirect stdout to quickcheck.out to make travis happy
+    let f = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open("quickcheck.out")
+        .unwrap();
+    let fd = f.as_raw_fd();
+    unsafe {
+        dup2(fd, 1);
+    }
+
     QuickCheck::new()
         .gen(StdGen::new(rand::thread_rng(), 1))
         .tests(100_000)
