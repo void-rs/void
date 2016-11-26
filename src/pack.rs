@@ -1,3 +1,5 @@
+use std::cmp;
+
 use Coords;
 
 #[derive(Debug)]
@@ -72,7 +74,7 @@ impl Pack {
 
     fn dim(&self) -> Coords {
         trace!("dim({:?})", self);
-        (self.right - self.left, self.bottom - self.top)
+        (cmp::max(self.right, self.left) - self.left, cmp::max(self.bottom, self.top) - self.top)
     }
 
     fn is_leaf(&self) -> bool {

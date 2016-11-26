@@ -91,19 +91,10 @@ fn prop_handle_events(ops: OpVec, dims: (u16, u16)) -> bool {
 }
 
 #[test]
-// #[ignore]
 fn qc_merge_converges() {
     QuickCheck::new()
         .gen(StdGen::new(rand::thread_rng(), 1))
-        .tests(1_000)
-        .max_tests(10_000)
+        .tests(100_000)
+        .max_tests(1_000_000)
         .quickcheck(prop_handle_events as fn(OpVec, (u16, u16)) -> bool);
 }
-
-// TODO Arguments: (OpVec { ops: [Op { event: Key(Up) }, Op { event: Key(Backspace) }, Op { event: Key(Backspace) }, Op { event: Key(Backspace) }, Op { event: Key(Backspace) }, Op { event: Key(Down) }] })
-
-// TODO make a ton of one char nodes with no children and autosort
-
-// TODO backspace on unicode
-
-// TODO drag & select & sort & resize & arrow specific qc

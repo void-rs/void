@@ -382,6 +382,11 @@ impl Screen {
     }
 
     fn exec_selected(&mut self) {
+        if self.is_test {
+            // tests generate many randomly named nodes, so we don't
+            // want to accidentally execute rm -rf /
+            return;
+        }
         if let Some(selected_id) = self.selected {
             let content_opt = self.with_node(selected_id, |n| n.content.clone());
             if content_opt.is_none() {
@@ -495,8 +500,9 @@ impl Screen {
             // add some spacing around this tree to space out
             // placement a little bit
             let padded_dims = (dims.0 + 2, dims.1 + 2);
-            let (x, y) = real_estate.insert(padded_dims).unwrap();
-            self.with_node_mut(node_id, |n| n.rooted_coords = (x, y)).unwrap();
+            if let Some((x, y)) = real_estate.insert(padded_dims) {
+                self.with_node_mut(node_id, |n| n.rooted_coords = (x, y)).unwrap();
+            }
         }
     }
 
@@ -590,7 +596,7 @@ impl Screen {
     }
 
     fn screen_to_internal_xy(&self, coords: Coords) -> Coords {
-        (coords.0, coords.1 + self.view_y)
+        (coords.0, cmp::min(coords.1, std::u16::MAX - self.view_y) + self.view_y)
     }
 
     fn coords_are_visible(&self, (_, y): Coords) -> bool {
