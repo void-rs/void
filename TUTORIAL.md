@@ -16,7 +16,7 @@ if you'd like to specify a different storage file:
 
 
 #### basic node creation
-1. C-n # create new node
+1. C-n # create new node (C-x means Ctrl+x)
 1. type some text to populate it (empty nodes are automatically deleted when unselected)
 1. Tab # create subnode
 1. type some text to populate it
