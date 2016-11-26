@@ -1,5 +1,7 @@
 # void
 
+[![Build Status](https://travis-ci.org/spacejam/void.svg?branch=master)](https://travis-ci.org/spacejam/void)
+
 ![](/demo.gif)
 
 ## Problems
