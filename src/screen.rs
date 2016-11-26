@@ -701,6 +701,7 @@ impl Screen {
 
     pub fn run(&mut self) {
         self.start_raw_mode();
+        self.dims = terminal_size().unwrap();
         self.draw();
         let stdin = stdin();
         for c in stdin.events() {
