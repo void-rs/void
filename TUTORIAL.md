@@ -26,7 +26,7 @@ if you'd like to specify a different storage file:
 #### auto-arrange mode and navigation
 1. C-n # create another new node and add text
 1. C-z # set the current view to auto-arrange (this is set per-view)
-1. left/right arrow #### jump between subtrees (it's a little clunky, right now, need to refine the search algorithm)
+1. left/right arrow # jump between subtrees (it's a little clunky, right now, need to refine the search algorithm)
 
 #### scopes
 1. make a deep subtree by hitting tab and populating text on children nodes
@@ -37,9 +37,9 @@ if you'd like to specify a different storage file:
 1. C-q # pop-up to previous view
 
 #### tasks
-1. create a tree with a node that contains the text `####task`
+1. create a tree with a node that contains the text `#task`
 1. give it several children, they are implicitly also tasks
-1. give the children different priorities with `####prio=<n>` in their name
+1. give the children different priorities with `#prio=<n>` in their name
 1. C-v # randomly select a subtask based on priority weights
 1. C-a # mark the task as completed, the graph at the top will show the daily completed tasks for the last week
 1. select a node that has some complete children, and some incomplete children
