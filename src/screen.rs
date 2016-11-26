@@ -1113,7 +1113,7 @@ impl Screen {
     }
 
     fn click_screen(&mut self, coords: Coords) {
-        if coords.0 > self.dims.0 || coords.1 > self.lowest_drawn {
+        if coords.0 > self.dims.0 || coords.1 > self.dims.1 {
             warn!("click way off-screen");
             return;
         }
@@ -1129,7 +1129,7 @@ impl Screen {
 
     fn release(&mut self, to: Coords) {
         trace!("release({:?})", to);
-        if to.0 > self.dims.0 || to.1 > self.lowest_drawn {
+        if to.0 > self.dims.0 || to.1 > self.dims.1 {
             warn!("release way off-screen");
             return;
         }
