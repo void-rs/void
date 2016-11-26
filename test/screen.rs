@@ -1,5 +1,4 @@
 use rand;
-use termion::terminal_size;
 use termion::event::{Key, Event, MouseEvent, MouseButton};
 use quickcheck::{Arbitrary, Gen, QuickCheck, StdGen};
 
@@ -65,15 +64,14 @@ impl Arbitrary for OpVec {
     }
 }
 
-fn prop_handle_events(ops: OpVec) -> bool {
+fn prop_handle_events(ops: OpVec, dims: (u16, u16)) -> bool {
     let mut screen = Screen::default();
     screen.is_test = true;
     screen.start_raw_mode();
     screen.draw();
+    screen.dims = dims;
+
     for op in &ops.ops {
-        screen.dims = terminal_size().unwrap();
-
-
         let should_break = !screen.handle_event(op.event);
 
         if screen.should_auto_arrange() {
@@ -99,7 +97,7 @@ fn qc_merge_converges() {
         .gen(StdGen::new(rand::thread_rng(), 1))
         .tests(1_000)
         .max_tests(10_000)
-        .quickcheck(prop_handle_events as fn(OpVec) -> bool);
+        .quickcheck(prop_handle_events as fn(OpVec, (u16, u16)) -> bool);
 }
 
 // TODO Arguments: (OpVec { ops: [Op { event: Key(Up) }, Op { event: Key(Backspace) }, Op { event: Key(Backspace) }, Op { event: Key(Backspace) }, Op { event: Key(Backspace) }, Op { event: Key(Down) }] })

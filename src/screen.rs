@@ -480,7 +480,7 @@ impl Screen {
             top: 2, // leave room for header
             left: 1, // 1-indexed screen
             bottom: std::u16::MAX, // make this "bottomless" since we can paginate
-            right: self.dims.0 - 1,
+            right: cmp::max(self.dims.0, 1) - 1,
             elem: None,
         };
 
@@ -776,6 +776,10 @@ impl Screen {
             // that's wide enough, then create
             // an anchor there.
             let mut width = 0;
+            if self.dims.0 < 2 {
+                from_x = Some(1);
+                break;
+            }
             for x in 1..self.dims.0 {
                 if self.lookup((x, y_cursor)).is_none() {
                     width += 1;
@@ -1287,7 +1291,7 @@ impl Screen {
     }
 
     fn draw_scrollbar(&self) {
-        let bar_height = self.dims.1 - 1;
+        let bar_height = cmp::max(self.dims.1, 1) - 1;
         let normalized_lowest = cmp::max(self.lowest_drawn, 1) as f64;
         let fraction_viewable = self.dims.1 as f64 / normalized_lowest;
         let shade_start_fraction = self.view_y as f64 / normalized_lowest;
@@ -1531,7 +1535,7 @@ impl Screen {
                                   header_text,
                                   style::Reset);
             let text_len = header_text.chars().count();
-            for _ in 0..(self.dims.0 as usize - text_len) {
+            for _ in 0..(cmp::max(self.dims.0 as usize, text_len) - text_len) {
                 sep.push('█');
             }
             println!("{}", sep);
