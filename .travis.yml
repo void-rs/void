@@ -6,3 +6,7 @@ rust:
 
 script:
   - cargo test
+
+cache:
+  directories:
+    - $HOME/.cache/
