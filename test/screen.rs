@@ -1,4 +1,5 @@
 use rand;
+use termion::terminal_size;
 use termion::event::{Key, Event, MouseEvent, MouseButton};
 use quickcheck::{Arbitrary, Gen, QuickCheck, StdGen};
 
@@ -11,17 +12,27 @@ struct Op {
 
 impl Arbitrary for Op {
     fn arbitrary<G: Gen>(g: &mut G) -> Op {
-        let (c, x, y) = (g.gen::<char>(), g.gen::<u16>(), g.gen::<u16>());
+        let (c, u, x, y) =
+            (g.gen_ascii_chars().nth(0).unwrap(), g.gen::<char>(), g.gen::<u16>(), g.gen::<u16>());
         let events = vec![
+                Event::Key(Key::Char('\n')),
+                Event::Key(Key::Char('\t')),
                 Event::Key(Key::Char(c)),
-                Event::Key(Key::Alt('\u{1b}')),
+                Event::Key(Key::Char(u)),
+                Event::Key(Key::Ctrl('n')),
                 Event::Key(Key::Ctrl(c)),
+                Event::Key(Key::Ctrl(u)),
+                Event::Key(Key::PageUp),
+                Event::Key(Key::PageDown),
+                Event::Key(Key::Esc),
                 Event::Key(Key::Up),
+                Event::Key(Key::Left),
+                Event::Key(Key::Right),
                 Event::Key(Key::Down),
+                Event::Key(Key::Delete),
                 Event::Key(Key::Backspace),
                 Event::Mouse(MouseEvent::Press(MouseButton::Left, x, y)),
                 Event::Mouse(MouseEvent::Release(x, y)),
-                Event::Mouse(MouseEvent::Hold(x, y)),
             ];
         Op { event: *g.choose(&*events).unwrap() }
     }
@@ -56,9 +67,27 @@ impl Arbitrary for OpVec {
 
 fn prop_handle_events(ops: OpVec) -> bool {
     let mut screen = Screen::default();
+    screen.is_test = true;
+    screen.start_raw_mode();
+    screen.draw();
     for op in &ops.ops {
-        screen.handle_event(op.event);
+        screen.dims = terminal_size().unwrap();
+
+
+        let should_break = !screen.handle_event(op.event);
+
+        if screen.should_auto_arrange() {
+            screen.arrange();
+        }
+
         screen.draw();
+        screen.assert_node_consistency();
+
+        if should_break {
+            screen.cleanup();
+            screen.save();
+            break;
+        }
     }
     true
 }

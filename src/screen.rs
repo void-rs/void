@@ -4,7 +4,7 @@ use std::cmp;
 use std::fs::{File, rename, remove_file, OpenOptions};
 use std::collections::{BTreeMap, HashMap, BinaryHeap, HashSet};
 use std::process;
-use std::io::{self, Write, Read, Seek, SeekFrom, Stdout, stdout, stdin};
+use std::io::{self, Write, Read, Seek, SeekFrom, Stdout, stdout, stdin, Error, ErrorKind};
 use std::fmt::Write as FmtWrite;
 
 use termion::{terminal_size, color, cursor, style, clear};
@@ -28,6 +28,10 @@ pub struct Screen {
     pub work_path: Option<String>,
     pub config: Config,
 
+    // screen dimensions as detected during the current draw() cycle
+    pub dims: Coords,
+    pub is_test: bool,
+
     // non-pub members are ephemeral
     drawing_root: NodeID,
     show_logs: bool,
@@ -38,8 +42,6 @@ pub struct Screen {
     dragging_from: Option<Coords>,
     dragging_to: Option<Coords>,
     stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
-    // screen dimensions as detected during the current draw() cycle
-    dims: Coords,
     lowest_drawn: u16,
     // where we start drawing from
     view_y: u16,
@@ -70,6 +72,7 @@ impl Default for Screen {
             lowest_drawn: 0,
             view_y: 0,
             focus_stack: vec![],
+            is_test: false,
         };
         screen.nodes.insert(0, root);
         screen
@@ -272,14 +275,17 @@ impl Screen {
 
     fn single_key_prompt(&mut self, prompt: &str) -> io::Result<Key> {
         trace!("prompt({})", prompt);
+        if self.is_test {
+            return Err(Error::new(ErrorKind::Other, "can't prompt in test"));
+        }
+
         let stdin: Box<Read> = Box::new(stdin());
         print!("{}{}{}{}",
                style::Invert,
                cursor::Goto(0, self.dims.1),
                clear::AfterCursor,
                prompt);
-        self.cleanup();
-        self.start_raw_mode();
+        self.flush();
         let res = stdin.keys().nth(0).unwrap();
         debug!("read prompt: {:?}", res);
         res
@@ -287,12 +293,16 @@ impl Screen {
 
     fn prompt(&mut self, prompt: &str) -> io::Result<Option<String>> {
         trace!("prompt({})", prompt);
+        if self.is_test {
+            return Err(Error::new(ErrorKind::Other, "can't prompt in test"));
+        }
         let mut stdin: Box<Read> = Box::new(stdin());
-        print!("{}{}{}{}",
+        print!("{}{}{}{}{}",
                style::Invert,
                cursor::Goto(0, self.dims.1),
                clear::AfterCursor,
-               prompt);
+               prompt,
+               cursor::Show);
         self.cleanup();
         let res = stdin.read_line();
         self.start_raw_mode();
@@ -324,7 +334,9 @@ impl Screen {
             self.with_node(node_id, |n| n.content.starts_with(&*prefix)).unwrap()
         });
 
-        if nodes.len() == 1 {
+        if nodes.is_empty() {
+            return;
+        } else if nodes.len() == 1 {
             let node_id = nodes[0];
             self.select_node(node_id);
             return;
@@ -371,12 +383,17 @@ impl Screen {
 
     fn exec_selected(&mut self) {
         if let Some(selected_id) = self.selected {
-            let content = self.with_node(selected_id, |n| n.content.clone())
-                .unwrap();
+            let content_opt = self.with_node(selected_id, |n| n.content.clone());
+            if content_opt.is_none() {
+                error!("tried to exec deleted node");
+                return;
+            }
+            let content = content_opt.unwrap();
             info!("executing command: {}", content);
             let mut split: Vec<&str> = content.split_whitespace().collect();
             if split.is_empty() {
                 error!("cannot execute empty command");
+                return;
             }
             let head = split.remove(0);
 
@@ -456,7 +473,7 @@ impl Screen {
         self.start_raw_mode();
     }
 
-    fn arrange(&mut self) {
+    pub fn arrange(&mut self) {
         trace!("arrange");
         let mut real_estate = Pack {
             children: None,
@@ -648,10 +665,11 @@ impl Screen {
             let coords = self.drawn_at.remove(&selected_id);
             debug!("coords: {:?}", coords);
             // remove ref from parent
-            let parent_id = self.parent(selected_id).unwrap();
-            trace!("deleting node {} from parent {}", selected_id, parent_id);
-            self.with_node_mut(parent_id, |p| p.children.retain(|c| c != &selected_id))
-                .unwrap();
+            if let Some(parent_id) = self.parent(selected_id) {
+                trace!("deleting node {} from parent {}", selected_id, parent_id);
+                self.with_node_mut(parent_id, |p| p.children.retain(|c| c != &selected_id))
+                    .unwrap();
+            }
             // remove children
             self.delete_recursive(selected_id);
             if let Some(c) = coords {
@@ -664,7 +682,7 @@ impl Screen {
         }
     }
 
-    fn should_auto_arrange(&self) -> bool {
+    pub fn should_auto_arrange(&self) -> bool {
         self.with_node(self.drawing_root, |n| n.auto_arrange).unwrap()
     }
 
@@ -728,21 +746,22 @@ impl Screen {
 
     fn create_sibling(&mut self) {
         if let Some(selected_id) = self.selected {
-            let parent_id = self.parent(selected_id).unwrap();
-            if parent_id == self.drawing_root {
-                // don't want to deal with this case right now
-                return;
-            }
-            let node_id = self.new_node();
+            if let Some(parent_id) = self.parent(selected_id) {
+                if parent_id == self.drawing_root {
+                    // don't want to deal with this case right now
+                    return;
+                }
+                let node_id = self.new_node();
 
-            self.with_node_mut(node_id, |node| node.parent_id = parent_id);
-            let added = self.with_node_mut(parent_id, |parent| {
-                parent.children.push(node_id);
-            });
-            if added.is_some() {
-                self.select_node(node_id);
-            } else {
-                self.delete_recursive(node_id);
+                self.with_node_mut(node_id, |node| node.parent_id = parent_id);
+                let added = self.with_node_mut(parent_id, |parent| {
+                    parent.children.push(node_id);
+                });
+                if added.is_some() {
+                    self.select_node(node_id);
+                } else {
+                    self.delete_recursive(node_id);
+                }
             }
         }
     }
@@ -1082,6 +1101,10 @@ impl Screen {
     }
 
     fn click_screen(&mut self, coords: Coords) {
+        if coords.0 > self.dims.0 || coords.1 > self.lowest_drawn {
+            warn!("click way off-screen");
+            return;
+        }
         let old = self.unselect();
         let new = self.try_select(coords);
         if old.is_none() && self.dragging_from.is_none() {
@@ -1094,6 +1117,10 @@ impl Screen {
 
     fn release(&mut self, to: Coords) {
         trace!("release({:?})", to);
+        if to.0 > self.dims.0 || to.1 > self.lowest_drawn {
+            warn!("release way off-screen");
+            return;
+        }
         if let Some(from) = self.dragging_from.take() {
             self.dragging_to.take();
             self.move_selected(from, to);
@@ -1101,7 +1128,7 @@ impl Screen {
         trace!("leaving release");
     }
 
-    fn assert_node_consistency(&self) {
+    pub fn assert_node_consistency(&self) {
         // a child should be a child of at most one node
         debug!("testing that no nodes have multiple parents");
         let mut seen = HashSet::new();
@@ -1127,7 +1154,7 @@ impl Screen {
 
     }
 
-    fn save(&self) {
+    pub fn save(&self) {
         trace!("save()");
         self.assert_node_consistency();
         let data = serialization::serialize_screen(self);
@@ -1145,13 +1172,13 @@ impl Screen {
         }
     }
 
-    fn cleanup(&mut self) {
+    pub fn cleanup(&mut self) {
         trace!("cleanup()");
         print!("{}", cursor::Show);
         self.stdout.take().unwrap().flush().unwrap();
     }
 
-    fn start_raw_mode(&mut self) {
+    pub fn start_raw_mode(&mut self) {
         if self.stdout.is_none() {
             self.stdout = Some(MouseTerminal::from(stdout().into_raw_mode().unwrap()));
         }
