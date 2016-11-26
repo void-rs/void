@@ -225,6 +225,12 @@ impl Screen {
             prio_pairs.push((prio, leaf));
         }
 
+        if total_prio == 0 {
+            // we're on a page with only zero priority tasks.
+            // these are un-selectable automatically.
+            return;
+        }
+
         let mut idx: usize = rand::thread_rng().gen_range(0, total_prio);
 
         let mut choice = None;
@@ -636,7 +642,6 @@ impl Screen {
             self.dragging_to = Some(coords);
         }
         trace!("selected no node at {:?}", coords);
-        // //trace!("lookup is {:?}", self.lookup);
         None
     }
 
@@ -1024,8 +1029,9 @@ impl Screen {
     }
 
     fn scroll_to_node(&mut self, node_id: NodeID) -> bool {
-        if let Some(&(_, y)) = self.drawn_at(node_id) {
-            if y <= self.view_y || y > (self.view_y + self.dims.1) {
+        if let Some(visible) = self.node_is_visible(node_id) {
+            let &(_, y) = self.drawn_at(node_id).unwrap();
+            if !visible {
                 // move only if necessary
                 self.view_y = cmp::max(y - 1, self.dims.1 / 2) - self.dims.1 / 2;
             }
@@ -1113,7 +1119,7 @@ impl Screen {
     }
 
     fn click_screen(&mut self, coords: Coords) {
-        if coords.0 > self.dims.0 || coords.1 > self.dims.1 {
+        if coords.0 > self.dims.0 || coords.1 > self.view_y + self.dims.1 {
             warn!("click way off-screen");
             return;
         }
@@ -1129,7 +1135,7 @@ impl Screen {
 
     fn release(&mut self, to: Coords) {
         trace!("release({:?})", to);
-        if to.0 > self.dims.0 || to.1 > self.dims.1 {
+        if to.0 > self.dims.0 || to.1 > self.view_y + self.dims.1 {
             warn!("release way off-screen");
             return;
         }

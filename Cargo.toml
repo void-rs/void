@@ -1,6 +1,6 @@
 [package]
 name = "voidmap"
-version = "0.2.15"
+version = "0.2.16"
 authors = ["Tyler Neely <t@jujit.su>"]
 description = "terminal mind-map + task tracker + tsdb"
 license = "GPL-3.0"

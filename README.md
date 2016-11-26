@@ -21,6 +21,7 @@ This is an attempt to address several cognitive defects.
 * things we measure tend to improve
 * we should minimize decisions to prevent fatigue
 * we should regularly reevaluate priorities
+* individual sensemaking is well served by reflection, journaling, outlining, mind-mapping, etc...
 * flexible cores can be bent to many uses
 
 ## Implementation
