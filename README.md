@@ -43,17 +43,13 @@ it is [via rustup](https://www.rustup.rs/).
 
 #### invocation
 
-attempts to use `$HOME/.void.db` as a storage file:
 
-```
-void
-```
+`void`
 
+this attempts to use `$HOME/.void.db` as a storage file.
 if you'd like to specify a different storage file:
 
-```
-void [/path/to/savefile]
-```
+`void [/path/to/savefile]`
 
 #### keys
 
