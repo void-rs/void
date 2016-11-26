@@ -1,4 +1,4 @@
-# void
+# void :white_medium_small_square:
 
 [![Build Status](https://travis-ci.org/spacejam/void.svg?branch=master)](https://travis-ci.org/spacejam/void)
 
@@ -41,7 +41,11 @@ it is [via rustup](https://www.rustup.rs/).
 
 #### invocation
 
-`void [/path/to/savefile]`
+attempts to use `$HOME/.void.db` as a storage file:
+```void```
+
+if you'd like to specify a different storage file:
+```void [/path/to/savefile]```
 
 #### keys
 
@@ -84,6 +88,14 @@ node whose name begins with `txt: `.  defaults to vim.
 
 setting the `KEYFILE` environment variable to the path of a
 [keyfile](default.keys) allows you to customize the controls
+
+setting the `LOCATION_QUERY` environment variable to anything
+will enable an http request that is sent out at startup to
+get approximate latitude and longitude coordinates associated
+with your internet-facing IP. this is added to any nodes created
+during a session, and eventually will allow you to trace the
+rough path you've taken over time. aimed mostly at users who
+travel a lot, may eventually have a more interesting implementation.
 
 #### notes
 

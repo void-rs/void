@@ -4,7 +4,7 @@ extern crate voidmap;
 #[macro_use]
 extern crate log;
 
-use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::Read;
 
 use voidmap::{Screen, Config, deserialize_screen, init_screen_log};
@@ -19,13 +19,22 @@ fn main() {
 
     let mut args: Vec<String> = std::env::args().collect();
     let program = args.remove(0);
-    let path = args.pop();
+    let default = std::env::home_dir().and_then(|mut h| {
+        h.push(".void.db");
+        h.to_str().map(|p| p.to_owned())
+    });
+    let path = args.pop().or(default);
 
     // load from file if present
     let saved_screen: Option<Screen> = path.clone()
         .and_then(|path| {
             let mut data = vec![];
-            match File::open(&path) {
+            let f = OpenOptions::new()
+                .write(true)
+                .read(true)
+                .create(true)
+                .open(path);
+            match f {
                 Err(e) => {
                     println!("error opening file: {}", e);
                     print_usage(&*program);

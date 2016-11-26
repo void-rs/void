@@ -1,3 +1,4 @@
+use std::env;
 use std::io::{self, Read};
 use std::collections::HashMap;
 use std::num;
@@ -49,6 +50,10 @@ impl Meta {
 }
 
 fn gps_query() -> Result<(f32, f32), GpsError> {
+    if env::var("LOCATION_QUERY").is_err() {
+        info!("GPS lookup disabled. Enable by setting LOCATION_QUERY env var.");
+        return Err(GpsError::Other("GPS lookup disabled".to_owned()));
+    }
     let client = Client::new();
     let mut res = client.get("http://ipinfo.io/loc").send()?;
     let mut text_res = String::new();

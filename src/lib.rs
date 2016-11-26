@@ -2,8 +2,6 @@
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate maplit;
 
 extern crate regex;
 extern crate time;

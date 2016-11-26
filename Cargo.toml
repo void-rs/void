@@ -1,6 +1,6 @@
 [package]
 name = "voidmap"
-version = "0.2.13"
+version = "0.2.14"
 authors = ["Tyler Neely <t@jujit.su>"]
 description = "terminal mind-map + task tracker + tsdb"
 license = "GPL-3.0"
@@ -18,13 +18,11 @@ log = "0.3"
 lazy_static = "0.2"
 time = "0.1"
 hyper = "0.9"
-rust-crypto = "^0.2"
 getopts = "0.2"
 protobuf = "1.0"
 rand = "0.3"
 libc = "0.2"
 regex = "0.1"
-maplit = "0.1.4"
 
 [dev-dependencies]
 quickcheck = "0.3"
