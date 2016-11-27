@@ -1043,7 +1043,7 @@ impl Screen {
     }
 
     fn select_up(&mut self) {
-        self.select_relative(|(l1, r1), (l2, r2)| {
+        self.select_relative(|(l1, _), (l2, _)| {
             let is_up = l1.1 > l2.1;
             let (diff_x, diff_y) = distances(l1, l2);
             is_up && diff_y > diff_x
@@ -1051,7 +1051,7 @@ impl Screen {
     }
 
     fn select_down(&mut self) {
-        self.select_relative(|(l1, r1), (l2, r2)| {
+        self.select_relative(|(l1, _), (l2, _)| {
             let is_down = l1.1 < l2.1;
             let (diff_x, diff_y) = distances(l1, l2);
             is_down && diff_y > diff_x
@@ -1059,7 +1059,7 @@ impl Screen {
     }
 
     fn select_left(&mut self) {
-        self.select_relative(|(l1, r1), (l2, r2)| {
+        self.select_relative(|(l1, _), (_, r2)| {
             let is_left = l1.0 > r2.0;
             let (diff_x, diff_y) = distances(l1, r2);
             is_left && diff_x > diff_y
@@ -1067,9 +1067,9 @@ impl Screen {
     }
 
     fn select_right(&mut self) {
-        self.select_relative(|(l1, r1), (l2, r2)| {
+        self.select_relative(|(_, r1), (l2, _)| {
             let is_right = r1.0 < l2.0;
-            let (diff_x, diff_y) = distances(l1, r2);
+            let (diff_x, diff_y) = distances(r1, l2);
             is_right && diff_x > diff_y
         });
     }
@@ -1085,7 +1085,6 @@ impl Screen {
     fn find_relative_node<F>(&mut self, filter_fn: F) -> Option<NodeID>
         where F: Fn((Coords, Coords), (Coords, Coords)) -> bool
     {
-        let selected_id = self.selected.unwrap_or(0);
         let default_coords = (self.dims.0 / 2, self.dims.1 / 2);
         let rel_def_coords = self.screen_to_internal_xy(default_coords);
 
@@ -1102,7 +1101,7 @@ impl Screen {
                 }
             }
         }
-        node_costs.sort_by_key(|&(id, cost)| cost);
+        node_costs.sort_by_key(|&(_, cost)| cost);
         node_costs.iter().nth(0).map(|&(&id, _)| id)
     }
 
