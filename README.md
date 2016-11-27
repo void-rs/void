@@ -34,6 +34,7 @@ This is an attempt to address several cognitive defects.
 * a task can be chosen automatically, with priorities weighting a random selection. you should delete it or do it, don't get into the habit of drawing again until you see something you like.  you chose the priorities, and you should keep them up-to-date.
 * completed subtasks for a particular view are plotted on a sparkline at the top of the screen for the past week. this will become dramatically more flexible in the future.
 * you can draw arrows between nodes for mind-mapping functionality
+* can shell out and execute the content of a node with C-k. if the node starts with txt: this will be opened in vim or an editor specified in the `EDITOR` env var.
 
 #### install
 

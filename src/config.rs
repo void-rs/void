@@ -123,6 +123,7 @@ impl Default for Config {
                 (Left, Action::SelectLeft),
                 (Right, Action::SelectRight),
                 (Backspace, Action::EraseChar),
+                (F(1), Action::PrefixJump),
                 (Char('\n'), Action::CreateSibling),
                 (Char('\t'), Action::CreateChild),
                 (Ctrl('n'), Action::CreateFreeNode),
@@ -193,6 +194,7 @@ impl Config {
 
     pub fn map(&self, e: Event) -> Option<Action> {
         use termion::event::Key::*;
+        info!("matching event {:?}", e);
         match e {
             Event::Key(Char(c)) => {
                 if let Some(action) = self.config.get(&Char(c)).cloned() {

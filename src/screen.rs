@@ -1,11 +1,11 @@
 use std;
-use std::env;
 use std::cmp;
-use std::fs::{File, rename, remove_file, OpenOptions};
 use std::collections::{BTreeMap, HashMap, BinaryHeap, HashSet};
-use std::process;
-use std::io::{self, Write, Read, Seek, SeekFrom, Stdout, stdout, stdin, Error, ErrorKind};
+use std::env;
 use std::fmt::Write as FmtWrite;
+use std::fs::{File, rename, remove_file, OpenOptions};
+use std::io::{self, Write, Read, Seek, SeekFrom, Stdout, stdout, stdin, Error, ErrorKind};
+use std::process;
 
 use termion::{terminal_size, color, cursor, style, clear};
 use termion::event::{Event, Key};
@@ -13,13 +13,13 @@ use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
 
 use libc::getpid;
-use time;
-use regex::Regex;
 use rand::{self, Rng};
+use regex::Regex;
+use time;
+use unicode_segmentation::UnicodeSegmentation;
 
-use {Config, Action, cost, NodeID, Coords, Node, random_fg_color, serialization, Dir, Pack};
-use plot::plot_sparkline;
-use logging;
+use {Config, Action, distances, cost, pair_cost, NodeID, Coords, Node, random_fg_color,
+     serialization, Dir, plot, Pack, logging};
 
 pub struct Screen {
     pub max_id: u64,
@@ -401,29 +401,30 @@ impl Screen {
                 return;
             }
             let content = content_opt.unwrap();
+
             info!("executing command: {}", content);
-            let mut split: Vec<&str> = content.split_whitespace().collect();
-            if split.is_empty() {
+            if content.is_empty() {
                 error!("cannot execute empty command");
                 return;
             }
-            let head = split.remove(0);
 
-            if head.starts_with("txt:") {
+            if content.starts_with("txt:") {
                 self.exec_text_editor(selected_id);
                 return;
             }
 
-            if head.starts_with("http") {
+            if content.starts_with("http") {
                 let cmd = process::Command::new("firefox")
-                    .arg(head)
+                    .arg(content.to_owned())
                     .spawn();
                 if cmd.is_err() {
                     error!("command failed to start: {}", content);
                 }
             } else {
-                let cmd = process::Command::new(head)
-                    .args(&split[..])
+                let shell = env::var("SHELL").unwrap_or("bash".to_owned());
+                let cmd = process::Command::new(shell)
+                    .arg("-c")
+                    .arg(content.to_owned())
                     .spawn();
                 if cmd.is_err() {
                     error!("command failed to start: {}", content);
@@ -1042,23 +1043,39 @@ impl Screen {
     }
 
     fn select_up(&mut self) {
-        self.select_relative(|cur, other| cur.1 > other.1);
+        self.select_relative(|(l1, r1), (l2, r2)| {
+            let is_up = l1.1 > l2.1;
+            let (diff_x, diff_y) = distances(l1, l2);
+            is_up && diff_y > diff_x
+        });
     }
 
     fn select_down(&mut self) {
-        self.select_relative(|cur, other| cur.1 < other.1);
+        self.select_relative(|(l1, r1), (l2, r2)| {
+            let is_down = l1.1 < l2.1;
+            let (diff_x, diff_y) = distances(l1, l2);
+            is_down && diff_y > diff_x
+        });
     }
 
     fn select_left(&mut self) {
-        self.select_relative(|cur, other| cur.0 > other.0);
+        self.select_relative(|(l1, r1), (l2, r2)| {
+            let is_left = l1.0 > r2.0;
+            let (diff_x, diff_y) = distances(l1, r2);
+            is_left && diff_x > diff_y
+        })
     }
 
     fn select_right(&mut self) {
-        self.select_relative(|cur, other| cur.0 < other.0);
+        self.select_relative(|(l1, r1), (l2, r2)| {
+            let is_right = r1.0 < l2.0;
+            let (diff_x, diff_y) = distances(l1, r2);
+            is_right && diff_x > diff_y
+        });
     }
 
     fn select_relative<F>(&mut self, filter_fn: F)
-        where F: Fn(Coords, Coords) -> bool
+        where F: Fn((Coords, Coords), (Coords, Coords)) -> bool
     {
         if let Some(node_id) = self.find_relative_node(filter_fn) {
             self.select_node(node_id);
@@ -1066,38 +1083,27 @@ impl Screen {
     }
 
     fn find_relative_node<F>(&mut self, filter_fn: F) -> Option<NodeID>
-        where F: Fn(Coords, Coords) -> bool
+        where F: Fn((Coords, Coords), (Coords, Coords)) -> bool
     {
         let selected_id = self.selected.unwrap_or(0);
         let default_coords = (self.dims.0 / 2, self.dims.1 / 2);
         let rel_def_coords = self.screen_to_internal_xy(default_coords);
-        let cur = self.drawn_at(selected_id).unwrap_or(&rel_def_coords);
-        let (id, _) = self.drawn_at
-            .iter()
-            .fold((None, std::u16::MAX),
-                  |(acc_id, acc_cost), (&node_id, &(x, y))| {
-                if filter_fn(*cur, (x, y)) {
-                    let cost = cost(*cur, (x, y));
-                    if cost < acc_cost {
-                        (Some(node_id), cost)
-                    } else {
-                        (acc_id, acc_cost)
-                    }
-                } else {
-                    (acc_id, acc_cost)
-                }
-            });
-        id
-    }
 
-    fn node_cost(&self, node1: NodeID, node2: NodeID) -> Option<u16> {
-        if let Some((l1, r1)) = self.bounds_for_lookup(node1) {
-            if let Some((l2, r2)) = self.bounds_for_lookup(node2) {
-                let possibilities = vec![(l1, l2), (l1, r2), (r1, l2), (r1, r2)];
-                return possibilities.into_iter().map(|(one, two)| cost(one, two)).min();
+        let cur = self.selected
+            .and_then(|s| self.bounds_for_lookup(s))
+            .unwrap_or((rel_def_coords, rel_def_coords));
+
+        let mut node_costs = vec![];
+        for node_id in self.drawn_at.keys() {
+            if let Some(bounds) = self.bounds_for_lookup(*node_id) {
+                if filter_fn(cur, bounds) {
+                    let cost = pair_cost(cur, bounds);
+                    node_costs.push((node_id, cost));
+                }
             }
         }
-        None
+        node_costs.sort_by_key(|&(id, cost)| cost);
+        node_costs.iter().nth(0).map(|&(&id, _)| id)
     }
 
     fn select_node(&mut self, node_id: NodeID) {
@@ -1170,6 +1176,14 @@ impl Screen {
             assert!(self.is_parent(0, node_id));
         }
 
+
+        debug!("testing that all arrows are existing nodes");
+        // no arrows that don't exist
+        for &(ref a, ref b) in &self.arrows {
+            assert!(self.nodes.get(a).is_some());
+            assert!(self.nodes.get(b).is_some());
+        }
+
     }
 
     pub fn save(&self) {
@@ -1207,10 +1221,16 @@ impl Screen {
     }
 
     pub fn add_or_remove_arrow(&mut self) {
-        if let Some(from) = self.drawing_arrow.take() {
-            if let Some(arrow) = self.selected.map(|to| (from, to)) {
+        if self.drawing_arrow.is_none() {
+            self.drawing_arrow = self.selected;
+            return;
+        }
+        let from = self.drawing_arrow.take().unwrap();
+        if let Some(arrow) = self.selected.map(|to| (from, to)) {
+            let (from, to) = arrow;
+            if self.nodes.get(&from).is_some() && self.nodes.get(&to).is_some() {
                 let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
-                    if nl1 == &arrow.0 && nl2 == &arrow.1 {
+                    if nl1 == &from && nl2 == &to {
                         true
                     } else {
                         false || acc
@@ -1222,8 +1242,6 @@ impl Screen {
                     self.arrows.push(arrow);
                 }
             }
-        } else {
-            self.drawing_arrow = self.selected;
         }
     }
 
@@ -1358,15 +1376,17 @@ impl Screen {
             return 0;
         }
 
+        let reset = &*format!("{}", color::Fg(color::Reset));
+        let mut pre_meta = String::new();
+        let mut buf = String::new();
         // only actually print it if we're in-view
         if let Some(screen_coords) = self.internal_to_screen_xy(internal_coords) {
             let (x, y) = screen_coords;
-            let mut buf = String::new();
-            write!(&mut buf, "{}", cursor::Goto(x, y)).unwrap();
-            write!(&mut buf, "{}", color).unwrap();
+            write!(pre_meta, "{}{}", cursor::Goto(x, y), color).unwrap();
             if node.selected {
-                write!(&mut buf, "{}", style::Invert).unwrap();
+                write!(&mut pre_meta, "{}", style::Invert).unwrap();
             }
+            write!(&mut buf, "{}", pre_meta).unwrap();
             write!(&mut buf, "{}", prefix).unwrap();
             if prefix != "" {
                 // only anchor will have blank prefix
@@ -1387,34 +1407,36 @@ impl Screen {
             }
             // keep color for selected & tree root Fg
             if !node.selected && prefix != "" {
-                write!(&mut buf, "{}", color::Fg(color::Reset)).unwrap();
+                write!(&mut buf, "{}", reset).unwrap();
             }
             write!(&mut buf, "{}", node.content).unwrap();
 
             let max_width = (cmp::max(self.dims.0, 1 + x) - 1 - x) as usize;
-            if false {
-                // buf.chars().count() > max_width {
-                let chars = buf.chars();
-                // let oldlen = chars.clone().count();
-                let mut truncated: String = chars.take(cmp::max(max_width, 1) - 1).collect();
-                truncated.push('…');
-                print!("{}", truncated);
-            } else {
-                print!("{}", buf);
+            let visible = buf.replace(reset, "").replace(&*pre_meta, "");
+            let visible_graphemes = UnicodeSegmentation::graphemes(&*visible, true).count();
+            if visible_graphemes > max_width {
+                let buf_clone = buf.clone();
+                let chars = buf_clone.chars();
+                let width = chars.clone().count();
+                let new_size = width - (visible_graphemes - max_width);
+                buf = chars.take(new_size).collect();
+                buf.push('…');
             }
+
+            print!("{}", buf);
         }
 
         print!("{}", style::Reset);
 
+        let visible = buf.replace(reset, "").replace(&*pre_meta, "");
+        let visible_graphemes = UnicodeSegmentation::graphemes(&*visible, true).count();
         self.drawn_at.insert(node_id, internal_coords);
-        for x in (internal_coords.0..(internal_coords.0 + 3 + prefix.len() as u16 +
-                                      node.content.len() as u16))
-            .rev() {
+        for x in (internal_coords.0..(internal_coords.0 + visible_graphemes as u16)).rev() {
             trace!("inserting {:?} at {:?}", node_id, internal_coords);
             self.lookup.insert((x, internal_coords.1), node_id);
-            if internal_coords.1 > self.lowest_drawn {
-                self.lowest_drawn = internal_coords.1;
-            }
+        }
+        if internal_coords.1 > self.lowest_drawn {
+            self.lowest_drawn = internal_coords.1;
         }
         let mut prefix = prefix;
         if last {
@@ -1537,7 +1559,7 @@ impl Screen {
         let counts_clone = counts.clone();
         let finished_today = counts_clone.get(&today_normalized).unwrap();
         let week_line = counts.into_iter().map(|(_, v)| v).collect();
-        let plot = plot_sparkline(week_line);
+        let plot = plot::plot_sparkline(week_line);
         let plot_line = format!("│{}│({} today)", plot, finished_today);
         header_text.push_str(&*plot_line);
 
@@ -1661,9 +1683,9 @@ impl Screen {
     // correctness depends on invariant of the leftmost element being the
     // value in self.drawn_at
     fn bounds_for_lookup(&self, node_id: NodeID) -> Option<(Coords, Coords)> {
-        if let Some(&left) = self.drawn_at.get(&node_id) {
+        if let Some(&left) = self.drawn_at(node_id) {
             let mut rx = left.0;
-            while let Some(&cursor) = self.lookup.get(&(rx + 1, left.1)) {
+            while let Some(&cursor) = self.lookup((rx + 1, left.1)) {
                 if cursor == node_id {
                     rx += 1;
                 } else {
