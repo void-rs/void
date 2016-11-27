@@ -730,6 +730,7 @@ impl Screen {
             }
         }
         trace!("leaving stdin.events() loop");
+        print!("{}{}", cursor::Goto(1, 1), clear::All);
     }
 
     fn toggle_collapsed(&mut self) {
