@@ -352,8 +352,11 @@ impl Screen {
         // map an alphanumeric char to each candidate NodeID
         let mapping: HashMap<&str, NodeID> =
             chars.split("").skip(1).zip(nodes.into_iter()).collect();
+
+        // clear the prompt
+        print!("{}{}", cursor::Goto(1, self.dims.1), clear::AfterCursor);
+
         // print the hilighted char at each choice
-        self.draw();
         for (&c, &node_id) in &mapping {
             let &coords = self.drawn_at(node_id).unwrap();
             let (x, y) = self.internal_to_screen_xy(coords).unwrap();
@@ -661,7 +664,7 @@ impl Screen {
     }
 
     fn delete_recursive(&mut self, node_id: NodeID) {
-        debug!("deleting node {}", node_id);
+        trace!("delete_recursive({})", node_id);
         if let Some(node) = self.nodes.remove(&node_id) {
             // clean up any arrow state
             self.arrows.retain(|&(ref from, ref to)| from != &node_id && to != &node_id);
@@ -675,8 +678,8 @@ impl Screen {
     fn delete_selected(&mut self, reselect: bool) {
         trace!("delete_selected()");
         if let Some(selected_id) = self.selected.take() {
+            let (_, height) = self.drawable_subtree_dims(selected_id).unwrap();
             let coords = self.drawn_at.remove(&selected_id);
-            debug!("coords: {:?}", coords);
             // remove ref from parent
             if let Some(parent_id) = self.parent(selected_id) {
                 trace!("deleting node {} from parent {}", selected_id, parent_id);
@@ -685,11 +688,9 @@ impl Screen {
             }
             // remove children
             self.delete_recursive(selected_id);
-            if let Some(c) = coords {
+            if let Some((x, y)) = coords {
                 if reselect {
-                    // need to draw here or there will be nothing to click_select below
-                    self.draw();
-                    self.click_select(c);
+                    self.click_select((x, y + height));
                 }
             }
         }
@@ -760,7 +761,21 @@ impl Screen {
     }
 
     fn create_sibling(&mut self) {
-        if let Some(selected_id) = self.selected {
+        if let Some(mut selected_id) = self.selected {
+            if self.with_node(selected_id, |n| n.content.is_empty()).unwrap() {
+                // we just hit enter twice, so go back a level
+                let sel_parent = self.parent(selected_id).unwrap();
+                if sel_parent == self.drawing_root {
+                    // don't want to create a sibling of the drawing root
+                    // because that's not underneath the drawing root
+                    self.unselect();
+                    return;
+                }
+                self.select_node(sel_parent);
+                selected_id = sel_parent;
+            }
+            let selected_id = selected_id;
+
             if let Some(parent_id) = self.parent(selected_id) {
                 if parent_id == self.drawing_root {
                     // don't want to deal with this case right now
@@ -770,7 +785,14 @@ impl Screen {
 
                 self.with_node_mut(node_id, |node| node.parent_id = parent_id);
                 let added = self.with_node_mut(parent_id, |parent| {
-                    parent.children.push(node_id);
+                    // it's possible that selected_id has been deleted by now
+                    // due to it being empty when we entered the function
+                    // (double enter for going up a level)
+                    let idx = parent.children
+                        .iter()
+                        .position(|&e| e == selected_id)
+                        .unwrap_or(0);
+                    parent.children.insert(idx + 1, node_id);
                 });
                 if added.is_some() {
                     self.select_node(node_id);
@@ -1110,21 +1132,18 @@ impl Screen {
         trace!("select_node({})", node_id);
         self.unselect();
         if node_id != 0 {
-            self.with_node_mut(node_id, |mut node| node.selected = true);
-            self.selected = Some(node_id);
-
-            // draw() needed to make visible / scroll accurate
-            self.draw();
-
-            if let Some(visible) = self.node_is_visible(node_id) {
-                if !visible {
-                    self.scroll_to_selected();
-                }
-            }
+            // it's possible that unselecting above actually caused
+            // this node to be deleted, due to its parent (previous
+            // selection) being empty.  To account for this, we need
+            // to only set self.selected to node_id if the with_node
+            // succeeds.
+            self.with_node_mut(node_id, |mut node| node.selected = true)
+                .map(|_| self.selected = Some(node_id));
         }
     }
 
     fn click_screen(&mut self, coords: Coords) {
+        trace!("click_screen({:?})", coords);
         if coords.0 > self.dims.0 || coords.1 > self.view_y + self.dims.1 {
             warn!("click way off-screen");
             return;
@@ -1170,7 +1189,7 @@ impl Screen {
             });
         }
 
-        // no parent loops
+        // no loops, no orphans
         debug!("testing that 0 is the ancestor of all nodes");
         for &node_id in self.nodes.keys() {
             assert!(self.is_parent(0, node_id));
@@ -1324,6 +1343,9 @@ impl Screen {
 
         print!("{}", cursor::Hide);
         self.flush();
+
+        // TODO evaluate where the best place to do this is
+        self.scroll_to_selected();
     }
 
     fn draw_scrollbar(&self) {
