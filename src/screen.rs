@@ -1262,10 +1262,14 @@ impl Screen {
         trace!("draw()");
         print!("{}", clear::All);
 
-        self.draw_header();
-
         // print visible nodes
         self.draw_children_of_root();
+
+        // TODO figure out why header doesn't get shown
+        // when a root node is NOT drawn at 1,1
+        // (this only happens when draw_header() is above
+        // the call to draw_children_of_root()...
+        self.draw_header();
 
         // print logs
         if self.show_logs && self.dims.0 > 4 && self.dims.1 > 7 {
@@ -1380,8 +1384,7 @@ impl Screen {
         let mut pre_meta = String::new();
         let mut buf = String::new();
         // only actually print it if we're in-view
-        if let Some(screen_coords) = self.internal_to_screen_xy(internal_coords) {
-            let (x, y) = screen_coords;
+        if let Some((x, y)) = self.internal_to_screen_xy(internal_coords) {
             write!(pre_meta, "{}{}", cursor::Goto(x, y), color).unwrap();
             if node.selected {
                 write!(&mut pre_meta, "{}", style::Invert).unwrap();
@@ -1423,10 +1426,8 @@ impl Screen {
                 buf.push('…');
             }
 
-            print!("{}", buf);
+            print!("{}{}", buf, style::Reset);
         }
-
-        print!("{}", style::Reset);
 
         let visible = buf.replace(reset, "").replace(&*pre_meta, "");
         let visible_graphemes = UnicodeSegmentation::graphemes(&*visible, true).count();

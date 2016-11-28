@@ -194,7 +194,6 @@ impl Config {
 
     pub fn map(&self, e: Event) -> Option<Action> {
         use termion::event::Key::*;
-        info!("matching event {:?}", e);
         match e {
             Event::Key(Char(c)) => {
                 if let Some(action) = self.config.get(&Char(c)).cloned() {
