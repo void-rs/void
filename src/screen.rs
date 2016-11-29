@@ -18,8 +18,8 @@ use regex::Regex;
 use time;
 use unicode_segmentation::UnicodeSegmentation;
 
-use {Config, Action, distances, cost, pair_cost, NodeID, Coords, Node, random_fg_color,
-     serialization, Dir, plot, Pack, logging};
+use {Config, Action, distances, cost, NodeID, Coords, Node, random_fg_color, serialization, Dir,
+     plot, Pack, logging};
 
 pub struct Screen {
     pub max_id: u64,
@@ -611,7 +611,7 @@ impl Screen {
     }
 
     fn coords_are_visible(&self, (_, y): Coords) -> bool {
-        cmp::max(y, 1) - 1 > self.view_y && y < self.view_y + self.dims.1 + 1
+        visible(self.view_y, self.dims.1, y)
     }
 
     fn node_is_visible(&self, node: NodeID) -> Option<bool> {
@@ -1066,18 +1066,32 @@ impl Screen {
     }
 
     fn select_up(&mut self) {
+        let view_y = self.view_y;
+        let height = self.dims.1;
         self.select_relative(|(l1, _), (l2, _)| {
             let is_up = l1.1 > l2.1;
             let (diff_x, diff_y) = distances(l1, l2);
-            is_up && diff_y > diff_x
+            if is_up {
+                let visible = visible(view_y, height, l2.1);
+                Some((!visible, diff_x, diff_y))
+            } else {
+                None
+            }
         });
     }
 
     fn select_down(&mut self) {
+        let view_y = self.view_y;
+        let height = self.dims.1;
         self.select_relative(|(l1, _), (l2, _)| {
             let is_down = l1.1 < l2.1;
             let (diff_x, diff_y) = distances(l1, l2);
-            is_down && diff_y > diff_x
+            if is_down {
+                let visible = visible(view_y, height, l2.1);
+                Some((!visible, diff_x, diff_y))
+            } else {
+                None
+            }
         });
     }
 
@@ -1085,7 +1099,11 @@ impl Screen {
         self.select_relative(|(l1, _), (_, r2)| {
             let is_left = l1.0 > r2.0;
             let (diff_x, diff_y) = distances(l1, r2);
-            is_left && diff_x > diff_y
+            if is_left {
+                Some((diff_y, diff_x))
+            } else {
+                None
+            }
         })
     }
 
@@ -1093,20 +1111,24 @@ impl Screen {
         self.select_relative(|(_, r1), (l2, _)| {
             let is_right = r1.0 < l2.0;
             let (diff_x, diff_y) = distances(r1, l2);
-            is_right && diff_x > diff_y
+            if is_right {
+                Some((diff_y, diff_x))
+            } else {
+                None
+            }
         });
     }
 
-    fn select_relative<F>(&mut self, filter_fn: F)
-        where F: Fn((Coords, Coords), (Coords, Coords)) -> bool
+    fn select_relative<F, O: Ord + Clone>(&mut self, filter_cost: F)
+        where F: FnMut((Coords, Coords), (Coords, Coords)) -> Option<O>
     {
-        if let Some(node_id) = self.find_relative_node(filter_fn) {
+        if let Some(node_id) = self.find_relative_node(filter_cost) {
             self.select_node(node_id);
         }
     }
 
-    fn find_relative_node<F>(&mut self, filter_fn: F) -> Option<NodeID>
-        where F: Fn((Coords, Coords), (Coords, Coords)) -> bool
+    fn find_relative_node<F, O: Ord + Clone>(&mut self, mut filter_cost: F) -> Option<NodeID>
+        where F: FnMut((Coords, Coords), (Coords, Coords)) -> Option<O>
     {
         let default_coords = (self.dims.0 / 2, self.dims.1 / 2);
         let rel_def_coords = self.screen_to_internal_xy(default_coords);
@@ -1118,13 +1140,12 @@ impl Screen {
         let mut node_costs = vec![];
         for node_id in self.drawn_at.keys() {
             if let Some(bounds) = self.bounds_for_lookup(*node_id) {
-                if filter_fn(cur, bounds) {
-                    let cost = pair_cost(cur, bounds);
+                if let Some(cost) = filter_cost(cur, bounds) {
                     node_costs.push((node_id, cost));
                 }
             }
         }
-        node_costs.sort_by_key(|&(_, cost)| cost);
+        node_costs.sort_by_key(|&(_, ref cost)| cost.clone());
         node_costs.iter().nth(0).map(|&(&id, _)| id)
     }
 
@@ -1722,4 +1743,8 @@ impl Screen {
             None
         }
     }
+}
+
+fn visible(view_y: u16, height: u16, y: u16) -> bool {
+    y > view_y + 2 && y < view_y + height
 }

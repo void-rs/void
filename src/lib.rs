@@ -57,10 +57,3 @@ pub fn cost(c1: Coords, c2: Coords) -> u16 {
     let (xcost, ycost) = distances(c1, c2);
     xcost + ycost
 }
-
-pub fn pair_cost(c1: (Coords, Coords), c2: (Coords, Coords)) -> u16 {
-    let (l1, r1) = c1;
-    let (l2, r2) = c2;
-    let possibilities = vec![(l1, l2), (l1, r2), (r1, l2), (r1, r2)];
-    possibilities.into_iter().map(|(one, two)| cost(one, two)).min().unwrap()
-}
