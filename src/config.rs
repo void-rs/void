@@ -40,6 +40,8 @@ pub enum Action {
     EnterCmd,
     FindTask,
     YankPasteNode,
+    RaiseSelected,
+    LowerSelected,
 }
 
 fn str_to_action(input: String) -> Option<Action> {
@@ -72,6 +74,8 @@ fn str_to_action(input: String) -> Option<Action> {
         "enter_command" => Some(Action::EnterCmd),
         "find_task" => Some(Action::FindTask),
         "yank_paste_node" => Some(Action::YankPasteNode),
+        "raise_selected" => Some(Action::RaiseSelected),
+        "lower_selected" => Some(Action::LowerSelected),
         _ => None,
     }
 }
@@ -143,6 +147,8 @@ impl Default for Config {
                 (Ctrl('e'), Action::EnterCmd),
                 (Ctrl('v'), Action::FindTask),
                 (Ctrl('y'), Action::YankPasteNode),
+                (Ctrl('g'), Action::RaiseSelected),
+                (Ctrl('d'), Action::LowerSelected),
             ]
                 .into_iter()
                 .collect(),

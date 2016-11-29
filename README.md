@@ -71,7 +71,8 @@ select up | Up | select down | Down
 select subtree to left | Left | select subtree to right | Right
 de-select node | Esc | save | C-x
 exit | Esc with nothing selected | exit | C-c
-jump to weighted next task | C-v
+jump to weighted next task | C-v | cut / paste node | C-y
+move selected up in child list | C-g | move selected down in child list | C-d
 
 can be customized by setting the `KEYFILE` env var to the path of a [key configuration file](default.keys)
 

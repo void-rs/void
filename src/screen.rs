@@ -36,6 +36,7 @@ pub struct Screen {
     drawing_root: NodeID,
     show_logs: bool,
     selected: Option<NodeID>,
+    cut: Option<NodeID>,
     drawing_arrow: Option<NodeID>,
     lookup: HashMap<Coords, NodeID>,
     drawn_at: HashMap<NodeID, Coords>,
@@ -57,6 +58,7 @@ impl Default for Screen {
             config: Config::default(),
             arrows: vec![],
             selected: None,
+            cut: None,
             drawing_arrow: None,
             nodes: HashMap::new(),
             lookup: HashMap::new(),
@@ -152,6 +154,8 @@ impl Screen {
                     Action::EnterCmd => self.enter_cmd(),
                     Action::FindTask => self.auto_task(),
                     Action::YankPasteNode => self.cut_paste(),
+                    Action::RaiseSelected => self.raise_selected(),
+                    Action::LowerSelected => self.lower_selected(),
                 }
             }
             None => warn!("received unknown input"),
@@ -159,16 +163,41 @@ impl Screen {
         true
     }
 
+    fn exists(&self, node_id: NodeID) -> bool {
+        self.nodes.get(&node_id).is_some()
+    }
+
     fn cut_paste(&mut self) {
-        if let Some(dragging_from) = self.dragging_from.take() {
-            if let Some(dragging_to) = self.dragging_to.take() {
-                self.move_selected(dragging_from, dragging_to);
+        if let Some(selected_id) = self.selected {
+            if let Some(cut) = self.cut.take() {
+                self.reparent(cut, selected_id);
+            } else {
+                self.cut = Some(selected_id);
             }
-        } else {
-            if let Some(selected_id) = self.selected {
-                if let Some(&coords) = self.drawn_at(selected_id) {
-                    self.dragging_from = Some(coords);
-                }
+        } else if let Some(cut) = self.cut.take() {
+            let root = self.drawing_root;
+            self.reparent(cut, root);
+        }
+    }
+
+    fn reparent(&mut self, node_id: NodeID, parent_id: NodeID) {
+        if !self.exists(node_id) || !self.exists(parent_id) {
+            warn!("tried to reparent to deleted node");
+            return;
+        }
+        if !self.is_parent(node_id, parent_id) {
+            // reparent selected to parent_id
+            // 1. remove from old parent's children
+            // 2. add to new parent's children
+            // 3. set parent_id pointer
+            let old_parent = self.parent(node_id).unwrap();
+            self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &node_id))
+                .unwrap();
+            self.with_node_mut(parent_id, |np| np.children.push(node_id)).unwrap();
+            self.with_node_mut(node_id, |s| s.parent_id = parent_id).unwrap();
+            if self.with_node(parent_id, |np| np.collapsed).unwrap() {
+                // if the destination is collapsed, deselect this node
+                self.unselect();
             }
         }
     }
@@ -957,19 +986,7 @@ impl Screen {
         };
         if let Some(&new_parent) = self.lookup(to) {
             if !self.is_parent(selected_id, new_parent) {
-                // reparent selected to new_parent
-                // 1. remove from old parent's children
-                // 2. add to new parent's children
-                // 3. set parent_id pointer
-                let old_parent = self.parent(selected_id).unwrap();
-                self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &selected_id))
-                    .unwrap();
-                self.with_node_mut(new_parent, |np| np.children.push(selected_id)).unwrap();
-                self.with_node_mut(selected_id, |s| s.parent_id = new_parent).unwrap();
-                if self.with_node(new_parent, |np| np.collapsed).unwrap() {
-                    // if the destination is collapsed, deselect this node
-                    self.unselect();
-                }
+                self.reparent(selected_id, new_parent);
             } else {
                 // we're here because we released the drag
                 // with the cursor over a child, so rather
@@ -984,6 +1001,7 @@ impl Screen {
                     })
                     .unwrap();
             }
+
         } else {
             // destination is not another node, so redraw selected at coords
             // 1. remove from old parent's children
@@ -1062,6 +1080,53 @@ impl Screen {
             true
         } else {
             false
+        }
+    }
+
+    fn raise_selected(&mut self) {
+        if let Some(selected_id) = self.selected {
+            if !self.exists(selected_id) {
+                warn!("tried to raise deleted node");
+                return;
+            }
+            let parent_id = self.parent(selected_id).unwrap();
+            if parent_id == self.drawing_root {
+                // principle: don't modify things that are above the visible scope
+                return;
+            }
+            self.with_node_mut(parent_id, |mut parent| {
+                let idx = parent.children
+                    .iter()
+                    .position(|&e| e == selected_id)
+                    .unwrap();
+                let to = cmp::max(idx, 1) - 1;
+                parent.children.swap(idx, to);
+            });
+        }
+    }
+
+    fn lower_selected(&mut self) {
+        if let Some(selected_id) = self.selected {
+            if !self.exists(selected_id) {
+                warn!("tried to lower deleted node");
+                return;
+            }
+            let parent_id = self.parent(selected_id).unwrap();
+            if parent_id == self.drawing_root {
+                // principle: don't modify things that are above the visible scope
+                return;
+            }
+            self.with_node_mut(parent_id, |mut parent| {
+                let idx = parent.children
+                    .iter()
+                    .position(|&e| e == selected_id)
+                    .unwrap();
+                let len = parent.children.len();
+                if len > 1 {
+                    let to = cmp::min(idx, len - 2) + 1;
+                    parent.children.swap(idx, to);
+                }
+            });
         }
     }
 
