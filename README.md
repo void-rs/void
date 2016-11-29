@@ -22,7 +22,7 @@ This is an attempt to address several cognitive defects.
 * we should minimize decisions to prevent fatigue
 * we should regularly reevaluate priorities
 * individual sensemaking is well served by reflection, journaling, outlining, mind-mapping, etc...
-* flexible cores can be bent to many uses
+* don't impose specific workflows, but support many possibilities
 
 ## Implementation
 
@@ -44,7 +44,6 @@ if you don't have cargo, an easy way to get and manage
 it is [via rustup](https://www.rustup.rs/).
 
 #### invocation
-
 
 `void`
 
@@ -136,7 +135,6 @@ be thinking of carrying your movement through to
 cutting him. ...When you appreciate the power of
 nature, knowing the rhythm of any situation, you
 will be able to hit the enemy naturally and strike
-naturally. All this is the Way of the Void.
--Miyamoto Musashi
+naturally. All this is the Way of the Void. - Miyamoto Musashi
 
 
