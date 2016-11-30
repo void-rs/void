@@ -1,5 +1,5 @@
 use std;
-use std::cmp;
+use std::cmp::{max, min};
 use std::collections::{BTreeMap, HashMap, BinaryHeap, HashSet};
 use std::env;
 use std::fmt::Write as FmtWrite;
@@ -316,13 +316,14 @@ impl Screen {
 
         let stdin: Box<Read> = Box::new(stdin());
         print!("{}{}{}{}",
-               style::Invert,
                cursor::Goto(0, self.dims.1),
+               style::Invert,
                clear::AfterCursor,
                prompt);
         self.flush();
         let res = stdin.keys().nth(0).unwrap();
         debug!("read prompt: {:?}", res);
+        print!("{}", style::Reset);
         res
     }
 
@@ -343,6 +344,7 @@ impl Screen {
         let res = stdin.read_line();
         self.start_raw_mode();
         debug!("read prompt: {:?}", res);
+        print!("{}", style::Reset);
         res
     }
 
@@ -525,7 +527,7 @@ impl Screen {
             top: 2, // leave room for header
             left: 1, // 1-indexed screen
             bottom: std::u16::MAX, // make this "bottomless" since we can paginate
-            right: cmp::max(self.dims.0, 1) - 1,
+            right: max(self.dims.0, 1) - 1,
             elem: None,
         };
 
@@ -636,11 +638,11 @@ impl Screen {
     }
 
     fn screen_to_internal_xy(&self, coords: Coords) -> Coords {
-        (coords.0, cmp::min(coords.1, std::u16::MAX - self.view_y) + self.view_y)
+        (coords.0, min(coords.1, std::u16::MAX - self.view_y) + self.view_y)
     }
 
     fn coords_are_visible(&self, (_, y): Coords) -> bool {
-        visible(self.view_y, self.dims.1, y)
+        visible(self.view_y + 1, self.dims.1, y)
     }
 
     fn node_is_visible(&self, node: NodeID) -> Option<bool> {
@@ -883,7 +885,7 @@ impl Screen {
                 let content = node.content.clone();
                 let chars = content.chars();
                 let oldlen = chars.clone().count();
-                let truncated: String = chars.take(cmp::max(oldlen, 1) - 1).collect();
+                let truncated: String = chars.take(max(oldlen, 1) - 1).collect();
                 node.content = truncated;
             });
         }
@@ -995,8 +997,8 @@ impl Screen {
                 trace!("move selected 2");
                 self.with_node_mut(ptr, |mut root| {
                         let (ox, oy) = root.rooted_coords;
-                        let nx = cmp::max(ox as i16 + dx, 1) as u16;
-                        let ny = cmp::max(oy as i16 + dy, 1) as u16;
+                        let nx = max(ox as i16 + dx, 1) as u16;
+                        let ny = max(oy as i16 + dy, 1) as u16;
                         root.rooted_coords = (nx, ny);
                     })
                     .unwrap();
@@ -1051,13 +1053,13 @@ impl Screen {
     }
 
     fn scroll_up(&mut self) {
-        self.view_y = cmp::max(self.view_y, self.dims.1 / 2) - self.dims.1 / 2;
+        self.view_y = max(self.view_y, self.dims.1 / 2) - self.dims.1 / 2;
         self.unselect();
     }
 
     fn scroll_down(&mut self) {
         if self.lowest_drawn > self.view_y + self.dims.1 {
-            self.view_y = cmp::min(self.view_y + self.dims.1 / 2, self.lowest_drawn);
+            self.view_y = min(self.view_y + self.dims.1 / 2, self.lowest_drawn);
             self.unselect();
         }
     }
@@ -1075,12 +1077,11 @@ impl Screen {
             let &(_, y) = self.drawn_at(node_id).unwrap();
             if !visible {
                 // move only if necessary
-                self.view_y = cmp::max(y - 1, self.dims.1 / 2) - self.dims.1 / 2;
+                self.view_y = max(y - 1, self.dims.1 / 2) - self.dims.1 / 2;
+                return true;
             }
-            true
-        } else {
-            false
         }
+        false
     }
 
     fn raise_selected(&mut self) {
@@ -1099,7 +1100,7 @@ impl Screen {
                     .iter()
                     .position(|&e| e == selected_id)
                     .unwrap();
-                let to = cmp::max(idx, 1) - 1;
+                let to = max(idx, 1) - 1;
                 parent.children.swap(idx, to);
             });
         }
@@ -1123,7 +1124,7 @@ impl Screen {
                     .unwrap();
                 let len = parent.children.len();
                 if len > 1 {
-                    let to = cmp::min(idx, len - 2) + 1;
+                    let to = min(idx, len - 2) + 1;
                     parent.children.swap(idx, to);
                 }
             });
@@ -1360,11 +1361,16 @@ impl Screen {
 
     pub fn draw(&mut self) {
         trace!("draw()");
+
+        // if selected not visible, try to make it visible
+        self.scroll_to_selected();
+
+        // clean up before a fresh drawing
+        // NB scroll_to_selected must be before this,
+        // because it relies on querying drawn_at
         self.lookup.clear();
         self.drawn_at.clear();
         self.lowest_drawn = 0;
-
-        trace!("draw()");
         print!("{}", clear::All);
 
         // print visible nodes
@@ -1389,7 +1395,7 @@ impl Screen {
             {
                 let logs = logging::read_logs();
                 for msg in logs.iter().rev() {
-                    let line_width = cmp::min(msg.len(), self.dims.0 as usize);
+                    let line_width = min(msg.len(), self.dims.0 as usize);
                     println!("\r{}", msg[..line_width as usize].to_owned());
                 }
             }
@@ -1429,14 +1435,11 @@ impl Screen {
 
         print!("{}", cursor::Hide);
         self.flush();
-
-        // TODO evaluate where the best place to do this is
-        self.scroll_to_selected();
     }
 
     fn draw_scrollbar(&self) {
-        let bar_height = cmp::max(self.dims.1, 1) - 1;
-        let normalized_lowest = cmp::max(self.lowest_drawn, 1) as f64;
+        let bar_height = max(self.dims.1, 1) - 1;
+        let normalized_lowest = max(self.lowest_drawn, 1) as f64;
         let fraction_viewable = self.dims.1 as f64 / normalized_lowest;
         let shade_start_fraction = self.view_y as f64 / normalized_lowest;
 
@@ -1522,7 +1525,7 @@ impl Screen {
             }
             write!(&mut buf, "{}", node.content).unwrap();
 
-            let max_width = (cmp::max(self.dims.0, 1 + x) - 1 - x) as usize;
+            let max_width = (max(self.dims.0, 1 + x) - 1 - x) as usize;
             let visible = buf.replace(reset, "").replace(&*pre_meta, "");
             let visible_graphemes = UnicodeSegmentation::graphemes(&*visible, true).count();
             if visible_graphemes > max_width {
@@ -1680,7 +1683,7 @@ impl Screen {
                                   header_text,
                                   style::Reset);
             let text_len = header_text.chars().count();
-            for _ in 0..(cmp::max(self.dims.0 as usize, text_len) - text_len) {
+            for _ in 0..(max(self.dims.0 as usize, text_len) - text_len) {
                 sep.push('█');
             }
             println!("{}", sep);
@@ -1745,10 +1748,10 @@ impl Screen {
                self.dims.1);
         fn perms(c: Coords) -> Vec<Coords> {
             vec![(c.0 + 1, c.1),
-                 (cmp::max(c.0, 1) - 1, c.1),
+                 (max(c.0, 1) - 1, c.1),
                  (c.0, c.1 + 1),
                  // we ensure Y is >= 1, since Goto will panic otherwise
-                 (c.0, cmp::max(c.1, 2) - 1)]
+                 (c.0, max(c.1, 2) - 1)]
         }
         // maps from location to previous location
         let mut visited: HashMap<Coords, Coords> = HashMap::new();
@@ -1811,5 +1814,5 @@ impl Screen {
 }
 
 fn visible(view_y: u16, height: u16, y: u16) -> bool {
-    y > view_y + 2 && y < view_y + height
+    y > view_y && y < view_y + height
 }
