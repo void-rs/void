@@ -32,7 +32,7 @@ impl Default for Node {
             meta: Meta::default(),
             free_text: None,
             color: random_fg_color(),
-            auto_arrange: false,
+            auto_arrange: true,
         }
     }
 }
