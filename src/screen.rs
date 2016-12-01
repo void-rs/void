@@ -609,22 +609,19 @@ impl Screen {
 
     fn unselect(&mut self) -> Option<NodeID> {
         trace!("unselect()");
-        if self.dragging_from.is_none() {
-            if let Some(selected_id) = self.selected {
-                if let Some(is_empty) = self.with_node(selected_id, |n| n.content.is_empty()) {
-                    if is_empty {
-                        self.delete_selected(false);
-                        return None;
-                    } else {
-                        self.selected.take();
-                        self.with_node_mut(selected_id, |mut node| node.selected = false)
-                            .unwrap();
-                        return Some(selected_id);
-                    }
-                }
+        if let Some(selected_id) = self.selected {
+            // nuke node if it's empty and has no children
+            let deletable = self.with_node_mut(selected_id, |mut n| {
+                    n.selected = false;
+                    n.content.is_empty() && n.children.is_empty()
+                })
+                .unwrap_or(false);
+            if deletable {
+                self.delete_selected(false);
+                return None;
             }
         }
-        None
+        self.selected.take()
     }
 
     fn internal_to_screen_xy(&self, coords: Coords) -> Option<Coords> {
@@ -656,6 +653,7 @@ impl Screen {
     fn try_select(&mut self, coords: Coords) -> Option<NodeID> {
         trace!("try_select({:?})", coords);
         if self.dragging_from.is_none() {
+            self.unselect();
             if let Some(&node_id) = self.lookup(coords) {
                 return self.with_node_mut(node_id, |mut node| {
                         trace!("selected node {} at {:?}", node_id, coords);
@@ -1045,7 +1043,6 @@ impl Screen {
 
     fn click_select(&mut self, coords: Coords) -> Option<NodeID> {
         trace!("click_select({:?})", coords);
-        self.unselect();
         let result = self.try_select(coords);
         self.dragging_from.take();
         self.dragging_to.take();
@@ -1235,13 +1232,10 @@ impl Screen {
             warn!("click way off-screen");
             return;
         }
-        let old = self.unselect();
-        let new = self.try_select(coords);
+        let old = self.selected;
+        self.try_select(coords);
         if old.is_none() && self.dragging_from.is_none() {
             self.create_anchor(coords);
-        }
-        if old.is_some() && old == new {
-            self.drill_down();
         }
     }
 
