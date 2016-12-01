@@ -15,7 +15,7 @@ if you'd like to specify a different storage file:
 `void [/path/to/savefile]`
 
 
-#### basic node creation
+#### basic node creation 
 1. C-n # create new node (C-x means Ctrl+x)
 1. type some text to populate it (empty nodes are automatically deleted when unselected)
 1. Tab # create subnode
@@ -23,10 +23,12 @@ if you'd like to specify a different storage file:
 1. Enter # create sibling node
 1. type text to populate it
 
-#### auto-arrange mode and navigation
+#### navigation
 1. C-n # create another new node and add text
-1. C-z # set the current view to auto-arrange (this is set per-view)
-1. left/right arrow # jump between subtrees (it's a little clunky, right now, need to refine the search algorithm)
+1. left/right arrow # jump between nodes
+1. C-u # search by typing text and hitting enter. repeat to show next result.
+1. C-f # search for visible nodes by entering its first letter
+1. <letter of mach> # letters will show up next to options
 
 #### scopes
 1. make a deep subtree by hitting tab and populating text on children nodes
