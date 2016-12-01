@@ -28,3 +28,4 @@ find_task:C-v
 yank_paste_node:C-y
 raise_selected:C-g
 lower_selected:C-d
+search:C-u

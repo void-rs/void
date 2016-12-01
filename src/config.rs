@@ -42,6 +42,7 @@ pub enum Action {
     YankPasteNode,
     RaiseSelected,
     LowerSelected,
+    Search,
 }
 
 fn str_to_action(input: String) -> Option<Action> {
@@ -76,6 +77,7 @@ fn str_to_action(input: String) -> Option<Action> {
         "yank_paste_node" => Some(Action::YankPasteNode),
         "raise_selected" => Some(Action::RaiseSelected),
         "lower_selected" => Some(Action::LowerSelected),
+        "search" => Some(Action::Search),
         _ => None,
     }
 }
@@ -149,6 +151,7 @@ impl Default for Config {
                 (Ctrl('y'), Action::YankPasteNode),
                 (Ctrl('g'), Action::RaiseSelected),
                 (Ctrl('d'), Action::LowerSelected),
+                (Ctrl('u'), Action::Search),
             ]
                 .into_iter()
                 .collect(),

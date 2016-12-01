@@ -1,8 +1,7 @@
 # void
 
 [![Build Status](https://img.shields.io/travis/spacejam/void.svg?style=flat-square)](https://travis-ci.org/spacejam/void)
-
-[tutorial](TUTORIAL.md)
+[![Tutorial](https://img.shields.io/badge/tutorial-try%20it-blue.svg?style=flat-square)](TUTORIAL.md)
 
 ![](/demo.gif)
 
@@ -73,6 +72,7 @@ de-select node | Esc | save | C-x
 exit | Esc with nothing selected | exit | C-c
 jump to weighted next task | C-v | cut / paste node | C-y
 move selected up in child list | C-g | move selected down in child list | C-d
+search for node at or below current view | C-u
 
 can be customized by setting the `KEYFILE` env var to the path of a [key configuration file](default.keys)
 

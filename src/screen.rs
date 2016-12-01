@@ -48,6 +48,7 @@ pub struct Screen {
     view_y: u16,
     // when we drill down then pop up, we should go to last focus, stored here
     focus_stack: Vec<(NodeID, NodeID, u16)>,
+    last_search: Option<(String, NodeID)>,
 }
 
 impl Default for Screen {
@@ -75,6 +76,7 @@ impl Default for Screen {
             view_y: 0,
             focus_stack: vec![],
             is_test: false,
+            last_search: None,
         };
         screen.nodes.insert(0, root);
         screen
@@ -123,7 +125,11 @@ impl Screen {
                         if self.selected.is_some() {
                             self.append(c);
                         } else {
-                            self.prefix_jump_to(c.to_string());
+                            if c == '/' {
+                                self.search();
+                            } else {
+                                self.prefix_jump_to(c.to_string());
+                            }
                         }
                     }
                     Action::UnselectRet => return self.unselect().is_some(),
@@ -156,6 +162,7 @@ impl Screen {
                     Action::YankPasteNode => self.cut_paste(),
                     Action::RaiseSelected => self.raise_selected(),
                     Action::LowerSelected => self.lower_selected(),
+                    Action::Search => self.search(),
                 }
             }
             None => warn!("received unknown input"),
@@ -271,25 +278,7 @@ impl Screen {
             idx -= prio;
         }
         let choice = choice.unwrap();
-
-        // jump to highest view where node is visible
-        let mut cursor = choice;
-        loop {
-            trace!("in auto_task loop");
-            let parent = self.parent(cursor).unwrap();
-            let collapsed = self.with_node(parent, |p| p.collapsed).unwrap();
-            cursor = parent;
-            if parent == 0 || collapsed {
-                break;
-            }
-        }
-
-        // save old location and jump
-        let old_select = self.unselect().unwrap_or(0);
-        let breadcrumb = (self.drawing_root, old_select, self.view_y);
-        self.focus_stack.push(breadcrumb);
-        self.drawing_root = cursor;
-        self.select_node(choice);
+        self.zoom_select(choice);
     }
 
     fn node_priority(&self, node_id: NodeID) -> Option<usize> {
@@ -352,6 +341,46 @@ impl Screen {
         trace!("enter_cmd()");
         if let Ok(Some(cmd)) = self.prompt("cmd: ") {
             debug!("received command {:?}", cmd);
+        }
+    }
+
+    fn search(&mut self) {
+        trace!("search()");
+        let prompt = if let Some((ref last, _)) = self.last_search {
+            format!("search [{}]: ", last)
+        } else {
+            "search: ".to_owned()
+        };
+        if let Ok(Some(mut query)) = self.prompt(&*prompt) {
+            if query == "".to_owned() {
+                if let Some((ref last, _)) = self.last_search {
+                    query = last.clone();
+                } else {
+                    self.last_search.take();
+                    return;
+                }
+            } else {
+                self.last_search.take();
+            }
+
+            let mut f = |n: &Node| n.content.find(&*query).map(|idx| (idx, n.id));
+            let mut candidates = self.recursive_child_filter_map(self.drawing_root, &mut f);
+            if candidates.is_empty() {
+                return;
+            }
+            candidates.sort();
+            let choice = if let Some((_, last_choice)) = self.last_search.take() {
+                let idx = candidates.iter()
+                    .position(|&e| e.1 == last_choice)
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
+                candidates[idx % candidates.len()]
+            } else {
+                candidates[0]
+            };
+
+            self.last_search = Some((query.clone(), choice.1));
+            self.zoom_select(choice.1);
         }
     }
 
@@ -747,11 +776,15 @@ impl Screen {
 
             let should_break = !self.handle_event(evt);
 
+            self.draw();
+
             if self.should_auto_arrange() {
                 self.arrange();
+                self.draw();
             }
 
-            self.draw();
+            // if selected not visible, try to make it visible
+            self.scroll_to_selected();
 
             if should_break {
                 self.cleanup();
@@ -1099,10 +1132,36 @@ impl Screen {
             if !visible {
                 // move only if necessary
                 self.view_y = max(y - 1, self.dims.1 / 2) - self.dims.1 / 2;
+                self.draw();
                 return true;
             }
         }
         false
+    }
+
+    fn zoom_select(&mut self, node_id: NodeID) {
+        if !self.exists(node_id) {
+            return;
+        }
+        // jump to highest view where node is visible
+        let mut cursor = node_id;
+        loop {
+            trace!("in auto_task loop");
+            let parent = self.parent(cursor).unwrap();
+            let collapsed = self.with_node(parent, |p| p.collapsed).unwrap();
+            cursor = parent;
+            if parent == 0 || collapsed {
+                break;
+            }
+        }
+
+        // save old location and jump
+        let old_select = self.unselect().unwrap_or(0);
+        let breadcrumb = (self.drawing_root, old_select, self.view_y);
+        self.focus_stack.push(breadcrumb);
+        self.drawing_root = cursor;
+        self.select_node(node_id);
+        self.draw();
     }
 
     fn raise_selected(&mut self) {
@@ -1379,9 +1438,6 @@ impl Screen {
 
     pub fn draw(&mut self) {
         trace!("draw()");
-
-        // if selected not visible, try to make it visible
-        self.scroll_to_selected();
 
         // clean up before a fresh drawing
         // NB scroll_to_selected must be before this,
