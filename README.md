@@ -1,6 +1,6 @@
 # void
 
-[![Build Status](https://travis-ci.org/spacejam/void.svg?branch=master&style=flat-squared)](https://travis-ci.org/spacejam/void)
+[![Build Status](https://img.shields.io/travis/spacejam/void.svg?style=flat-square)](https://travis-ci.org/spacejam/void)
 
 [tutorial](TUTORIAL.md)
 
