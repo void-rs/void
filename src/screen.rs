@@ -775,7 +775,32 @@ impl Screen {
     }
 
     fn create_child(&mut self) {
-        if let Some(selected_id) = self.selected {
+        if let Some(mut selected_id) = self.selected {
+            if self.with_node(selected_id, |n| n.content.is_empty()).unwrap() {
+                // we may have hit tab after enter by accident,
+                // so go forward a level by selecting the previous
+                // child of the current parent
+                let parent_id = self.parent(selected_id).unwrap();
+                if parent_id == self.drawing_root {
+                    // don't want to create a sibling of the drawing root
+                    // because that's not underneath the drawing root
+                    return;
+                }
+
+                let above = self.with_node(parent_id, |parent| {
+                        let idx = parent.children
+                            .iter()
+                            .position(|&e| e == selected_id)
+                            .unwrap();
+                        parent.children[max(idx, 1) - 1]
+                    })
+                    .unwrap();
+
+                self.select_node(above);
+                selected_id = above;
+            }
+            let selected_id = selected_id;
+
             let node_id = self.new_node();
             self.with_node_mut(node_id, |node| node.parent_id = selected_id);
             let added = self.with_node_mut(selected_id, |selected| {
@@ -797,7 +822,6 @@ impl Screen {
                 if sel_parent == self.drawing_root {
                     // don't want to create a sibling of the drawing root
                     // because that's not underneath the drawing root
-                    self.unselect();
                     return;
                 }
                 self.select_node(sel_parent);
