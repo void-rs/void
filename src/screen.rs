@@ -6,6 +6,8 @@ use std::fmt::Write as FmtWrite;
 use std::fs::{File, rename, remove_file, OpenOptions};
 use std::io::{self, Write, Read, Seek, SeekFrom, Stdout, stdout, stdin, Error, ErrorKind};
 use std::process;
+use std::sync::mpsc::{Sender, channel};
+use std::thread;
 
 use termion::{terminal_size, color, cursor, style, clear};
 use termion::event::{Event, Key};
@@ -49,6 +51,9 @@ pub struct Screen {
     // when we drill down then pop up, we should go to last focus, stored here
     focus_stack: Vec<(NodeID, NodeID, u16)>,
     last_search: Option<(String, NodeID)>,
+
+    screen_buf: Option<String>,
+    frame_queue: Option<Sender<String>>,
 }
 
 impl Default for Screen {
@@ -77,6 +82,8 @@ impl Default for Screen {
             focus_stack: vec![],
             is_test: false,
             last_search: None,
+            screen_buf: None,
+            frame_queue: None,
         };
         screen.nodes.insert(0, root);
         screen
@@ -304,15 +311,17 @@ impl Screen {
         }
 
         let stdin: Box<Read> = Box::new(stdin());
-        print!("{}{}{}{}",
-               cursor::Goto(0, self.dims.1),
-               style::Invert,
-               clear::AfterCursor,
-               prompt);
+        let print_buf = format!("{}{}{}{}",
+                                cursor::Goto(0, self.dims.1),
+                                style::Invert,
+                                clear::AfterCursor,
+                                prompt);
+        self.print(print_buf);
         self.flush();
         let res = stdin.keys().nth(0).unwrap();
         debug!("read prompt: {:?}", res);
-        print!("{}", style::Reset);
+        let print_buf = format!("{}", style::Reset);
+        self.print(print_buf);
         res
     }
 
@@ -323,17 +332,19 @@ impl Screen {
         }
 
         let mut stdin: Box<Read> = Box::new(stdin());
-        print!("{}{}{}{}{}",
-               style::Invert,
-               cursor::Goto(0, self.dims.1),
-               clear::AfterCursor,
-               prompt,
-               cursor::Show);
+        let print_buf = format!("{}{}{}{}{}",
+                                style::Invert,
+                                cursor::Goto(0, self.dims.1),
+                                clear::AfterCursor,
+                                prompt,
+                                cursor::Show);
+        self.print(print_buf);
         self.cleanup();
         let res = stdin.read_line();
         self.start_raw_mode();
         debug!("read prompt: {:?}", res);
-        print!("{}", style::Reset);
+        let print_buf = format!("{}", style::Reset);
+        self.print(print_buf);
         res
     }
 
@@ -414,17 +425,19 @@ impl Screen {
             chars.split("").skip(1).zip(nodes.into_iter()).collect();
 
         // clear the prompt
-        print!("{}{}", cursor::Goto(1, self.dims.1), clear::AfterCursor);
+        let print_buf = format!("{}{}", cursor::Goto(1, self.dims.1), clear::AfterCursor);
+        self.print(print_buf);
 
         // print the hilighted char at each choice
         for (&c, &node_id) in &mapping {
             let &coords = self.drawn_at(node_id).unwrap();
             let (x, y) = self.internal_to_screen_xy(coords).unwrap();
-            print!("{}{}{}{}",
-                   cursor::Goto(x, y),
-                   style::Invert,
-                   c,
-                   style::Reset);
+            let print_buf = format!("{}{}{}{}",
+                                    cursor::Goto(x, y),
+                                    style::Invert,
+                                    c,
+                                    style::Reset);
+            self.print(print_buf);
         }
 
         // read the choice
@@ -764,7 +777,42 @@ impl Screen {
             .unwrap()
     }
 
+    fn print(&mut self, buf: String) {
+        let buf = if let Some(mut screen_buf) = self.screen_buf.take() {
+            screen_buf.push_str(&*buf);
+            screen_buf
+        } else {
+            buf
+        };
+        self.screen_buf = Some(buf);
+    }
+
+    fn commit_frame(&mut self) {
+        if let Some(screen_buf) = self.screen_buf.take() {
+            if let Some(fq) = self.frame_queue.take() {
+                fq.send(screen_buf).unwrap();
+                self.frame_queue = Some(fq);
+            }
+        }
+    }
+
     pub fn run(&mut self) {
+        let (tx, rx) = channel();
+        self.frame_queue = Some(tx);
+
+        thread::spawn(move || {
+            loop {
+                let mut frame = None;
+                while let Ok(next_frame) = rx.try_recv() {
+                    frame = Some(next_frame);
+                }
+                if frame.is_none() {
+                    frame = rx.recv().ok();
+                }
+                frame.map(|f| print!("{}", f));
+            }
+        });
+
         self.start_raw_mode();
         self.dims = terminal_size().unwrap();
         self.draw();
@@ -793,7 +841,8 @@ impl Screen {
             }
         }
         trace!("leaving stdin.events() loop");
-        print!("{}{}", cursor::Goto(1, 1), clear::All);
+        let print_buf = format!("{}{}", cursor::Goto(1, 1), clear::All);
+        self.print(print_buf);
     }
 
     fn toggle_collapsed(&mut self) {
@@ -1389,7 +1438,8 @@ impl Screen {
 
     pub fn cleanup(&mut self) {
         trace!("cleanup()");
-        print!("{}", cursor::Show);
+        let print_buf = format!("{}", cursor::Show);
+        self.print(print_buf);
         self.stdout.take().unwrap().flush().unwrap();
     }
 
@@ -1445,7 +1495,8 @@ impl Screen {
         self.lookup.clear();
         self.drawn_at.clear();
         self.lowest_drawn = 0;
-        print!("{}", clear::All);
+        let print_buf = format!("{}", clear::All);
+        self.print(print_buf);
 
         // print visible nodes
         self.draw_children_of_root();
@@ -1465,53 +1516,57 @@ impl Screen {
             for _ in 0..self.dims.0 - 4 {
                 sep.push('█');
             }
-            println!("{}", sep);
+            self.print(format!("{}\n", sep));
             {
                 let logs = logging::read_logs();
                 for msg in logs.iter().rev() {
                     let line_width = min(msg.len(), self.dims.0 as usize);
-                    println!("\r{}", msg[..line_width as usize].to_owned());
+                    self.print(format!("\r{}\n", msg[..line_width as usize].to_owned()));
                 }
             }
         }
 
         // print arrows
-        for &(ref from, ref to) in &self.arrows {
+        let arrows = self.arrows.clone();
+        for &(ref from, ref to) in &arrows {
             let (path, (direction1, direction2)) = self.path_between_nodes(*from, *to);
             self.draw_path(path, direction1, direction2);
         }
 
         // conditionally print drag dest arrow
-        if let Some(from) = self.dragging_from {
-            // we only care if we're dragging a node
-            if let Some(from_node) = self.lookup(from) {
-                // we're either dragging to a new parent node, or to a new space
-                if let Some(to) = self.dragging_to {
-                    if let Some(to_node) = self.lookup(to) {
-                        let (path, (direction1, direction2)) =
-                            self.path_between_nodes(*from_node, *to_node);
-                        self.draw_path(path, direction1, direction2);
-                    } else {
-                        let (path, (direction1, direction2)) =
-                            self.path_from_node_to_point(*from_node, to);
-                        self.draw_path(path, direction1, direction2);
-                    }
+        let from_coords = self.dragging_from.clone();
+        let from = from_coords.and_then(|df| self.lookup(df));
+        let to_coords = self.dragging_to.clone();
+        let to = to_coords.and_then(|dt| self.lookup(dt));
+        if let Some(from_node) = from {
+            // we're either dragging to a new parent node, or to a new space
+            if let Some(to_node) = to {
+                let (path, (direction1, direction2)) =
+                    self.path_between_nodes(*from_node, *to_node);
+                self.draw_path(path, direction1, direction2);
+            } else {
+                if let Some(to_coords) = self.dragging_to {
+                    let (path, (direction1, direction2)) =
+                        self.path_from_node_to_point(*from_node, to_coords);
+                    self.draw_path(path, direction1, direction2);
                 } else {
                     warn!("dragging_from set, but NOT dragging_to");
                 }
             }
         }
 
+
         // show scrollbar if we've drawn anything below the bottom of the screen
         if self.lowest_drawn > self.dims.1 {
             self.draw_scrollbar();
         }
 
-        print!("{}", cursor::Hide);
-        self.flush();
+        let print_buf = format!("{}", cursor::Hide);
+        self.print(print_buf);
+        self.commit_frame();
     }
 
-    fn draw_scrollbar(&self) {
+    fn draw_scrollbar(&mut self) {
         let bar_height = max(self.dims.1, 1) - 1;
         let normalized_lowest = max(self.lowest_drawn, 1) as f64;
         let fraction_viewable = self.dims.1 as f64 / normalized_lowest;
@@ -1523,9 +1578,11 @@ impl Screen {
 
         for (i, y) in (2..bar_height + 2).enumerate() {
             if i >= shade_start && i < shade_end {
-                print!("{}┃", cursor::Goto(self.dims.0, y));
+                let print_buf = format!("{}┃", cursor::Goto(self.dims.0, y));
+                self.print(print_buf);
             } else {
-                print!("{}│", cursor::Goto(self.dims.0, y));
+                let print_buf = format!("{}│", cursor::Goto(self.dims.0, y));
+                self.print(print_buf);
             }
         }
     }
@@ -1611,7 +1668,8 @@ impl Screen {
                 buf.push('…');
             }
 
-            print!("{}{}", buf, style::Reset);
+            let print_buf = format!("{}{}", buf, style::Reset);
+            self.print(print_buf);
         }
 
         let visible = buf.replace(reset, "").replace(&*pre_meta, "");
@@ -1654,13 +1712,15 @@ impl Screen {
         drawn
     }
 
-    fn draw_path(&self, internal_path: Vec<Coords>, start_dir: Dir, dest_dir: Dir) {
+    fn draw_path(&mut self, internal_path: Vec<Coords>, start_dir: Dir, dest_dir: Dir) {
         let path: Vec<_> =
             internal_path.iter().filter_map(|&c| self.internal_to_screen_xy(c)).collect();
         trace!("draw_path({:?}, {:?}, {:?})", path, start_dir, dest_dir);
-        print!("{}", random_fg_color());
+        let print_buf = format!("{}", random_fg_color());
+        self.print(print_buf);
         if path.len() == 1 {
-            print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
+            let print_buf = format!("{} ↺", cursor::Goto(path[0].0, path[0].1));
+            self.print(print_buf);
         } else if path.len() > 1 {
             let first = if path[1].1 > path[0].1 {
                 match start_dir {
@@ -1676,7 +1736,8 @@ impl Screen {
                 '─'
             };
 
-            print!("{}{}", cursor::Goto(path[0].0, path[0].1), first);
+            let print_buf = format!("{}{}", cursor::Goto(path[0].0, path[0].1), first);
+            self.print(print_buf);
             for items in path.windows(3) {
                 let (p, this, n) = (items[0], items[1], items[2]);
                 let c = if p.0 == n.0 {
@@ -1693,19 +1754,22 @@ impl Screen {
                     '└' // down+right or left+up
                 };
 
-                print!("{}{}", cursor::Goto(this.0, this.1), c)
+                let print_buf = format!("{}{}", cursor::Goto(this.0, this.1), c);
+                self.print(print_buf);
             }
             let (end_x, end_y) = (path[path.len() - 1].0, path[path.len() - 1].1);
             let end_char = match dest_dir {
                 Dir::L => '>',
                 Dir::R => '<',
             };
-            print!("{}{}", cursor::Goto(end_x, end_y), end_char);
+            let print_buf = format!("{}{}", cursor::Goto(end_x, end_y), end_char);
+            self.print(print_buf);
         }
-        print!("{}", color::Fg(color::Reset));
+        let print_buf = format!("{}", color::Fg(color::Reset));
+        self.print(print_buf);
     }
 
-    fn draw_header(&self) {
+    fn draw_header(&mut self) {
         trace!("draw_header()");
         let mut header_text = self.with_node(self.drawing_root, |node| node.content.clone())
             .unwrap();
@@ -1760,7 +1824,7 @@ impl Screen {
             for _ in 0..(max(self.dims.0 as usize, text_len) - text_len) {
                 sep.push('█');
             }
-            println!("{}", sep);
+            self.print(format!("{}", sep));
         }
     }
 
