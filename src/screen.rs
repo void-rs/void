@@ -49,6 +49,9 @@ pub struct Screen {
     // when we drill down then pop up, we should go to last focus, stored here
     focus_stack: Vec<(NodeID, NodeID, u16)>,
     last_search: Option<(String, NodeID)>,
+
+    // nodes created specifically for rendering an augmented view
+    ephemeral_nodes: HashMap<NodeID, Node>,
 }
 
 impl Default for Screen {
@@ -77,6 +80,7 @@ impl Default for Screen {
             focus_stack: vec![],
             is_test: false,
             last_search: None,
+            ephemeral_nodes: HashMap::new(),
         };
         screen.nodes.insert(0, root);
         screen
@@ -84,10 +88,21 @@ impl Default for Screen {
 }
 
 impl Screen {
+    fn help(&mut self) {
+        self.cleanup();
+        print!("{}{}{}\n", cursor::Goto(1, 1), clear::All, self.config);
+        self.start_raw_mode();
+        self.single_key_prompt("");
+    }
+
+    fn new_node_id(&mut self) -> NodeID {
+        self.max_id += 1;
+        self.max_id
+    }
+
     fn new_node(&mut self) -> NodeID {
         let mut node = Node::default();
-        self.max_id += 1;
-        let id = self.max_id;
+        let id = self.new_node_id();
         node.id = id;
         self.nodes.insert(id, node);
         id
@@ -127,6 +142,8 @@ impl Screen {
                         } else {
                             if c == '/' {
                                 self.search();
+                            } else if c == 'h' {
+                                self.help();
                             } else {
                                 self.prefix_jump_to(c.to_string());
                             }
@@ -864,7 +881,7 @@ impl Screen {
 
             if let Some(parent_id) = self.parent(selected_id) {
                 if parent_id == self.drawing_root {
-                    // don't want to deal with this case right now
+                    self.create_child();
                     return;
                 }
                 let node_id = self.new_node();
@@ -1428,6 +1445,26 @@ impl Screen {
         }
     }
 
+    // NB correctness depends on invariant of the leftmost element being the
+    // value in self.drawn_at
+    fn bounds_for_lookup(&self, node_id: NodeID) -> Option<(Coords, Coords)> {
+        if let Some(&left) = self.drawn_at(node_id) {
+            let mut rx = left.0;
+            while let Some(&cursor) = self.lookup((rx + 1, left.1)) {
+                if cursor == node_id {
+                    rx += 1;
+                } else {
+                    break;
+                }
+            }
+            // intentionally add 1 to the right side to prevent cluttering
+            let right = (rx + 1, left.1);
+            Some((left, right))
+        } else {
+            None
+        }
+    }
+
     // *
     // *
     // *┌──┐
@@ -1560,7 +1597,16 @@ impl Screen {
                  color: String)
                  -> usize {
         trace!("draw_node({})", node_id);
-        let node = self.with_node(node_id, |n| n.clone()).unwrap();
+        let raw_node = self.nodes
+            .get(&node_id)
+            .or_else(|| self.ephemeral_nodes.get(&node_id))
+            .cloned()
+            .unwrap();
+        let node = if raw_node.selected {
+            raw_node
+        } else {
+            self.format_node(&raw_node)
+        };
         if node.stricken && hide_stricken {
             return 0;
         }
@@ -1597,6 +1643,7 @@ impl Screen {
             if !node.selected && prefix != "" {
                 write!(&mut buf, "{}", reset).unwrap();
             }
+
             write!(&mut buf, "{}", node.content).unwrap();
 
             let max_width = (max(self.dims.0, 1 + x) - 1 - x) as usize;
@@ -1866,24 +1913,41 @@ impl Screen {
         path
     }
 
-    // correctness depends on invariant of the leftmost element being the
-    // value in self.drawn_at
-    fn bounds_for_lookup(&self, node_id: NodeID) -> Option<(Coords, Coords)> {
-        if let Some(&left) = self.drawn_at(node_id) {
-            let mut rx = left.0;
-            while let Some(&cursor) = self.lookup((rx + 1, left.1)) {
-                if cursor == node_id {
-                    rx += 1;
-                } else {
-                    break;
-                }
-            }
-            // intentionally add 1 to the right side to prevent cluttering
-            let right = (rx + 1, left.1);
-            Some((left, right))
-        } else {
-            None
+    fn format_node(&mut self, raw_node: &Node) -> Node {
+        lazy_static! {
+            //// general subtree population and modification
+            // limit shows the top N results.
+            static ref RE_LIMIT: Regex = Regex::new(r"#limit=(\d+)").unwrap();
+            static ref RE_SEARCH: Regex = Regex::new(r"#search=(.+)").unwrap();
+            static ref RE_TAGGED: Regex = Regex::new(r"#tagged=(.+)").unwrap();
+            static ref RE_ORDERBY: Regex = Regex::new(r"#orderby=(.+)").unwrap();
+            static ref RE_REV: Regex = Regex::new(r"#rev\b").unwrap();
+            static ref RE_STATS: Regex = Regex::new(r"#stats\b").unwrap();
+            static ref RE_DONE: Regex = Regex::new(r"#done\b").unwrap();
+            static ref RE_OPEN: Regex = Regex::new(r"#open\b").unwrap();
+            static ref RE_GLOBAL: Regex = Regex::new(r"#global\b").unwrap();
+            static ref RE_LOCAL: Regex = Regex::new(r"#local\b").unwrap();
+            static ref RE_LINEAGE: Regex = Regex::new(r"#lineage\b").unwrap();
+            // since defaults to last week
+            static ref RE_SINCE: Regex = Regex::new(r"#since=(.+)").unwrap();
+            // until defaults until now
+            static ref RE_UNTIL: Regex = Regex::new(r"#until=(.+)").unwrap();
+
+            //// plot specific
+            // plot can be {count, age, completion time,
+            static ref RE_PLOT: Regex = Regex::new(r"#plot=(.+)").unwrap();
+            // agg is used to sum valued tags, like #prio=5 or #size=3.
+            // useful for answering questions like "what's the age?"
+            static ref RE_AGG: Regex = Regex::new(r"#agg=(.+)").unwrap();
+            // window is the duration of a time
+            static ref RE_BIN: Regex = Regex::new(r"#window=(.+)").unwrap();
+            // windows is the number of windows shown
+            static ref RE_BINS: Regex = Regex::new(r"#windows=(\d+)").unwrap();
         }
+        // NB avoid cycles
+        let mut node = raw_node.clone();
+        node.id = self.new_node_id();
+        node
     }
 }
 

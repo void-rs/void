@@ -1,3 +1,4 @@
+use std::fmt;
 use std::env;
 use std::fs::File;
 use std::collections::HashMap;
@@ -111,6 +112,7 @@ fn str_to_key(input: String) -> Option<Key> {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Config {
     config: HashMap<Key, Action>,
 }
@@ -156,6 +158,16 @@ impl Default for Config {
                 .into_iter()
                 .collect(),
         }
+    }
+}
+
+impl fmt::Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Configured Hotkeys:\n").unwrap();
+        for (key, action) in &self.config {
+            write!(f, "    {:?}: {:?}\n", action, key).unwrap();
+        }
+        Ok(())
     }
 }
 
