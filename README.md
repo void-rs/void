@@ -1,4 +1,8 @@
-# void [![Tutorial](https://img.shields.io/badge/tutorial-try%20it-blue.svg?style=flat-square)](TUTORIAL.md) [![Build Status](https://img.shields.io/travis/spacejam/void.svg?style=flat-square)](https://travis-ci.org/spacejam/void) ![State](https://img.shields.io/badge/state-alpha-orange.svg?style=flat-square)
+# void [![Build Status](https://img.shields.io/travis/spacejam/void.svg?style=flat-square)](https://travis-ci.org/spacejam/void) ![State](https://img.shields.io/badge/state-alpha-orange.svg?style=flat-square)
+
+[Tutorial](TUTORIAL.md) 
+
+WARNING: this is alpha, and the default keybinds are still weird because I use colemak on top of tmux. You probably want to change them, by setting the `KEYFILE` env var to the path to a [key remap file](default.keys).
 
 ![](/demo.gif)
 
