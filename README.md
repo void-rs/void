@@ -1,4 +1,4 @@
-# void [![Tutorial](https://img.shields.io/badge/tutorial-try%20it-blue.svg?style=flat-square)](TUTORIAL.md) [![Build Status](https://img.shields.io/travis/spacejam/void.svg?style=flat-square)](https://travis-ci.org/spacejam/void) ![State](https://img.shields.io/badge/state-alpha-blue.svg?style=flat-square)
+# void [![Tutorial](https://img.shields.io/badge/tutorial-try%20it-blue.svg?style=flat-square)](TUTORIAL.md) [![Build Status](https://img.shields.io/travis/spacejam/void.svg?style=flat-square)](https://travis-ci.org/spacejam/void) ![State](https://img.shields.io/badge/state-alpha-orange.svg?style=flat-square)
 
 ![](/demo.gif)
 
