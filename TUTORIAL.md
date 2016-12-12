@@ -28,7 +28,7 @@ if you'd like to specify a different storage file:
 1. left/right arrow # jump between nodes
 1. C-u # search by typing text and hitting enter. repeat to show next result.
 1. C-f # search for visible nodes by entering its first letter
-1. <letter of mach> # letters will show up next to options
+1. <letter of match> # letters will show up next to options
 
 #### scopes
 1. make a deep subtree by hitting tab and populating text on children nodes

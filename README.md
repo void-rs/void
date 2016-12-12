@@ -59,7 +59,7 @@ feature | control | feature | control
 new node | C-n | new node (child of selected) | Tab
 new node (freeform) | click blank space | new node (sibling of selected) | Enter
 delete selected node and its children | Delete | move subtree | drag parent to new location
-arrange nodes in view | C-p | auto-arrange nodes in view from now on | C-z
+undo delete | C-z | auto arrange nodes in view | C-p
 mark selected node complete | C-a | drill-down into selected node | C-w
 pop up selection | C-q | hide children of selected | C-t
 open text editor for `txt:...` node | C-k | prefix-jump with no selection | type a letter

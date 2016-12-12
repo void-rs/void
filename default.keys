@@ -17,8 +17,7 @@ jump:C-f
 toggle_completed:C-a
 toggle_hide_completed:C-h
 arrow:C-r
-arrange:C-p
-auto_arrange_view:C-z
+auto_arrange:C-p
 toggle_collapsed:C-t
 quit:C-c
 save:C-x
@@ -29,3 +28,4 @@ yank_paste_node:C-y
 raise_selected:C-g
 lower_selected:C-d
 search:C-u
+undo_delete:C-z

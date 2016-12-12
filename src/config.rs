@@ -32,7 +32,6 @@ pub enum Action {
     ToggleCompleted,
     ToggleHideCompleted,
     Arrow,
-    Arrange,
     AutoArrange,
     ToggleCollapsed,
     Quit,
@@ -44,6 +43,7 @@ pub enum Action {
     RaiseSelected,
     LowerSelected,
     Search,
+    UndoDelete,
 }
 
 fn str_to_action(input: String) -> Option<Action> {
@@ -67,8 +67,7 @@ fn str_to_action(input: String) -> Option<Action> {
         "toggle_completed" => Some(Action::ToggleCompleted),
         "toggle_hide_completed" => Some(Action::ToggleHideCompleted),
         "arrow" => Some(Action::Arrow),
-        "arrange" => Some(Action::Arrange),
-        "auto_arrange_view" => Some(Action::AutoArrange),
+        "auto_arrange" => Some(Action::AutoArrange),
         "toggle_collapsed" => Some(Action::ToggleCollapsed),
         "quit" => Some(Action::Quit),
         "save" => Some(Action::Save),
@@ -142,8 +141,7 @@ impl Default for Config {
                 (Ctrl('a'), Action::ToggleCompleted),
                 (Ctrl('h'), Action::ToggleHideCompleted),
                 (Ctrl('r'), Action::Arrow),
-                (Ctrl('p'), Action::Arrange),
-                (Ctrl('z'), Action::AutoArrange),
+                (Ctrl('p'), Action::AutoArrange),
                 (Ctrl('t'), Action::ToggleCollapsed),
                 (Ctrl('c'), Action::Quit),
                 (Ctrl('x'), Action::Save),
@@ -154,6 +152,7 @@ impl Default for Config {
                 (Ctrl('g'), Action::RaiseSelected),
                 (Ctrl('d'), Action::LowerSelected),
                 (Ctrl('u'), Action::Search),
+                (Ctrl('z'), Action::UndoDelete),
             ]
                 .into_iter()
                 .collect(),

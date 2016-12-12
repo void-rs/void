@@ -50,8 +50,18 @@ pub struct Screen {
     focus_stack: Vec<(NodeID, NodeID, u16)>,
     last_search: Option<(String, NodeID)>,
 
+    // undo info
+    undo_stack: Vec<NodeID>,
+    // needs to be separate, as recursive deletion of nodes causes ordering issues
+    undo_nodes: HashMap<NodeID, Node>,
+
     // nodes created specifically for rendering an augmented view
     ephemeral_nodes: HashMap<NodeID, Node>,
+    // ephemeral max uses same keyspace, but resets on each frame,
+    // and drops down from the top of the usize space. this is so
+    // ephemeral and normal nodes SHOULD occupy the same keyspace
+    // but be exclusive.
+    ephemeral_max_id: u64,
 }
 
 impl Default for Screen {
@@ -80,7 +90,10 @@ impl Default for Screen {
             focus_stack: vec![],
             is_test: false,
             last_search: None,
+            undo_stack: vec![],
+            undo_nodes: HashMap::new(),
             ephemeral_nodes: HashMap::new(),
+            ephemeral_max_id: std::u64::MAX,
         };
         screen.nodes.insert(0, root);
         screen
@@ -97,7 +110,14 @@ impl Screen {
 
     fn new_node_id(&mut self) -> NodeID {
         self.max_id += 1;
+        assert!(self.max_id < self.ephemeral_max_id);
         self.max_id
+    }
+
+    fn new_ephemeral_node_id(&mut self) -> NodeID {
+        self.ephemeral_max_id -= 1;
+        assert!(self.max_id < self.ephemeral_max_id);
+        self.ephemeral_max_id
     }
 
     fn new_node(&mut self) -> NodeID {
@@ -168,7 +188,6 @@ impl Screen {
                     Action::ToggleCompleted => self.toggle_stricken(),
                     Action::ToggleHideCompleted => self.toggle_hide_stricken(),
                     Action::Arrow => self.add_or_remove_arrow(),
-                    Action::Arrange => self.arrange(),
                     Action::AutoArrange => self.toggle_auto_arrange(),
                     Action::ToggleCollapsed => self.toggle_collapsed(),
                     Action::Quit => return false,
@@ -180,6 +199,7 @@ impl Screen {
                     Action::RaiseSelected => self.raise_selected(),
                     Action::LowerSelected => self.lower_selected(),
                     Action::Search => self.search(),
+                    Action::UndoDelete => self.undo_delete(),
                 }
             }
             None => warn!("received unknown input"),
@@ -747,6 +767,8 @@ impl Screen {
             for child_id in &node.children {
                 self.delete_recursive(*child_id);
             }
+
+            self.undo_nodes.insert(node_id, node);
         }
     }
 
@@ -768,6 +790,33 @@ impl Screen {
                     self.click_select((x, y + height));
                 }
             }
+            self.undo_stack.push(selected_id);
+        }
+    }
+
+    fn undo_delete(&mut self) {
+        if let Some(node_id) = self.undo_stack.pop() {
+            self.recursive_restore(node_id).unwrap();
+            self.select_node(node_id);
+        }
+    }
+
+    fn recursive_restore(&mut self, node_id: NodeID) -> Result<(), ()> {
+        if let Some(node) = self.undo_nodes.remove(&node_id) {
+            self.with_node_mut(node.parent_id, |p| {
+                    if !p.children.contains(&node.id) {
+                        p.children.push(node.id);
+                    }
+                })
+                .unwrap();
+            let children = node.children.clone();
+            self.nodes.insert(node_id, node);
+            for &child in &children {
+                self.recursive_restore(child)?;
+            }
+            Ok(())
+        } else {
+            Err(())
         }
     }
 
@@ -1007,7 +1056,10 @@ impl Screen {
                 // because we did not return in the last clause
                 return false;
             }
-            ptr = self.parent(ptr).unwrap();
+            ptr = self.parent(ptr).unwrap_or_else(|| {
+                self.with_node(b, |n| error!("orphan node, have it cleaned up: {:?}", n));
+                0
+            });
         }
     }
 
@@ -1383,7 +1435,6 @@ impl Screen {
             assert!(self.nodes.get(a).is_some());
             assert!(self.nodes.get(b).is_some());
         }
-
     }
 
     pub fn save(&self) {
@@ -1477,8 +1528,8 @@ impl Screen {
         trace!("draw()");
 
         // clean up before a fresh drawing
-        // NB scroll_to_selected must be before this,
-        // because it relies on querying drawn_at
+        self.ephemeral_max_id = std::u64::MAX;
+        self.ephemeral_nodes.clear();
         self.lookup.clear();
         self.drawn_at.clear();
         self.lowest_drawn = 0;
@@ -1946,7 +1997,7 @@ impl Screen {
         }
         // NB avoid cycles
         let mut node = raw_node.clone();
-        node.id = self.new_node_id();
+        node.id = self.new_ephemeral_node_id();
         node
     }
 }
