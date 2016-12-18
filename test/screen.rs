@@ -38,7 +38,7 @@ impl Arbitrary for Op {
                 Event::Mouse(MouseEvent::Press(MouseButton::Left, x, y)),
                 Event::Mouse(MouseEvent::Release(x, y)),
             ];
-        Op { event: *g.choose(&*events).unwrap() }
+        Op { event: g.choose(&*events).unwrap().clone() }
     }
 }
 
@@ -77,7 +77,7 @@ fn prop_handle_events(ops: OpVec, dims: (u16, u16)) -> bool {
     screen.dims = dims;
 
     for op in &ops.ops {
-        let should_break = !screen.handle_event(op.event);
+        let should_break = !screen.handle_event(op.event.clone());
 
         if screen.should_auto_arrange() {
             screen.arrange();
