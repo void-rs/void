@@ -232,8 +232,8 @@ impl Config {
                 }
                 lookup
             }
-            Event::Unsupported => {
-                warn!("Unsupported input event received");
+            other => {
+                warn!("Unknown event received: {:?}", other);
                 None
             }
         }

@@ -161,7 +161,9 @@ impl Screen {
                             self.append(c);
                         } else {
                             if c == '/' {
-                                self.search();
+                                self.search_forward();
+                            } else if c == '?' {
+                                self.search_backward();
                             } else if c == 'h' {
                                 self.help();
                             } else {
@@ -198,7 +200,7 @@ impl Screen {
                     Action::YankPasteNode => self.cut_paste(),
                     Action::RaiseSelected => self.raise_selected(),
                     Action::LowerSelected => self.lower_selected(),
-                    Action::Search => self.search(),
+                    Action::Search => self.search_forward(),
                     Action::UndoDelete => self.undo_delete(),
                 }
             }
@@ -381,12 +383,24 @@ impl Screen {
         }
     }
 
-    fn search(&mut self) {
+    fn search_forward(&mut self) {
+        self.search(SearchDirection::Forward)
+    }
+
+    fn search_backward(&mut self) {
+        self.search(SearchDirection::Backward)
+    }
+
+    fn search(&mut self, direction: SearchDirection) {
         trace!("search()");
-        let prompt = if let Some((ref last, _)) = self.last_search {
-            format!("search [{}]: ", last)
+        let last_search_str = if let Some((ref last, _)) = self.last_search {
+            format!(" [{}]: ", last)
         } else {
-            "search: ".to_owned()
+            "".to_owned()
+        };
+        let prompt = match direction {
+            SearchDirection::Forward => format!("search{}:", last_search_str),
+            SearchDirection::Backward => format!("search backwards{}:", last_search_str),
         };
         if let Ok(Some(mut query)) = self.prompt(&*prompt) {
             if query == "".to_owned() {
@@ -409,7 +423,10 @@ impl Screen {
             let choice = if let Some((_, last_choice)) = self.last_search.take() {
                 let idx = candidates.iter()
                     .position(|&e| e.1 == last_choice)
-                    .map(|i| i + 1)
+                    .map(|i| match direction {
+                        SearchDirection::Forward => i + 1,
+                        SearchDirection::Backward => i + candidates.len() - 1,
+                    })
                     .unwrap_or(0);
                 candidates[idx % candidates.len()]
             } else {
@@ -1995,11 +2012,47 @@ impl Screen {
             // windows is the number of windows shown
             static ref RE_BINS: Regex = Regex::new(r"#windows=(\d+)").unwrap();
         }
+
         // NB avoid cycles
         let mut node = raw_node.clone();
         node.id = self.new_ephemeral_node_id();
+
+        for search in &re_matches::<String>(&RE_SEARCH, &*node.content) {
+        }
+
+        for tag in &re_matches::<String>(&RE_TAGGED, &*node.content) {
+        }
+
+        if RE_REV.is_match(&*node.content) {
+            node.children = node.children.into_iter().rev().collect();
+        }
+        if let Some(&limit) = re_matches(&RE_LIMIT, &*node.content).iter().nth(0) {
+            node.children.truncate(limit);
+        }
+
         node
     }
+}
+
+fn re_matches<A: std::str::FromStr>(re: &Regex, on: &str) -> Vec<A> {
+    let mut ret = vec![];
+    if re.is_match(on) {
+        re.captures_iter(on)
+            .nth(0)
+            .map(|n| {
+                for i in 1..n.len() {
+                    if let Ok(e) = n.at(i).unwrap().parse::<A>() {
+                        ret.push(e)
+                    }
+                }
+            });
+    }
+    ret
+}
+
+enum SearchDirection {
+    Forward,
+    Backward,
 }
 
 fn visible(view_y: u16, height: u16, y: u16) -> bool {

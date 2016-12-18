@@ -27,12 +27,12 @@ mod config;
 use std::cmp;
 use std::collections::HashMap;
 
-pub use self::serialization::{serialize_screen, deserialize_screen};
-pub use self::screen::Screen;
-pub use self::node::Node;
-pub use self::pack::Pack;
-pub use self::colors::random_fg_color;
-pub use self::config::{Config, Action};
+pub use serialization::{serialize_screen, deserialize_screen};
+pub use screen::Screen;
+pub use node::Node;
+pub use pack::Pack;
+pub use colors::random_fg_color;
+pub use config::{Config, Action};
 pub use logging::init_screen_log;
 pub use meta::Meta;
 
