@@ -27,7 +27,7 @@ rand = "0.3"
 libc = "0.2"
 regex = "0.1"
 unicode-segmentation = "0.1"
-clippy = {version = "0.0.98", optional = true}
+clippy = {version = "*", optional = true}
 
 [dev-dependencies]
 quickcheck = "0.3"
