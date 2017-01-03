@@ -4,7 +4,9 @@
 
 [Example Workflow](#what-i-do-dont-do-what-i-do-discover-what-works-for-you)
 
-WARNING: this is alpha, and the default keybinds are still weird because I use colemak on top of tmux. You probably want to change them, by setting the `KEYFILE` env var to the path to a [key remap file](default.keys).
+WARNING: this is alpha, and the default keybinds are still weird because I use colemak on top of tmux. You may want to change them, by setting the `KEYFILE` env var to the path to a [key remap file](default.keys). In the future, I may add optional modal editing to bring it more in-line with vim. Right now I'm not sure it's worth the extra keystrokes.
+
+Feedback encouraged! If you have a hard time with something, let me know about it, and I'll work to smooth out the experience!
 
 ![](/demo.gif)
 
@@ -132,7 +134,7 @@ to his wonderful [iWasWhere](https://github.com/matthiasn/iWasWhere) system
 [how to solve it](https://en.wikipedia.org/wiki/How_to_Solve_It),
 [society of mind](http://www.acad.bg/ebook/ml/Society%20of%20Mind.pdf)
 * [various subtopics of operations research](https://en.wikipedia.org/wiki/Operations_research#Problems_addressed)
-* occult mindfulness: [undoing yourself with energized meditation]
+* occult assumption confrontation: [undoing yourself with energized meditation]
 (http://heruka.altervista.org/X_files/Undoing%20Yourself%20With%20Energized%20Meditation%20And%20Other%20Devices%20-%20Christopher%20S%20Hyatt.pdf),
 [prometheus rising](http://www.principiadiscordia.com/downloads/04%20Prometheus%20Rising.pdf)
 * military C2 theory, recognition/metacognition, OODA, etc... [A Review of Time Critical Decision Making Models and
@@ -149,7 +151,7 @@ attain this. If you think only of hitting, springing,
 striking or touching the enemy, you will not be able
 actually to cut him. More than anything, you must
 be thinking of carrying your movement through to
-cutting him. ...When you appreciate the power of
+cutting him... When you appreciate the power of
 nature, knowing the rhythm of any situation, you
 will be able to hit the enemy naturally and strike
 naturally. All this is the Way of the Void. - Miyamoto Musashi
