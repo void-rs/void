@@ -1,6 +1,6 @@
 # void [![Build Status](https://img.shields.io/travis/spacejam/void.svg?style=flat-square)](https://travis-ci.org/spacejam/void) ![State](https://img.shields.io/badge/state-alpha-orange.svg?style=flat-square)
 
-[Tutorial](TUTORIAL.md) 
+[Tutorial](TUTORIAL.md) [Example Workflow](#What-I-Do)
 
 WARNING: this is alpha, and the default keybinds are still weird because I use colemak on top of tmux. You probably want to change them, by setting the `KEYFILE` env var to the path to a [key remap file](default.keys).
 
@@ -19,8 +19,8 @@ This is an attempt to address several cognitive defects.
 ## Perspectives
 
 * things we measure tend to improve
-* we should minimize decisions to prevent fatigue
 * we should regularly reevaluate priorities
+* we should minimize decisions to prevent fatigue
 * individual sensemaking is well served by reflection, journaling, outlining, mind-mapping, etc...
 * don't impose specific workflows, but support many possibilities
 
@@ -32,9 +32,22 @@ This is an attempt to address several cognitive defects.
 * trees of tasks can be marked with `#task`, all children of marked nodes are implicitly subtasks
 * tasks can be prioritized with `#prio=<n>`, all children implicitly inherit the lowest ancestor's priority
 * a task can be chosen automatically, with priorities weighting a random selection. you should delete it or do it, don't get into the habit of drawing again until you see something you like.  you chose the priorities, and you should keep them up-to-date.
-* completed subtasks for a particular view are plotted on a sparkline at the top of the screen for the past week. this will become dramatically more flexible in the future.
+* you can create your own sparklines by using `#plot=done` or `#plot=new`, in combination with `#n=10` for sparkline size, `#since=7d` / `#until=1d` for specifying time window.
+* overall completed subtasks are plotted on a sparkline at the top of the screen for the past week.
 * you can draw arrows between nodes for mind-mapping functionality
 * can shell out and execute the content of a node with C-k. if the node starts with txt: this will be opened in vim or an editor specified in the `EDITOR` env var.
+
+## What I Do (don't do what I do, discover what works for you)
+* create a #task subtree
+* create different story subtrees for life goals, projects, etc... and tag them, #climbing #reading #client_143 etc...
+* set up graphs for feedback on different goals/projects. `#tagged=climbing #since=30d #plot=done`
+* start the day by fiddling with `#prio=<n>` tags on the stories
+* hit the auto-task keybind (by default `C-v`) to pick an incomplete task child from one of the stories
+* work on it for 25 minutes or until completion, optionally leaving a few minutes for a retrospective/reprioritization at the end
+* distract myself as much as possible, let brain GC whatever I've been thinking about a little bit
+* if I've completed a task, mark it done (by default, `C-a`)
+* completed work is surfaced in the sparkline graphs I've set up for its tags
+* every week or so, tweak the system
 
 #### install
 

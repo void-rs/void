@@ -19,7 +19,7 @@ use time;
 use unicode_segmentation::UnicodeSegmentation;
 
 use {Config, Action, distances, cost, NodeID, Coords, Node, random_fg_color, serialization, Dir,
-     plot, Pack, logging};
+     plot, Pack, logging, re_matches, TagDB, dateparse};
 
 pub struct Screen {
     pub max_id: u64,
@@ -62,6 +62,8 @@ pub struct Screen {
     // ephemeral and normal nodes SHOULD occupy the same keyspace
     // but be exclusive.
     ephemeral_max_id: u64,
+
+    pub tag_db: TagDB,
 }
 
 impl Default for Screen {
@@ -94,6 +96,7 @@ impl Default for Screen {
             undo_nodes: HashMap::new(),
             ephemeral_nodes: HashMap::new(),
             ephemeral_max_id: std::u64::MAX,
+            tag_db: TagDB::default(),
         };
         screen.nodes.insert(0, root);
         screen
@@ -105,7 +108,7 @@ impl Screen {
         self.cleanup();
         print!("{}{}{}\n", cursor::Goto(1, 1), clear::All, self.config);
         self.start_raw_mode();
-        self.single_key_prompt("");
+        self.single_key_prompt("").unwrap();
     }
 
     fn new_node_id(&mut self) -> NodeID {
@@ -141,6 +144,12 @@ impl Screen {
             node.meta.bump_mtime();
             f(&mut node)
         })
+    }
+
+    fn with_node_mut_no_meta<B, F>(&mut self, k: NodeID, mut f: F) -> Option<B>
+        where F: FnMut(&mut Node) -> B
+    {
+        self.nodes.get_mut(&k).map(|mut node| f(&mut node))
     }
 
     // return of false signals to the caller that we are done in this view
@@ -237,10 +246,10 @@ impl Screen {
             // 2. add to new parent's children
             // 3. set parent_id pointer
             let old_parent = self.parent(node_id).unwrap();
-            self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &node_id))
+            self.with_node_mut_no_meta(old_parent, |op| op.children.retain(|c| c != &node_id))
                 .unwrap();
-            self.with_node_mut(parent_id, |np| np.children.push(node_id)).unwrap();
-            self.with_node_mut(node_id, |s| s.parent_id = parent_id).unwrap();
+            self.with_node_mut_no_meta(parent_id, |np| np.children.push(node_id)).unwrap();
+            self.with_node_mut_no_meta(node_id, |s| s.parent_id = parent_id).unwrap();
             if self.with_node(parent_id, |np| np.collapsed).unwrap() {
                 // if the destination is collapsed, deselect this node
                 self.unselect();
@@ -626,7 +635,7 @@ impl Screen {
             // placement a little bit
             let padded_dims = (dims.0 + 2, dims.1 + 2);
             if let Some((x, y)) = real_estate.insert(padded_dims) {
-                self.with_node_mut(node_id, |n| n.rooted_coords = (x, y)).unwrap();
+                self.with_node_mut_no_meta(node_id, |n| n.rooted_coords = (x, y)).unwrap();
             }
         }
     }
@@ -654,7 +663,7 @@ impl Screen {
         ret
     }
 
-    fn drawable_subtree_dims(&self, node_id: NodeID) -> Option<(u16, u16)> {
+    fn drawable_subtree_dims(&mut self, node_id: NodeID) -> Option<(u16, u16)> {
         if let Some(widths) = self.drawable_subtree_widths(node_id, 0) {
             let height = widths.len() as u16;
             let max_width = widths.into_iter().max().unwrap();
@@ -664,8 +673,10 @@ impl Screen {
         }
     }
 
-    fn drawable_subtree_widths(&self, node_id: NodeID, depth: usize) -> Option<Vec<u16>> {
-        if let Some(node) = self.nodes.get(&node_id) {
+    fn drawable_subtree_widths(&mut self, node_id: NodeID, depth: usize) -> Option<Vec<u16>> {
+        let raw_node_opt = self.with_node(node_id, |n| n.clone());
+        if let Some(raw_node) = raw_node_opt {
+            let node = self.format_node(&raw_node);
             let width = 1 + (3 * depth as u16) + node.content.len() as u16;
             let mut ret = vec![width];
             if !node.collapsed {
@@ -694,7 +705,7 @@ impl Screen {
         trace!("unselect()");
         if let Some(selected_id) = self.selected {
             // nuke node if it's empty and has no children
-            let deletable = self.with_node_mut(selected_id, |mut n| {
+            let deletable = self.with_node_mut_no_meta(selected_id, |mut n| {
                     n.selected = false;
                     n.content.is_empty() && n.children.is_empty()
                 })
@@ -738,7 +749,7 @@ impl Screen {
         if self.dragging_from.is_none() {
             self.unselect();
             if let Some(&node_id) = self.lookup(coords) {
-                return self.with_node_mut(node_id, |mut node| {
+                return self.with_node_mut_no_meta(node_id, |mut node| {
                         trace!("selected node {} at {:?}", node_id, coords);
                         node.selected = true;
                         node_id
@@ -781,6 +792,9 @@ impl Screen {
             // clean up any arrow state
             self.arrows.retain(|&(ref from, ref to)| from != &node_id && to != &node_id);
 
+            // remove from tag_db
+            self.tag_db.remove(node_id);
+
             for child_id in &node.children {
                 self.delete_recursive(*child_id);
             }
@@ -797,7 +811,7 @@ impl Screen {
             // remove ref from parent
             if let Some(parent_id) = self.parent(selected_id) {
                 trace!("deleting node {} from parent {}", selected_id, parent_id);
-                self.with_node_mut(parent_id, |p| p.children.retain(|c| c != &selected_id))
+                self.with_node_mut_no_meta(parent_id, |p| p.children.retain(|c| c != &selected_id))
                     .unwrap();
             }
             // remove children
@@ -820,7 +834,7 @@ impl Screen {
 
     fn recursive_restore(&mut self, node_id: NodeID) -> Result<(), ()> {
         if let Some(node) = self.undo_nodes.remove(&node_id) {
-            self.with_node_mut(node.parent_id, |p| {
+            self.with_node_mut_no_meta(node.parent_id, |p| {
                     if !p.children.contains(&node.id) {
                         p.children.push(node.id);
                     }
@@ -843,7 +857,7 @@ impl Screen {
 
     fn toggle_auto_arrange(&mut self) {
         let root = self.drawing_root;
-        self.with_node_mut(root, |mut n| n.auto_arrange = !n.auto_arrange)
+        self.with_node_mut_no_meta(root, |mut n| n.auto_arrange = !n.auto_arrange)
             .unwrap()
     }
 
@@ -882,7 +896,7 @@ impl Screen {
     fn toggle_collapsed(&mut self) {
         trace!("toggle_collapsed()");
         if let Some(selected_id) = self.selected {
-            self.with_node_mut(selected_id, |node| node.toggle_collapsed());
+            self.with_node_mut_no_meta(selected_id, |node| node.toggle_collapsed());
         }
     }
 
@@ -918,8 +932,8 @@ impl Screen {
             let selected_id = selected_id;
 
             let node_id = self.new_node();
-            self.with_node_mut(node_id, |node| node.parent_id = selected_id);
-            let added = self.with_node_mut(selected_id, |selected| {
+            self.with_node_mut_no_meta(node_id, |node| node.parent_id = selected_id);
+            let added = self.with_node_mut_no_meta(selected_id, |selected| {
                 selected.children.push(node_id);
             });
             if added.is_some() {
@@ -952,8 +966,8 @@ impl Screen {
                 }
                 let node_id = self.new_node();
 
-                self.with_node_mut(node_id, |node| node.parent_id = parent_id);
-                let added = self.with_node_mut(parent_id, |parent| {
+                self.with_node_mut_no_meta(node_id, |node| node.parent_id = parent_id);
+                let added = self.with_node_mut_no_meta(parent_id, |parent| {
                     // it's possible that selected_id has been deleted by now
                     // due to it being empty when we entered the function
                     // (double enter for going up a level)
@@ -1008,33 +1022,39 @@ impl Screen {
     fn create_anchor(&mut self, coords: Coords) {
         let root = self.drawing_root;
         let node_id = self.new_node();
-        self.with_node_mut(node_id, |node| {
+        self.with_node_mut_no_meta(node_id, |node| {
             node.rooted_coords = coords;
             node.parent_id = root;
         });
-        self.with_node_mut(root, |root| root.children.push(node_id));
+        self.with_node_mut_no_meta(root, |root| root.children.push(node_id));
         self.select_node(node_id);
     }
 
     fn backspace(&mut self) {
         trace!("backspace");
         if let Some(selected_id) = self.selected {
-            self.with_node_mut(selected_id, |node| {
+            if let Some(content) = self.with_node_mut(selected_id, |node| {
                 let content = node.content.clone();
                 let chars = content.chars();
                 let oldlen = chars.clone().count();
                 let truncated: String = chars.take(max(oldlen, 1) - 1).collect();
                 node.content = truncated;
-            });
+                node.content.clone()
+            }) {
+                self.tag_db.reindex(selected_id, content);
+            }
         }
     }
 
     fn append(&mut self, c: char) {
         trace!("append({})", c);
         if let Some(selected_id) = self.selected {
-            self.with_node_mut(selected_id, |node| {
+            if let Some(content) = self.with_node_mut(selected_id, |node| {
                 node.content.push(c);
-            });
+                node.content.clone()
+            }) {
+                self.tag_db.reindex(selected_id, content);
+            }
         }
     }
 
@@ -1136,7 +1156,7 @@ impl Screen {
                 // than create a cycle, we move the subtree.
                 let ptr = self.anchor(selected_id).unwrap();
                 trace!("move selected 2");
-                self.with_node_mut(ptr, |mut root| {
+                self.with_node_mut_no_meta(ptr, |mut root| {
                         let (ox, oy) = root.rooted_coords;
                         let nx = max(ox as i16 + dx, 1) as u16;
                         let ny = max(oy as i16 + dy, 1) as u16;
@@ -1151,11 +1171,11 @@ impl Screen {
             // 2. add to drawing_root's children
             // 3. update rooted_coords
             let old_parent = self.parent(selected_id).unwrap();
-            self.with_node_mut(old_parent, |op| op.children.retain(|c| c != &selected_id))
+            self.with_node_mut_no_meta(old_parent, |op| op.children.retain(|c| c != &selected_id))
                 .unwrap();
             let root = self.drawing_root;
-            self.with_node_mut(root, |dr| dr.children.push(selected_id)).unwrap();
-            self.with_node_mut(selected_id, |s| {
+            self.with_node_mut_no_meta(root, |dr| dr.children.push(selected_id)).unwrap();
+            self.with_node_mut_no_meta(selected_id, |s| {
                     s.rooted_coords = to;
                     s.parent_id = root;
                 })
@@ -1261,7 +1281,7 @@ impl Screen {
                 // principle: don't modify things that are above the visible scope
                 return;
             }
-            self.with_node_mut(parent_id, |mut parent| {
+            self.with_node_mut_no_meta(parent_id, |mut parent| {
                 let idx = parent.children
                     .iter()
                     .position(|&e| e == selected_id)
@@ -1283,7 +1303,7 @@ impl Screen {
                 // principle: don't modify things that are above the visible scope
                 return;
             }
-            self.with_node_mut(parent_id, |mut parent| {
+            self.with_node_mut_no_meta(parent_id, |mut parent| {
                 let idx = parent.children
                     .iter()
                     .position(|&e| e == selected_id)
@@ -1390,7 +1410,7 @@ impl Screen {
             // selection) being empty.  To account for this, we need
             // to only set self.selected to node_id if the with_node
             // succeeds.
-            self.with_node_mut(node_id, |mut node| node.selected = true)
+            self.with_node_mut_no_meta(node_id, |mut node| node.selected = true)
                 .map(|_| self.selected = Some(node_id));
         }
     }
@@ -1544,6 +1564,8 @@ impl Screen {
     pub fn draw(&mut self) {
         trace!("draw()");
 
+        // let before = time::get_time();
+
         // clean up before a fresh drawing
         self.ephemeral_max_id = std::u64::MAX;
         self.ephemeral_nodes.clear();
@@ -1614,6 +1636,10 @@ impl Screen {
 
         print!("{}", cursor::Hide);
         self.flush();
+
+        // let after = time::get_time();
+
+        // debug!("draw time: {}", after - before);
     }
 
     fn draw_scrollbar(&self) {
@@ -1671,7 +1697,9 @@ impl Screen {
             .cloned()
             .unwrap();
         let node = if raw_node.selected {
-            raw_node
+            let mut formatted = self.format_node(&raw_node);
+            formatted.content = raw_node.content;
+            formatted
         } else {
             self.format_node(&raw_node)
         };
@@ -1829,41 +1857,10 @@ impl Screen {
             header_text.push_str(" [auto-arrange] ");
         }
 
-        let now = time::get_time().sec as u64;
-        let day_in_sec = 60 * 60 * 24;
-        let last_week = now - (day_in_sec * 7);
-        let tasks_finished_in_last_week = self.recursive_child_filter_map(self.drawing_root,
-                                                                          &mut |n: &Node| {
-            let f = n.meta.finish_time;
-            if let Some(t) = f {
-                if t > last_week {
-                    Some(t)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        });
-        let mut counts = BTreeMap::new();
-        for d in 0..7 {
-            let t = now - (d * day_in_sec);
-            let normalized_t = t / day_in_sec * day_in_sec;
-            counts.insert(normalized_t, 0);
-        }
-        for t in &tasks_finished_in_last_week {
-            let normalized_t = t / day_in_sec * day_in_sec;
-            let cur = counts.remove(&normalized_t).unwrap_or(0);
-            counts.insert(normalized_t, cur + 1);
-        }
-        let today_normalized = now / day_in_sec * day_in_sec;
-        let counts_clone = counts.clone();
-        let finished_today = counts_clone.get(&today_normalized).unwrap();
-        let week_line = counts.into_iter().map(|(_, v)| v).collect();
-        let plot = plot::plot_sparkline(week_line);
+        let (plot, finished_today) = self.last_week_of_done_tasks();
         let plot_line = format!("│{}│({} today)", plot, finished_today);
-        header_text.push_str(&*plot_line);
 
+        header_text.push_str(&*plot_line);
 
         if self.dims.0 > header_text.len() as u16 && self.dims.1 > 1 {
             let mut sep = format!("{}{}{}{}",
@@ -1981,48 +1978,130 @@ impl Screen {
         path
     }
 
+    fn last_week_of_done_tasks(&self) -> (String, usize) {
+        let now = time::get_time().sec as u64;
+        let day_in_sec = 60 * 60 * 24;
+        let last_week = now - (day_in_sec * 7);
+        let tasks_finished_in_last_week = self.recursive_child_filter_map(0,
+                                                                          &mut |n: &Node| {
+            let f = n.meta.finish_time;
+            if let Some(t) = f {
+                if t > last_week {
+                    Some(t)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        });
+        let mut counts = BTreeMap::new();
+        for d in 0..7 {
+            let t = now - (d * day_in_sec);
+            let normalized_t = t / day_in_sec * day_in_sec;
+            counts.insert(normalized_t, 0);
+        }
+        for t in &tasks_finished_in_last_week {
+            let normalized_t = t / day_in_sec * day_in_sec;
+            let cur = counts.remove(&normalized_t).unwrap_or(0);
+            counts.insert(normalized_t, cur + 1);
+        }
+        let today_normalized = now / day_in_sec * day_in_sec;
+        let counts_clone = counts.clone();
+        let finished_today = counts_clone.get(&today_normalized).unwrap();
+        let week_line: Vec<i64> = counts.into_iter().map(|(_, v)| v).collect();
+        let plot = plot::plot_sparkline(week_line);
+        (plot, *finished_today as usize)
+    }
+
     fn format_node(&mut self, raw_node: &Node) -> Node {
         lazy_static! {
             //// general subtree population and modification
             // limit shows the top N results.
             static ref RE_LIMIT: Regex = Regex::new(r"#limit=(\d+)").unwrap();
-            static ref RE_SEARCH: Regex = Regex::new(r"#search=(.+)").unwrap();
-            static ref RE_TAGGED: Regex = Regex::new(r"#tagged=(.+)").unwrap();
-            static ref RE_ORDERBY: Regex = Regex::new(r"#orderby=(.+)").unwrap();
+            static ref RE_TAGGED: Regex = Regex::new(r"#tagged=(\w+)").unwrap();
             static ref RE_REV: Regex = Regex::new(r"#rev\b").unwrap();
-            static ref RE_STATS: Regex = Regex::new(r"#stats\b").unwrap();
             static ref RE_DONE: Regex = Regex::new(r"#done\b").unwrap();
             static ref RE_OPEN: Regex = Regex::new(r"#open\b").unwrap();
-            static ref RE_GLOBAL: Regex = Regex::new(r"#global\b").unwrap();
-            static ref RE_LOCAL: Regex = Regex::new(r"#local\b").unwrap();
-            static ref RE_LINEAGE: Regex = Regex::new(r"#lineage\b").unwrap();
             // since defaults to last week
-            static ref RE_SINCE: Regex = Regex::new(r"#since=(.+)").unwrap();
+            static ref RE_SINCE: Regex = Regex::new(r"#since=(\w+)").unwrap();
             // until defaults until now
-            static ref RE_UNTIL: Regex = Regex::new(r"#until=(.+)").unwrap();
+            static ref RE_UNTIL: Regex = Regex::new(r"#until=(\w+)").unwrap();
 
             //// plot specific
-            // plot can be {count, age, completion time,
-            static ref RE_PLOT: Regex = Regex::new(r"#plot=(.+)").unwrap();
-            // agg is used to sum valued tags, like #prio=5 or #size=3.
-            // useful for answering questions like "what's the age?"
-            static ref RE_AGG: Regex = Regex::new(r"#agg=(.+)").unwrap();
-            // window is the duration of a time
-            static ref RE_BIN: Regex = Regex::new(r"#window=(.+)").unwrap();
-            // windows is the number of windows shown
-            static ref RE_BINS: Regex = Regex::new(r"#windows=(\d+)").unwrap();
+            // plot can be {new,done}
+            static ref RE_PLOT: Regex = Regex::new(r"#plot=(\w+)").unwrap();
+            // n is the number of buckets
+            static ref RE_N: Regex = Regex::new(r"#n=(\d+)").unwrap();
         }
 
         // NB avoid cycles
         let mut node = raw_node.clone();
         node.id = self.new_ephemeral_node_id();
 
-        for search in &re_matches::<String>(&RE_SEARCH, &*node.content) {
-        }
-
+        // for tagged queries, AND queries together
+        let mut tagged_children: Option<HashSet<NodeID>> = None;
         for tag in &re_matches::<String>(&RE_TAGGED, &*node.content) {
+            let children = self.tag_db.tag_to_nodes(tag);
+            if let Some(children_acc) = tagged_children {
+                let children_new = children.into_iter().collect();
+                let intersection = children_acc.intersection(&children_new);
+                tagged_children = Some(intersection.cloned().collect());
+            } else {
+                tagged_children = Some(children.into_iter().collect());
+            }
         }
+        let mut children = tagged_children.map(|tc| tc.into_iter().collect()).unwrap_or(vec![]);
+        node.children.append(&mut children);
+        node.children.dedup();
+        node.children.sort();
 
+        let mut since_opt = None;
+        let mut until_opt = None;
+        if RE_DONE.is_match(&*node.content) {
+            for child in node.children.clone() {
+                let done = self.with_node(child, |c| c.stricken).unwrap();
+                if !done {
+                    node.children.retain(|&c| c != child);
+                }
+            }
+        }
+        if RE_OPEN.is_match(&*node.content) {
+            for child in node.children.clone() {
+                let open = self.with_node(child, |c| !c.stricken).unwrap();
+                if !open {
+                    node.children.retain(|&c| c != child);
+                }
+            }
+        }
+        if let Some(since) = re_matches::<String>(&RE_SINCE, &*node.content).iter().nth(0) {
+            since_opt = dateparse(since.clone());
+            if let Some(cutoff) = since_opt {
+                let mut new = vec![];
+                for &c in &node.children {
+                    let valid = self.with_node(c, |c| c.meta.mtime >= cutoff)
+                        .unwrap_or(false);
+                    if valid {
+                        new.push(c);
+                    }
+                }
+                node.children = new;
+            }
+        }
+        if let Some(until) = re_matches::<String>(&RE_UNTIL, &*node.content).iter().nth(0) {
+            until_opt = dateparse(until.clone());
+            if let Some(cutoff) = until_opt {
+                let mut new = vec![];
+                for &c in &node.children {
+                    let valid = self.with_node(c, |c| c.meta.mtime <= cutoff)
+                        .unwrap_or(false);
+                    if valid {
+                        new.push(c);
+                    }
+                }
+                node.children = new;
+            }
+        }
         if RE_REV.is_match(&*node.content) {
             node.children = node.children.into_iter().rev().collect();
         }
@@ -2030,24 +2109,60 @@ impl Screen {
             node.children.truncate(limit);
         }
 
+        let re_n = re_matches::<usize>(&RE_N, &*node.content);
+        let n_opt = re_n.iter().nth(0);
+        if let Some(plot) = re_matches::<String>(&RE_PLOT, &*node.content).iter().nth(0) {
+            let buckets = n_opt.cloned().unwrap_or(10);
+            let since = since_opt.unwrap_or(0);
+            let until = until_opt.unwrap_or_else(|| time::get_time().sec as u64);
+
+            node.content = match plot.as_str() {
+                "done" => {
+                    let mut nodes = vec![];
+                    for &c in &node.children {
+                        let mut new = self.recursive_child_filter_map(c,
+                                                                      &mut |n: &Node| {
+                            if let Some(ft) = n.meta.finish_time {
+                                if ft >= since {
+                                    return Some(ft as i64);
+                                }
+                            }
+                            None
+                        });
+                        nodes.append(&mut new);
+                    }
+                    let min = nodes.iter().min().cloned().unwrap_or(0i64);
+                    plot::bounded_count_sparkline(nodes,
+                                                  since_opt.map(|s| s as i64)
+                                                      .unwrap_or(min),
+                                                  until as i64,
+                                                  buckets)
+                }
+                "new" => {
+                    let mut nodes = vec![];
+                    for &c in &node.children {
+                        let mut new = self.recursive_child_filter_map(c,
+                                                                      &mut |n: &Node| {
+                            if n.meta.ctime >= since {
+                                Some(n.meta.ctime as i64)
+                            } else {
+                                None
+                            }
+                        });
+                        nodes.append(&mut new);
+                    }
+                    let min = nodes.iter().min().cloned().unwrap_or(0i64);
+                    plot::bounded_count_sparkline(nodes,
+                                                  since_opt.map(|s| s as i64)
+                                                      .unwrap_or(min),
+                                                  until as i64,
+                                                  buckets)
+                }
+                _ => node.content,
+            };
+        }
         node
     }
-}
-
-fn re_matches<A: std::str::FromStr>(re: &Regex, on: &str) -> Vec<A> {
-    let mut ret = vec![];
-    if re.is_match(on) {
-        re.captures_iter(on)
-            .nth(0)
-            .map(|n| {
-                for i in 1..n.len() {
-                    if let Ok(e) = n.at(i).unwrap().parse::<A>() {
-                        ret.push(e)
-                    }
-                }
-            });
-    }
-    ret
 }
 
 enum SearchDirection {

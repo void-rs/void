@@ -113,6 +113,7 @@ pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufErr
         .iter()
         .map(|node_pb| {
             let node = deserialize_node(node_pb);
+            screen.tag_db.reindex(node.id, node.content.clone());
             (node.id, node)
         })
         .collect();

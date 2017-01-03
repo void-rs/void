@@ -25,9 +25,10 @@ pub struct Meta {
 
 impl Default for Meta {
     fn default() -> Meta {
+        let now = time::get_time().sec as u64;
         Meta {
-            ctime: time::get_time().sec as u64,
-            mtime: 0,
+            ctime: now,
+            mtime: now,
             finish_time: None,
             gps: *LOC,
             tags: HashMap::new(),
