@@ -108,7 +108,9 @@ impl Screen {
         self.cleanup();
         print!("{}{}{}\n", cursor::Goto(1, 1), clear::All, self.config);
         self.start_raw_mode();
-        self.single_key_prompt("").unwrap();
+        if let Err(_) = self.single_key_prompt("") {
+            // likely here because of testing
+        }
     }
 
     fn new_node_id(&mut self) -> NodeID {
