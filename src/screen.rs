@@ -2059,10 +2059,8 @@ impl Screen {
                 tagged_children = Some(children.into_iter().collect());
             }
         }
-        let mut children = tagged_children.map(|tc| tc.into_iter().collect()).unwrap_or(vec![]);
-        node.children.append(&mut children);
-        node.children.dedup();
-        node.children.sort();
+        let queried_nodes = tagged_children.map(|tc| tc.into_iter().collect())
+            .unwrap_or(vec![]);
 
         let mut since_opt = None;
         let mut until_opt = None;
@@ -2127,7 +2125,7 @@ impl Screen {
             node.content = match plot.as_str() {
                 "done" => {
                     let mut nodes = vec![];
-                    for &c in &node.children {
+                    for &c in &queried_nodes {
                         let mut new = self.recursive_child_filter_map(c,
                                                                       &mut |n: &Node| {
                             if let Some(ft) = n.meta.finish_time {
@@ -2149,7 +2147,7 @@ impl Screen {
                 }
                 "new" => {
                     let mut nodes = vec![];
-                    for &c in &node.children {
+                    for &c in &queried_nodes {
                         let mut new = self.recursive_child_filter_map(c,
                                                                       &mut |n: &Node| {
                             if n.meta.ctime >= since {

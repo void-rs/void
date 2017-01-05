@@ -1,3 +1,5 @@
+use std::cmp;
+
 pub fn plot_sparkline<T>(nums_in: Vec<T>) -> String
     where T: Into<i64>
 {
@@ -21,12 +23,27 @@ pub fn plot_sparkline<T>(nums_in: Vec<T>) -> String
 pub fn bounded_count_sparkline<T>(nums_in: Vec<T>, start: T, end: T, bars: usize) -> String
     where T: Into<i64>
 {
-    let nums: Vec<_> = nums_in.into_iter().map(|n| n.into()).collect();
+    if bars == 0 {
+        return String::new();
+    }
+
     let start = start.into();
-    let step = (end.into() - start.clone()) / bars as i64;
+    let end = end.into();
+    let nums: Vec<_> = nums_in.into_iter().map(|n| n.into()).collect();
+    let step = (end.clone() - start.clone()) / bars as i64;
     let mut counts = vec![0; bars];
+
+    if step == 0 || nums.is_empty() || end <= start {
+        return String::new();
+    }
+
+    let start = start as usize;
+    let step = step as usize;
+
     for &n in &nums {
-        counts[(((n - start) / step) - 1) as usize] += 1;
+        let n = cmp::max(n as usize, start) as usize;
+        let idx = (n - start) / step;
+        counts[cmp::min(idx, bars - 1)] += 1;
     }
     plot_sparkline(counts)
 }

@@ -9,9 +9,17 @@ use quickcheck::{Arbitrary, Gen, QuickCheck, StdGen};
 
 use voidmap::*;
 
-#[derive(Debug, Clone)]
+use std::fmt;
+
+#[derive(Clone)]
 struct Op {
     event: Event,
+}
+
+impl fmt::Debug for Op {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        fmt::Debug::fmt(&self.event, formatter)
+    }
 }
 
 impl Arbitrary for Op {
@@ -42,6 +50,60 @@ impl Arbitrary for Op {
     }
 }
 
+#[derive(Debug, Clone)]
+struct Content(Vec<Op>);
+
+impl Arbitrary for Content {
+    fn arbitrary<G: Gen>(g: &mut G) -> Content {
+        let commands = vec![
+            "#task",
+            "#cat",
+            "#dog",
+            "#prio=5",
+            "#prio=0",
+            "#tagged=task",
+            "#tagged=cat",
+            "#tagged=dog",
+            "#tagged=does_not_exist",
+            "#rev",
+            "#limit=0",
+            "#limit=1",
+            "#limit=2",
+            "#limit=100",
+            "#since=1d",
+            "#since=0d",
+            "#until=1d",
+            "#until=0d",
+            "#n=0",
+            "#n=1",
+            "#n=100",
+            "#plot=done",
+            "#plot=open",
+            "#plot=",
+            "#plot=InVaLiD",
+            "#done",
+            "#open",
+            "#InVaLiD",
+            "kontent",
+        ];
+        let mut choice = vec![];
+
+        for _ in 0..g.gen_range(0, 2) {
+            let command = g.choose(&*commands).unwrap().clone();
+            let mut chars = command.chars().collect();
+            choice.append(&mut chars);
+            if g.gen_range(0, 10) > 0 {
+                choice.push(' ');
+            }
+        }
+
+
+        Content(choice.into_iter()
+            .map(|c| Op { event: Event::Key(Key::Char(c)) })
+            .collect())
+    }
+}
+
 
 #[derive(Debug, Clone)]
 struct OpVec {
@@ -52,7 +114,12 @@ impl Arbitrary for OpVec {
     fn arbitrary<G: Gen>(g: &mut G) -> OpVec {
         let mut ops = vec![];
         for _ in 0..g.gen_range(1, 100) {
-            ops.push(Op::arbitrary(g));
+            if g.gen_range(0, 10) > 0 {
+                ops.push(Op::arbitrary(g));
+            } else {
+                let mut content = Content::arbitrary(g);
+                ops.append(&mut content.0);
+            }
         }
         OpVec { ops: ops }
     }
