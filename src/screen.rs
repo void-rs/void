@@ -1693,9 +1693,13 @@ impl Screen {
                  color: String)
                  -> usize {
         trace!("draw_node({})", node_id);
+        let mut ephemeral = false;
         let raw_node = self.nodes
             .get(&node_id)
-            .or_else(|| self.ephemeral_nodes.get(&node_id))
+            .or_else(|| {
+                ephemeral = true;
+                self.ephemeral_nodes.get(&node_id)
+            })
             .cloned()
             .unwrap();
         let node = if raw_node.selected {
@@ -1761,11 +1765,13 @@ impl Screen {
 
         let visible = buf.replace(reset, "").replace(&*pre_meta, "");
         let visible_graphemes = UnicodeSegmentation::graphemes(&*visible, true).count();
+
         self.drawn_at.insert(node_id, internal_coords);
         for x in (internal_coords.0..(internal_coords.0 + visible_graphemes as u16)).rev() {
             trace!("inserting {:?} at {:?}", node_id, internal_coords);
             self.lookup.insert((x, internal_coords.1), node_id);
         }
+
         if internal_coords.1 > self.lowest_drawn {
             self.lowest_drawn = internal_coords.1;
         }
@@ -2037,9 +2043,9 @@ impl Screen {
             static ref RE_N: Regex = Regex::new(r"#n=(\d+)").unwrap();
         }
 
+        // TODO detect and avoid cycles
         // NB avoid cycles
         let mut node = raw_node.clone();
-        node.id = self.new_ephemeral_node_id();
 
         // for tagged queries, AND queries together
         let mut tagged_children: Option<HashSet<NodeID>> = None;
@@ -2134,11 +2140,12 @@ impl Screen {
                         nodes.append(&mut new);
                     }
                     let min = nodes.iter().min().cloned().unwrap_or(0i64);
-                    plot::bounded_count_sparkline(nodes,
-                                                  since_opt.map(|s| s as i64)
-                                                      .unwrap_or(min),
-                                                  until as i64,
-                                                  buckets)
+                    let plot = plot::bounded_count_sparkline(nodes,
+                                                             since_opt.map(|s| s as i64)
+                                                                 .unwrap_or(min),
+                                                             until as i64,
+                                                             buckets);
+                    format!("|{}|", plot)
                 }
                 "new" => {
                     let mut nodes = vec![];
@@ -2154,11 +2161,12 @@ impl Screen {
                         nodes.append(&mut new);
                     }
                     let min = nodes.iter().min().cloned().unwrap_or(0i64);
-                    plot::bounded_count_sparkline(nodes,
-                                                  since_opt.map(|s| s as i64)
-                                                      .unwrap_or(min),
-                                                  until as i64,
-                                                  buckets)
+                    let plot = plot::bounded_count_sparkline(nodes,
+                                                             since_opt.map(|s| s as i64)
+                                                                 .unwrap_or(min),
+                                                             until as i64,
+                                                             buckets);
+                    format!("|{}|", plot)
                 }
                 _ => node.content,
             };

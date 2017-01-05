@@ -26,7 +26,7 @@ pub fn bounded_count_sparkline<T>(nums_in: Vec<T>, start: T, end: T, bars: usize
     let step = (end.into() - start.clone()) / bars as i64;
     let mut counts = vec![0; bars];
     for &n in &nums {
-        counts[((n - start) / step) as usize] += 1;
+        counts[(((n - start) / step) - 1) as usize] += 1;
     }
     plot_sparkline(counts)
 }
