@@ -21,12 +21,13 @@ impl Default for TagDB {
 impl TagDB {
     pub fn reindex(&mut self, node: NodeID, text: String) {
         lazy_static! {
-            static ref RE_TAG: Regex = Regex::new(r"#(\S+)*").unwrap();
+            static ref RE_TAG_KEY: Regex = Regex::new(r"#([^\s=]+)*").unwrap();
+            static ref RE_TAG_KEY_VALUE: Regex = Regex::new(r"#(\S+)*").unwrap();
         }
 
         self.remove(node);
         self.node_to_tags.insert(node, HashSet::new());
-        let tags = re_matches::<String>(&RE_TAG, &*text);
+        let tags = re_matches::<String>(&RE_TAG_KEY_VALUE, &*text);
 
         for tag in &tags {
             if let Some(mut tags) = self.node_to_tags.get_mut(&node) {
@@ -40,6 +41,24 @@ impl TagDB {
             nodes.insert(node);
 
             self.tag_to_nodes.insert(tag.clone(), nodes);
+        }
+
+        if text.contains('=') {
+            let tags = re_matches::<String>(&RE_TAG_KEY, &*text);
+
+            for tag in &tags {
+                if let Some(mut tags) = self.node_to_tags.get_mut(&node) {
+                    tags.insert(tag.clone());
+                }
+
+                let mut nodes = self.tag_to_nodes
+                    .remove(tag)
+                    .unwrap_or_else(|| HashSet::new());
+
+                nodes.insert(node);
+
+                self.tag_to_nodes.insert(tag.clone(), nodes);
+            }
         }
     }
 
@@ -69,7 +88,10 @@ fn test_basic_func() {
     tdb.reindex(1, "hey #1 #there #yes=4".to_owned());
     tdb.reindex(2, "hey #1=2 #yo #yes".to_owned());
     tdb.reindex(3, "hey #1 #yes=ok".to_owned());
+    tdb.reindex(4, "hey #$".to_owned());
     assert_eq!(tdb.tag_to_nodes("there"), vec![1]);
     assert_eq!(tdb.tag_to_nodes("1"), vec![1, 2, 3]);
     assert_eq!(tdb.tag_to_nodes("yes"), vec![1, 2, 3]);
+    assert_eq!(tdb.tag_to_nodes("yes=ok"), vec![3]);
+    assert_eq!(tdb.tag_to_nodes("$"), vec![4]);
 }
