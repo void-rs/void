@@ -82,7 +82,7 @@ pub fn re_matches<A: std::str::FromStr>(re: &Regex, on: &str) -> Vec<A> {
 
 #[test]
 fn test_regex_parsing() {
-    let re = Regex::new(r"(\w+)").unwrap();
+    let re = Regex::new(r"(\S+)").unwrap();
     assert_eq!(re_matches::<String>(&re, "yo ho ho"),
                vec!["yo".to_owned(), "ho".to_owned(), "ho".to_owned()]);
 }

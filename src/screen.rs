@@ -2027,18 +2027,18 @@ impl Screen {
             //// general subtree population and modification
             // limit shows the top N results.
             static ref RE_LIMIT: Regex = Regex::new(r"#limit=(\d+)").unwrap();
-            static ref RE_TAGGED: Regex = Regex::new(r"#tagged=(\w+)").unwrap();
+            static ref RE_TAGGED: Regex = Regex::new(r"#tagged=(\S+)").unwrap();
             static ref RE_REV: Regex = Regex::new(r"#rev\b").unwrap();
             static ref RE_DONE: Regex = Regex::new(r"#done\b").unwrap();
             static ref RE_OPEN: Regex = Regex::new(r"#open\b").unwrap();
             // since defaults to last week
-            static ref RE_SINCE: Regex = Regex::new(r"#since=(\w+)").unwrap();
+            static ref RE_SINCE: Regex = Regex::new(r"#since=(\S+)").unwrap();
             // until defaults until now
-            static ref RE_UNTIL: Regex = Regex::new(r"#until=(\w+)").unwrap();
+            static ref RE_UNTIL: Regex = Regex::new(r"#until=(\S+)").unwrap();
 
             //// plot specific
             // plot can be {new,done}
-            static ref RE_PLOT: Regex = Regex::new(r"#plot=(\w+)").unwrap();
+            static ref RE_PLOT: Regex = Regex::new(r"#plot=(\S+)").unwrap();
             // n is the number of buckets
             static ref RE_N: Regex = Regex::new(r"#n=(\d+)").unwrap();
         }

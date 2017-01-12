@@ -21,7 +21,7 @@ impl Default for TagDB {
 impl TagDB {
     pub fn reindex(&mut self, node: NodeID, text: String) {
         lazy_static! {
-            static ref RE_TAG: Regex = Regex::new(r"#(\w+)*").unwrap();
+            static ref RE_TAG: Regex = Regex::new(r"#(\S+)*").unwrap();
         }
 
         self.remove(node);
