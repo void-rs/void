@@ -166,6 +166,9 @@ impl Screen {
                         let internal_coords = self.screen_to_internal_xy((x, y));
                         self.click_screen(internal_coords)
                     }
+                    Action::RightClick(_, _) => {
+                        self.pop_focus();
+                    }
                     Action::Release(x, y) => {
                         let internal_coords = self.screen_to_internal_xy((x, y));
                         self.release(internal_coords)

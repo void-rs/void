@@ -11,6 +11,7 @@ use termion::event::{Event, Key, MouseEvent};
 #[derive(Debug, Copy, Clone, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Action {
     LeftClick(u16, u16),
+    RightClick(u16, u16),
     Release(u16, u16),
     Char(char),
     UnselectRet,
@@ -214,6 +215,7 @@ impl Config {
 
     pub fn map(&self, e: Event) -> Option<Action> {
         use termion::event::Key::*;
+        use termion::event::MouseButton;
         match e {
             Event::Key(Char(c)) => {
                 if let Some(action) = self.config.get(&Char(c)).cloned() {
@@ -221,6 +223,9 @@ impl Config {
                 } else {
                     Some(Action::Char(c))
                 }
+            }
+            Event::Mouse(MouseEvent::Press(MouseButton::Right, x, y)) => {
+                Some(Action::RightClick(x, y))
             }
             Event::Mouse(MouseEvent::Press(_, x, y)) => Some(Action::LeftClick(x, y)),
             Event::Mouse(MouseEvent::Release(x, y)) => Some(Action::Release(x, y)),
