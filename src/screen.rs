@@ -2140,9 +2140,10 @@ impl Screen {
         let re_n = re_matches::<usize>(&RE_N, &*node.content);
         let n_opt = re_n.iter().nth(0);
         if let Some(plot) = re_matches::<String>(&RE_PLOT, &*node.content).iter().nth(0) {
-            let buckets = n_opt.cloned().unwrap_or(10);
-            let since = since_opt.unwrap_or(0);
-            let until = until_opt.unwrap_or_else(|| time::get_time().sec as u64);
+            let now = time::get_time().sec as u64;
+            let buckets = n_opt.cloned().unwrap_or(7);
+            let since = since_opt.unwrap_or_else(|| now - 60 * 60 * 24);
+            let until = until_opt.unwrap_or_else(|| now);
 
             node.content = match plot.as_str() {
                 "done" => self.plot(queried_nodes, PlotType::Done, buckets, since, until),
