@@ -34,7 +34,7 @@ pub fn bounded_count_sparkline<T>(nums_in: Vec<T>, start: T, end: T, bars: usize
     let mut counts = vec![0; bars];
 
     if step == 0 || nums.is_empty() || end <= start {
-        return String::new();
+        return String::from_utf8(vec![b' '; bars]).unwrap();
     }
 
     let start = start as usize;

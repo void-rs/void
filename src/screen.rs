@@ -2123,59 +2123,58 @@ impl Screen {
             let until = until_opt.unwrap_or_else(|| time::get_time().sec as u64);
 
             node.content = match plot.as_str() {
-                "done" => {
-                    let mut nodes = vec![];
-                    for &c in &queried_nodes {
-                        let mut new = self.recursive_child_filter_map(c,
-                                                                      &mut |n: &Node| {
-                            if let Some(ft) = n.meta.finish_time {
-                                if ft >= since {
-                                    return Some(ft as i64);
-                                }
-                            }
-                            None
-                        });
-                        nodes.append(&mut new);
-                    }
-                    let min = nodes.iter().min().cloned().unwrap_or(0i64);
-                    let plot = plot::bounded_count_sparkline(nodes,
-                                                             since_opt.map(|s| s as i64)
-                                                                 .unwrap_or(min),
-                                                             until as i64,
-                                                             buckets);
-                    format!("|{}|", plot)
-                }
-                "new" => {
-                    let mut nodes = vec![];
-                    for &c in &queried_nodes {
-                        let mut new = self.recursive_child_filter_map(c,
-                                                                      &mut |n: &Node| {
-                            if n.meta.ctime >= since {
-                                Some(n.meta.ctime as i64)
-                            } else {
-                                None
-                            }
-                        });
-                        nodes.append(&mut new);
-                    }
-                    let min = nodes.iter().min().cloned().unwrap_or(0i64);
-                    let plot = plot::bounded_count_sparkline(nodes,
-                                                             since_opt.map(|s| s as i64)
-                                                                 .unwrap_or(min),
-                                                             until as i64,
-                                                             buckets);
-                    format!("|{}|", plot)
-                }
+                "done" => self.plot(queried_nodes, PlotType::Done, buckets, since, until),
+                "new" => self.plot(queried_nodes, PlotType::New, buckets, since, until),
                 _ => node.content,
             };
         }
         node
+    }
+
+    fn plot(&self,
+            queried_nodes: Vec<NodeID>,
+            kind: PlotType,
+            buckets: usize,
+            since: u64,
+            until: u64)
+            -> String {
+        let mut nodes = vec![];
+        for &c in &queried_nodes {
+            let mut new = self.recursive_child_filter_map(c,
+                                                          &mut |n: &Node| {
+                match kind {
+                    PlotType::Done => {
+                        if let Some(ft) = n.meta.finish_time {
+                            if ft >= since {
+                                return Some(ft as i64);
+                            }
+                        }
+                        None
+                    }
+                    PlotType::New => {
+                        if n.meta.ctime >= since {
+                            Some(n.meta.ctime as i64)
+                        } else {
+                            None
+                        }
+                    }
+                }
+            });
+            nodes.append(&mut new);
+        }
+        let plot = plot::bounded_count_sparkline(nodes, since as i64, until as i64, buckets);
+        format!("|{}|", plot)
     }
 }
 
 enum SearchDirection {
     Forward,
     Backward,
+}
+
+enum PlotType {
+    New,
+    Done,
 }
 
 fn visible(view_y: u16, height: u16, y: u16) -> bool {
