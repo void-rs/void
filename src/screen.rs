@@ -64,6 +64,8 @@ pub struct Screen {
     ephemeral_max_id: u64,
 
     pub tag_db: TagDB,
+
+    last_click_ms: u64,
 }
 
 impl Default for Screen {
@@ -97,6 +99,7 @@ impl Default for Screen {
             ephemeral_nodes: HashMap::new(),
             ephemeral_max_id: std::u64::MAX,
             tag_db: TagDB::default(),
+            last_click_ms: 0,
         };
         screen.nodes.insert(0, root);
         screen
@@ -1424,9 +1427,25 @@ impl Screen {
             return;
         }
         let old = self.selected;
-        self.try_select(coords);
+        let new = self.try_select(coords);
         if old.is_none() && self.dragging_from.is_none() {
             self.create_anchor(coords);
+        }
+
+        // double click logic:
+        // set click time, drill-down if we're below double click threshold
+        let now = time::get_time();
+        let now_ms = (now.sec as u64 * 1000) + (now.nsec as u64 / 1_000_000);
+
+        let elapsed = now_ms - self.last_click_ms;
+
+        if new.is_some() {
+            self.last_click_ms = now_ms;
+        }
+
+        // if we double click, drill-down on it
+        if new == old && elapsed <= 500 && new.is_some() {
+            self.drill_down();
         }
     }
 
