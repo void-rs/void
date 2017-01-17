@@ -65,7 +65,11 @@ pub struct Screen {
 
     pub tag_db: TagDB,
 
+    // timer for double clicks
     last_click_ms: u64,
+
+    // grapheme calculation is expensive
+    grapheme_cache: HashMap<NodeID, usize>,
 }
 
 impl Default for Screen {
@@ -100,6 +104,7 @@ impl Default for Screen {
             ephemeral_max_id: std::u64::MAX,
             tag_db: TagDB::default(),
             last_click_ms: 0,
+            grapheme_cache: HashMap::new(),
         };
         screen.nodes.insert(0, root);
         screen
@@ -253,6 +258,7 @@ impl Screen {
             // 1. remove from old parent's children
             // 2. add to new parent's children
             // 3. set parent_id pointer
+            // 4. bust grapheme cache
             let old_parent = self.parent(node_id).unwrap();
             self.with_node_mut_no_meta(old_parent, |op| op.children.retain(|c| c != &node_id))
                 .unwrap();
@@ -262,6 +268,7 @@ impl Screen {
                 // if the destination is collapsed, deselect this node
                 self.unselect();
             }
+            self.grapheme_cache.remove(&node_id);
         }
     }
 
@@ -1049,6 +1056,7 @@ impl Screen {
                 node.content = truncated;
                 node.content.clone()
             }) {
+                self.grapheme_cache.remove(&selected_id);
                 self.tag_db.reindex(selected_id, content);
             }
         }
@@ -1061,6 +1069,7 @@ impl Screen {
                 node.content.push(c);
                 node.content.clone()
             }) {
+                self.grapheme_cache.remove(&selected_id);
                 self.tag_db.reindex(selected_id, content);
             }
         }
@@ -1193,6 +1202,8 @@ impl Screen {
     }
 
     fn pop_focus(&mut self) {
+        // bust grapheme cache on new view
+        self.grapheme_cache.clear();
         self.unselect();
         let (root, selected, view_y) = self.focus_stack.pop().unwrap_or((0, 0, 0));
         self.drawing_root = root;
@@ -1202,6 +1213,8 @@ impl Screen {
 
     fn drill_down(&mut self) {
         trace!("drill_down()");
+        // bust grapheme cache on new view
+        self.grapheme_cache.clear();
         if let Some(selected_id) = self.unselect() {
             if selected_id != self.drawing_root {
                 let breadcrumb = (self.drawing_root, selected_id, self.view_y);
@@ -1738,6 +1751,7 @@ impl Screen {
         let reset = &*format!("{}", color::Fg(color::Reset));
         let mut pre_meta = String::new();
         let mut buf = String::new();
+
         // only actually print it if we're in-view
         if let Some((x, y)) = self.internal_to_screen_xy(internal_coords) {
             write!(pre_meta, "{}{}", cursor::Goto(x, y), color).unwrap();
@@ -1771,8 +1785,12 @@ impl Screen {
             write!(&mut buf, "{}", node.content).unwrap();
 
             let max_width = (max(self.dims.0, 1 + x) - 1 - x) as usize;
-            let visible = buf.replace(reset, "").replace(&*pre_meta, "");
-            let visible_graphemes = UnicodeSegmentation::graphemes(&*visible, true).count();
+            let visible_graphemes = self.grapheme_cache.get(&node.id).cloned().unwrap_or_else(|| {
+                let visible = buf.replace(reset, "").replace(&*pre_meta, "");
+                let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
+                self.grapheme_cache.insert(node.id, vg.clone());
+                vg
+            });
             if visible_graphemes > max_width {
                 let buf_clone = buf.clone();
                 let chars = buf_clone.chars();
@@ -1785,8 +1803,12 @@ impl Screen {
             print!("{}{}", buf, style::Reset);
         }
 
-        let visible = buf.replace(reset, "").replace(&*pre_meta, "");
-        let visible_graphemes = UnicodeSegmentation::graphemes(&*visible, true).count();
+        let visible_graphemes = self.grapheme_cache.get(&node.id).cloned().unwrap_or_else(|| {
+            let visible = buf.replace(reset, "").replace(&*pre_meta, "");
+            let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
+            self.grapheme_cache.insert(node.id, vg.clone());
+            vg
+        });
 
         self.drawn_at.insert(node_id, internal_coords);
         for x in (internal_coords.0..(internal_coords.0 + visible_graphemes as u16)).rev() {
