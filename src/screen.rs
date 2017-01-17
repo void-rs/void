@@ -2142,7 +2142,7 @@ impl Screen {
         if let Some(plot) = re_matches::<String>(&RE_PLOT, &*node.content).iter().nth(0) {
             let now = time::get_time().sec as u64;
             let buckets = n_opt.cloned().unwrap_or(7);
-            let since = since_opt.unwrap_or_else(|| now - 60 * 60 * 24);
+            let since = since_opt.unwrap_or_else(|| now - 60 * 60 * 24 * 7);
             let until = until_opt.unwrap_or_else(|| now);
 
             node.content = match plot.as_str() {
