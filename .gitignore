@@ -1,5 +1,5 @@
 quickcheck.out
-flamegraph.svg
+*svg
 out*
 perf.data
 *.swp

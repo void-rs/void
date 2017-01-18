@@ -60,6 +60,11 @@ This is an attempt to address several cognitive defects.
 if you don't have cargo, an easy way to get and manage
 it is [via rustup](https://www.rustup.rs/).
 
+If you get errors along the lines of ``error: the `?' operator is not stable`` then
+you need to update your rust compiler. If you installed rust with rustup, this can
+be accomplished with `rustup update`.  Requires a recent stable rust compiler,
+`1.14.0` or higher is recommended. This can be checked with `rustc --version`.
+
 #### invocation
 
 `void`
