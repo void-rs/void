@@ -3,7 +3,9 @@
 `cargo install voidmap`
 
 if you don't have cargo, an easy way to get and manage
-it is [via rustup](https://www.rustup.rs/).
+it is [via rustup](https://www.rustup.rs/). Ensure that `~/.cargo/bin`
+is in your `$PATH` afterward, so that you can use the `rustup` and `cargo`
+commands.
 
 If you get errors along the lines of ``error: the `?' operator is not stable`` then
 you need to update your rust compiler. If you installed rust with rustup, this can

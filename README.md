@@ -10,7 +10,7 @@ Feedback encouraged! If you have a hard time with something, let me know about i
 
 ![](/demo.gif)
 
-## Problems
+## problems
 
 This is an attempt to address several cognitive defects.
 
@@ -20,7 +20,7 @@ This is an attempt to address several cognitive defects.
 1. execution of tasks lacks focus and motivation
 1. unclear how my efforts are impacting goals
 
-## Perspectives
+## perspectives
 
 * things we measure tend to improve
 * we should regularly reevaluate priorities
@@ -28,7 +28,7 @@ This is an attempt to address several cognitive defects.
 * individual sensemaking is well served by reflection, journaling, outlining, mind-mapping, etc...
 * don't impose specific workflows, but support many possibilities
 
-## Implementation
+## implementation
 
 * everything is a tree
 * you can collapse subtrees
@@ -41,7 +41,7 @@ This is an attempt to address several cognitive defects.
 * you can draw arrows between nodes for mind-mapping functionality
 * can shell out and execute the content of a node with C-k. if the node starts with txt: this will be opened in vim or an editor specified in the `EDITOR` env var.
 
-## What I Do (don't do what I do, discover what works for you)
+## what I do (don't do what I do, discover what works for you)
 * create a #task subtree
 * create different story subtrees for life goals, projects, etc... and tag them, #climbing #reading #client_143 etc...
 * set up graphs for feedback on different goals/projects. `#tagged=climbing #since=30d #plot=done`
@@ -58,7 +58,9 @@ This is an attempt to address several cognitive defects.
 `cargo install voidmap`
 
 if you don't have cargo, an easy way to get and manage
-it is [via rustup](https://www.rustup.rs/).
+it is [via rustup](https://www.rustup.rs/). Ensure that `~/.cargo/bin`
+is in your `$PATH` afterward, so that you can use the `rustup` and `cargo`
+commands.
 
 If you get errors along the lines of ``error: the `?' operator is not stable`` then
 you need to update your rust compiler. If you installed rust with rustup, this can
