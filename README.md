@@ -66,6 +66,9 @@ If you get errors along the lines of ``error: the `?' operator is not stable`` t
 you need to update your rust compiler. If you installed rust with rustup, this can
 be accomplished with `rustup update`.  Requires a recent stable rust compiler,
 `1.14.0` or higher is recommended. This can be checked with `rustc --version`.
+If you have installed rust with rustup, but you have an old version, there may be
+an older version previously installed on your system. Verify that `which cargo`
+outputs a path that belongs to your `.cargo/bin` directory.
 
 #### invocation
 
