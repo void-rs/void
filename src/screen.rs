@@ -694,12 +694,16 @@ impl Screen {
             let node = self.format_node(&raw_node);
             let width = 1 + (3 * depth as u16) + node.content.len() as u16;
             let mut ret = vec![width];
+            let hide_stricken = self.with_node(node_id, |n| n.hide_stricken).unwrap();
             if !node.collapsed {
                 for &child in &node.children {
-                    // ASSUMES node.children are all valid
-                    let mut child_widths = self.drawable_subtree_widths(child, depth + 1)
-                        .unwrap();
-                    ret.append(&mut child_widths);
+                    let stricken = self.with_node(child, |c| c.stricken).unwrap();
+                    if !(hide_stricken && stricken) {
+                        // ASSUMES node.children are all valid
+                        let mut child_widths = self.drawable_subtree_widths(child, depth + 1)
+                            .unwrap();
+                        ret.append(&mut child_widths);
+                    }
                 }
             }
             Some(ret)
