@@ -144,8 +144,7 @@ to his wonderful [iWasWhere](https://github.com/matthiasn/iWasWhere) system
 [how to solve it](https://en.wikipedia.org/wiki/How_to_Solve_It),
 [society of mind](http://www.acad.bg/ebook/ml/Society%20of%20Mind.pdf)
 * [various subtopics of operations research](https://en.wikipedia.org/wiki/Operations_research#Problems_addressed)
-* occult assumption confrontation: [undoing yourself with energized meditation]
-(http://heruka.altervista.org/X_files/Undoing%20Yourself%20With%20Energized%20Meditation%20And%20Other%20Devices%20-%20Christopher%20S%20Hyatt.pdf),
+* occult assumption confrontation: [undoing yourself with energized meditation](http://heruka.altervista.org/X_files/Undoing%20Yourself%20With%20Energized%20Meditation%20And%20Other%20Devices%20-%20Christopher%20S%20Hyatt.pdf),
 [prometheus rising](http://www.principiadiscordia.com/downloads/04%20Prometheus%20Rising.pdf)
 * military C2 theory, recognition/metacognition, OODA, etc... [A Review of Time Critical Decision Making Models and
 Human Cognitive Processes](https://pdfs.semanticscholar.org/2eb9/e12955dfafd4ab5d9337b416e31f5afca834.pdf)
