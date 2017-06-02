@@ -186,13 +186,12 @@ impl Screen {
                                 self.search_forward();
                             } else if c == '?' {
                                 self.search_backward();
-                            } else if c == 'h' {
-                                self.help();
                             } else {
                                 self.prefix_jump_to(c.to_string());
                             }
                         }
                     }
+                    Action::Help => self.help(),
                     Action::UnselectRet => return self.unselect().is_some(),
                     Action::ScrollUp => self.scroll_up(),
                     Action::ScrollDown => self.scroll_down(),

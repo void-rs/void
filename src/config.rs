@@ -45,6 +45,7 @@ pub enum Action {
     LowerSelected,
     Search,
     UndoDelete,
+    Help,
 }
 
 fn str_to_action(input: String) -> Option<Action> {
@@ -79,6 +80,7 @@ fn str_to_action(input: String) -> Option<Action> {
         "raise_selected" => Some(Action::RaiseSelected),
         "lower_selected" => Some(Action::LowerSelected),
         "search" => Some(Action::Search),
+        "help" => Some(Action::Help),
         _ => None,
     }
 }
@@ -154,6 +156,7 @@ impl Default for Config {
                 (Ctrl('d'), Action::LowerSelected),
                 (Ctrl('u'), Action::Search),
                 (Ctrl('z'), Action::UndoDelete),
+                (Ctrl('h'), Action::Help),
             ]
                 .into_iter()
                 .collect(),
