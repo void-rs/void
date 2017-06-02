@@ -1,4 +1,5 @@
 extern crate getopts;
+extern crate fs2;
 extern crate voidmap;
 
 #[macro_use]
@@ -6,6 +7,8 @@ extern crate log;
 
 use std::fs::OpenOptions;
 use std::io::Read;
+
+use fs2::FileExt;
 
 use voidmap::{Screen, Config, deserialize_screen, init_screen_log};
 
@@ -26,26 +29,28 @@ fn main() {
     let path = args.pop().or(default);
 
     // load from file if present
-    let saved_screen: Option<Screen> = path.clone()
-        .and_then(|path| {
-            let mut data = vec![];
-            let f = OpenOptions::new()
+    let mut data = vec![];
+    let mut f = path.clone()
+        .map(|path| {
+            OpenOptions::new()
                 .write(true)
                 .read(true)
                 .create(true)
-                .open(path);
-            match f {
-                Err(e) => {
-                    println!("error opening file: {}", e);
+                .open(path)
+                .unwrap_or_else(|e| {
                     print_usage(&*program);
-                }
-                Ok(mut f) => {
-                    f.read_to_end(&mut data).unwrap();
-                }
-            }
-            Some(data)
+                    panic!("error opening file: {}", e);
+                })
         })
-        .and_then(|data| deserialize_screen(data).ok());
+        .unwrap();
+
+    // exclusively lock the file
+    f.try_lock_exclusive()
+        .unwrap_or_else(|e| panic!("another void process is using this path already."));
+
+    f.read_to_end(&mut data).unwrap();
+
+    let saved_screen = deserialize_screen(data).ok();
 
     let mut screen = saved_screen.unwrap_or_else(Screen::default);
     screen.work_path = path.clone();
