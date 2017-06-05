@@ -263,10 +263,6 @@ impl Screen {
                 .unwrap();
             self.with_node_mut_no_meta(parent_id, |np| np.children.push(node_id)).unwrap();
             self.with_node_mut_no_meta(node_id, |s| s.parent_id = parent_id).unwrap();
-            if self.with_node(parent_id, |np| np.collapsed).unwrap() {
-                // if the destination is collapsed, deselect this node
-                self.unselect();
-            }
             self.grapheme_cache.remove(&node_id);
         }
     }

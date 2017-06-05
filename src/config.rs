@@ -156,7 +156,7 @@ impl Default for Config {
                 (Ctrl('d'), Action::LowerSelected),
                 (Ctrl('u'), Action::Search),
                 (Ctrl('z'), Action::UndoDelete),
-                (Ctrl('h'), Action::Help),
+                (Char('?'), Action::Help),
             ]
                 .into_iter()
                 .collect(),
