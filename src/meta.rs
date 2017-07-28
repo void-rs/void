@@ -19,6 +19,7 @@ pub struct Meta {
     pub ctime: u64,
     pub mtime: u64,
     pub finish_time: Option<u64>,
+    pub due: Option<u64>,
     pub gps: (f32, f32),
     pub tags: HashMap<String, String>,
 }
@@ -30,6 +31,7 @@ impl Default for Meta {
             ctime: now,
             mtime: now,
             finish_time: None,
+            due: None,
             gps: *LOC,
             tags: HashMap::new(),
         }
@@ -47,6 +49,10 @@ impl Meta {
 
     pub fn unfinish(&mut self) {
         self.finish_time = None;
+    }
+
+    pub fn at(&self) -> u64 {
+        self.finish_time.unwrap_or(self.mtime)
     }
 }
 

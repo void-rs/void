@@ -717,6 +717,9 @@ impl Screen {
 
     fn unselect(&mut self) -> Option<NodeID> {
         trace!("unselect()");
+        lazy_static! {
+            static ref RE_DATE: Regex = Regex::new(r"\[(\S+)\]").unwrap();
+        }
         if let Some(selected_id) = self.selected {
             // nuke node if it's empty and has no children
             let deletable = self.with_node_mut_no_meta(selected_id, |mut n| {
@@ -728,6 +731,23 @@ impl Screen {
                 self.delete_selected(false);
                 return None;
             }
+
+            self.with_node_mut_no_meta(selected_id, |mut n| {
+                // if parseable date, change date
+                if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).iter().nth(0) {
+                    if let Some(date) = dateparse(date.clone()) {
+                        n.content = RE_DATE.replace(&*n.content, "").trim_right().to_owned();
+                        if n.meta.finish_time.is_some() {
+                            n.meta.finish_time = Some(date);
+                        } else {
+                            let now_in_s = time::get_time().sec as u64;
+                            let future_date = now_in_s + (now_in_s - date);
+                            n.meta.due = Some(future_date);
+                        }
+                    }
+                }
+
+            });
         }
         self.selected.take()
     }

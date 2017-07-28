@@ -75,6 +75,11 @@ fn deserialize_meta(meta_pb: &pb::Meta) -> Meta {
         } else {
             None
         },
+        due: if meta_pb.has_due() {
+            Some(meta_pb.get_due())
+        } else {
+            None
+        },
         gps: (gps.get_lat(), gps.get_lon()),
         tags: meta_pb.get_tags()
             .iter()
