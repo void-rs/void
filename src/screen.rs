@@ -11,6 +11,7 @@ use termion::{terminal_size, color, cursor, style, clear};
 use termion::event::{Event, Key};
 use termion::input::{TermRead, MouseTerminal};
 use termion::raw::{IntoRawMode, RawTerminal};
+use termion::screen::AlternateScreen;
 
 use libc::getpid;
 use rand::{self, Rng};
@@ -42,7 +43,7 @@ pub struct Screen {
     drawn_at: HashMap<NodeID, Coords>,
     dragging_from: Option<Coords>,
     dragging_to: Option<Coords>,
-    stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
+    stdout: Option<MouseTerminal<RawTerminal<AlternateScreen<Stdout>>>>,
     lowest_drawn: u16,
     // where we start drawing from
     view_y: u16,
@@ -1556,7 +1557,7 @@ impl Screen {
 
     pub fn start_raw_mode(&mut self) {
         if self.stdout.is_none() {
-            self.stdout = Some(MouseTerminal::from(stdout().into_raw_mode().unwrap()));
+            self.stdout = Some(MouseTerminal::from(AlternateScreen::from(stdout()).into_raw_mode().unwrap()));
         }
     }
 
