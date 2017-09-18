@@ -1,6 +1,3 @@
-use libc::getpid;
-use rand::{self, Rng};
-use regex::Regex;
 use std;
 use std::cmp::{max, min};
 use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
@@ -14,6 +11,11 @@ use termion::{clear, color, cursor, style, terminal_size};
 use termion::event::{Event, Key};
 use termion::input::{MouseTerminal, TermRead};
 use termion::raw::{IntoRawMode, RawTerminal};
+use termion::screen::AlternateScreen;
+
+use libc::getpid;
+use rand::{self, Rng};
+use regex::Regex;
 use time;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -41,7 +43,7 @@ pub struct Screen {
     drawn_at: HashMap<NodeID, Coords>,
     dragging_from: Option<Coords>,
     dragging_to: Option<Coords>,
-    stdout: Option<MouseTerminal<RawTerminal<Stdout>>>,
+    stdout: Option<MouseTerminal<RawTerminal<AlternateScreen<Stdout>>>>,
     lowest_drawn: u16,
     // where we start drawing from
     view_y: u16,
@@ -1574,7 +1576,7 @@ impl Screen {
 
     pub fn start_raw_mode(&mut self) {
         if self.stdout.is_none() {
-            self.stdout = Some(MouseTerminal::from(stdout().into_raw_mode().unwrap()));
+            self.stdout = Some(MouseTerminal::from(AlternateScreen::from(stdout()).into_raw_mode().unwrap()));
         }
     }
 
