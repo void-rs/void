@@ -1,15 +1,15 @@
 use std;
 use std::cmp::{max, min};
-use std::collections::{BTreeMap, HashMap, BinaryHeap, HashSet};
+use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 use std::env;
 use std::fmt::Write as FmtWrite;
-use std::fs::{File, rename, remove_file, OpenOptions};
-use std::io::{self, Write, Read, Seek, SeekFrom, Stdout, stdout, stdin, Error, ErrorKind};
+use std::fs::{File, OpenOptions, remove_file, rename};
+use std::io::{self, Error, ErrorKind, Read, Seek, SeekFrom, Stdout, Write, stdin, stdout};
 use std::process;
 
-use termion::{terminal_size, color, cursor, style, clear};
+use termion::{clear, color, cursor, style, terminal_size};
 use termion::event::{Event, Key};
-use termion::input::{TermRead, MouseTerminal};
+use termion::input::{MouseTerminal, TermRead};
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
 
@@ -19,8 +19,8 @@ use regex::Regex;
 use time;
 use unicode_segmentation::UnicodeSegmentation;
 
-use {Config, Action, distances, cost, NodeID, Coords, Node, random_fg_color, serialization, Dir,
-     plot, Pack, logging, re_matches, TagDB, dateparse};
+use {Action, Config, Coords, Dir, Node, NodeID, Pack, TagDB, cost, dateparse, distances, logging,
+     plot, random_fg_color, re_matches, serialization};
 
 pub struct Screen {
     pub max_id: u64,
@@ -262,8 +262,10 @@ impl Screen {
             let old_parent = self.parent(node_id).unwrap();
             self.with_node_mut_no_meta(old_parent, |op| op.children.retain(|c| c != &node_id))
                 .unwrap();
-            self.with_node_mut_no_meta(parent_id, |np| np.children.push(node_id)).unwrap();
-            self.with_node_mut_no_meta(node_id, |s| s.parent_id = parent_id).unwrap();
+            self.with_node_mut_no_meta(parent_id, |np| np.children.push(node_id))
+                .unwrap();
+            self.with_node_mut_no_meta(node_id, |s| s.parent_id = parent_id)
+                .unwrap();
             self.grapheme_cache.remove(&node_id);
         }
     }
@@ -344,16 +346,17 @@ impl Screen {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"#prio=(\d+)").unwrap();
         }
-        self.with_node(node_id, |n| n.content.clone())
-            .and_then(|c| {
+        self.with_node(node_id, |n| n.content.clone()).and_then(
+            |c| {
                 if RE.is_match(&*c) {
-                    RE.captures_iter(&*c)
-                        .nth(0)
-                        .and_then(|n| n.at(1).unwrap().parse::<usize>().ok())
+                    RE.captures_iter(&*c).nth(0).and_then(|n| {
+                        n.at(1).unwrap().parse::<usize>().ok()
+                    })
                 } else {
                     None
                 }
-            })
+            },
+        )
     }
 
     fn single_key_prompt(&mut self, prompt: &str) -> io::Result<Key> {
@@ -363,11 +366,13 @@ impl Screen {
         }
 
         let stdin: Box<Read> = Box::new(stdin());
-        print!("{}{}{}{}",
-               cursor::Goto(0, self.dims.1),
-               style::Invert,
-               clear::AfterCursor,
-               prompt);
+        print!(
+            "{}{}{}{}",
+            cursor::Goto(0, self.dims.1),
+            style::Invert,
+            clear::AfterCursor,
+            prompt
+        );
         self.flush();
         let res = stdin.keys().nth(0).unwrap();
         debug!("read prompt: {:?}", res);
@@ -382,12 +387,14 @@ impl Screen {
         }
 
         let mut stdin: Box<Read> = Box::new(stdin());
-        print!("{}{}{}{}{}",
-               style::Invert,
-               cursor::Goto(0, self.dims.1),
-               clear::AfterCursor,
-               prompt,
-               cursor::Show);
+        print!(
+            "{}{}{}{}{}",
+            style::Invert,
+            cursor::Goto(0, self.dims.1),
+            clear::AfterCursor,
+            prompt,
+            cursor::Show
+        );
         self.cleanup();
         let res = stdin.read_line();
         self.start_raw_mode();
@@ -441,7 +448,8 @@ impl Screen {
             }
             candidates.sort();
             let choice = if let Some((_, last_choice)) = self.last_search.take() {
-                let idx = candidates.iter()
+                let idx = candidates
+                    .iter()
                     .position(|&e| e.1 == last_choice)
                     .map(|i| match direction {
                         SearchDirection::Forward => i + 1,
@@ -472,7 +480,8 @@ impl Screen {
         let chars = "arstqwfpgdbvcxzoienyuljhkm1234567890ARSTQWFPGDVCXZOIENYULJHBKM";
         // get visible nodes that contain prefix
         let nodes = self.find_visible_nodes(|node_id| {
-            self.with_node(node_id, |n| n.content.starts_with(&*prefix)).unwrap()
+            self.with_node(node_id, |n| n.content.starts_with(&*prefix))
+                .unwrap()
         });
 
         if nodes.is_empty() {
@@ -494,11 +503,7 @@ impl Screen {
         for (&c, &node_id) in &mapping {
             let &coords = self.drawn_at(node_id).unwrap();
             let (x, y) = self.internal_to_screen_xy(coords).unwrap();
-            print!("{}{}{}{}",
-                   cursor::Goto(x, y),
-                   style::Invert,
-                   c,
-                   style::Reset);
+            print!("{}{}{}{}", cursor::Goto(x, y), style::Invert, c, style::Reset);
         }
 
         // read the choice
@@ -617,7 +622,8 @@ impl Screen {
         remove_file(&path).unwrap();
 
         // set node's saved text
-        self.with_node_mut(node_id, |n| n.free_text = Some(new_text.clone())).unwrap();
+        self.with_node_mut(node_id, |n| n.free_text = Some(new_text.clone()))
+            .unwrap();
 
         // restore raw mode
         self.start_raw_mode();
@@ -634,8 +640,10 @@ impl Screen {
             elem: None,
         };
 
-        let nodes = self.with_node(self.drawing_root, |n| n.children.clone()).unwrap();
-        let mut node_dims: Vec<(NodeID, Coords)> = nodes.into_iter()
+        let nodes = self.with_node(self.drawing_root, |n| n.children.clone())
+            .unwrap();
+        let mut node_dims: Vec<(NodeID, Coords)> = nodes
+            .into_iter()
             .map(|n| (n, self.drawable_subtree_dims(n).unwrap()))
             .collect();
         node_dims.sort_by_key(|&(_, (_, y))| y);
@@ -646,15 +654,17 @@ impl Screen {
             // placement a little bit
             let padded_dims = (dims.0 + 2, dims.1 + 2);
             if let Some((x, y)) = real_estate.insert(padded_dims) {
-                self.with_node_mut_no_meta(node_id, |n| n.rooted_coords = (x, y)).unwrap();
+                self.with_node_mut_no_meta(node_id, |n| n.rooted_coords = (x, y))
+                    .unwrap();
             }
         }
     }
 
-    pub fn recursive_child_filter_map<F, B>(&self,
-                                            node_id: NodeID,
-                                            mut filter_map: &mut F)
-                                            -> Vec<B>
+    pub fn recursive_child_filter_map<F, B>(
+        &self,
+        node_id: NodeID,
+        mut filter_map: &mut F,
+    ) -> Vec<B>
         where F: FnMut(&Node) -> Option<B>
     {
         trace!("recursive_child_filter_map({}, F...)", node_id);
@@ -724,10 +734,9 @@ impl Screen {
         if let Some(selected_id) = self.selected {
             // nuke node if it's empty and has no children
             let deletable = self.with_node_mut_no_meta(selected_id, |mut n| {
-                    n.selected = false;
-                    n.content.is_empty() && n.children.is_empty()
-                })
-                .unwrap_or(false);
+                n.selected = false;
+                n.content.is_empty() && n.children.is_empty()
+            }).unwrap_or(false);
             if deletable {
                 self.delete_selected(false);
                 return None;
@@ -785,11 +794,10 @@ impl Screen {
             self.unselect();
             if let Some(&node_id) = self.lookup(coords) {
                 return self.with_node_mut_no_meta(node_id, |mut node| {
-                        trace!("selected node {} at {:?}", node_id, coords);
-                        node.selected = true;
-                        node_id
-                    })
-                    .and_then(|id| {
+                    trace!("selected node {} at {:?}", node_id, coords);
+                    node.selected = true;
+                    node_id
+                }).and_then(|id| {
                         self.selected = Some(node_id);
                         self.dragging_from = Some(coords);
                         self.dragging_to = Some(coords);
@@ -825,7 +833,9 @@ impl Screen {
         trace!("delete_recursive({})", node_id);
         if let Some(node) = self.nodes.remove(&node_id) {
             // clean up any arrow state
-            self.arrows.retain(|&(ref from, ref to)| from != &node_id && to != &node_id);
+            self.arrows.retain(|&(ref from, ref to)| {
+                from != &node_id && to != &node_id
+            });
 
             // remove from tag_db
             self.tag_db.remove(node_id);
@@ -869,12 +879,9 @@ impl Screen {
 
     fn recursive_restore(&mut self, node_id: NodeID) -> Result<(), ()> {
         if let Some(node) = self.undo_nodes.remove(&node_id) {
-            self.with_node_mut_no_meta(node.parent_id, |p| {
-                    if !p.children.contains(&node.id) {
-                        p.children.push(node.id);
-                    }
-                })
-                .unwrap();
+            self.with_node_mut_no_meta(node.parent_id, |p| if !p.children.contains(&node.id) {
+                p.children.push(node.id);
+            }).unwrap();
             let children = node.children.clone();
             self.nodes.insert(node_id, node);
             for &child in &children {
@@ -887,7 +894,8 @@ impl Screen {
     }
 
     pub fn should_auto_arrange(&self) -> bool {
-        self.with_node(self.drawing_root, |n| n.auto_arrange).unwrap()
+        self.with_node(self.drawing_root, |n| n.auto_arrange)
+            .unwrap()
     }
 
     fn toggle_auto_arrange(&mut self) {
@@ -941,7 +949,9 @@ impl Screen {
 
     fn create_child(&mut self) {
         if let Some(mut selected_id) = self.selected {
-            if self.with_node(selected_id, |n| n.content.is_empty()).unwrap() {
+            if self.with_node(selected_id, |n| n.content.is_empty())
+                .unwrap()
+            {
                 // we may have hit tab after enter by accident,
                 // so go forward a level by selecting the previous
                 // child of the current parent
@@ -953,13 +963,13 @@ impl Screen {
                 }
 
                 let above = self.with_node(parent_id, |parent| {
-                        let idx = parent.children
-                            .iter()
-                            .position(|&e| e == selected_id)
-                            .unwrap();
-                        parent.children[max(idx, 1) - 1]
-                    })
-                    .unwrap();
+                    let idx = parent
+                        .children
+                        .iter()
+                        .position(|&e| e == selected_id)
+                        .unwrap();
+                    parent.children[max(idx, 1) - 1]
+                }).unwrap();
 
                 self.select_node(above);
                 selected_id = above;
@@ -968,9 +978,10 @@ impl Screen {
 
             let node_id = self.new_node();
             self.with_node_mut_no_meta(node_id, |node| node.parent_id = selected_id);
-            let added = self.with_node_mut_no_meta(selected_id, |selected| {
-                selected.children.push(node_id);
-            });
+            let added = self.with_node_mut_no_meta(
+                selected_id,
+                |selected| { selected.children.push(node_id); },
+            );
             if added.is_some() {
                 self.select_node(node_id);
             } else {
@@ -981,7 +992,9 @@ impl Screen {
 
     fn create_sibling(&mut self) {
         if let Some(mut selected_id) = self.selected {
-            if self.with_node(selected_id, |n| n.content.is_empty()).unwrap() {
+            if self.with_node(selected_id, |n| n.content.is_empty())
+                .unwrap()
+            {
                 // we just hit enter twice, so go back a level
                 let sel_parent = self.parent(selected_id).unwrap();
                 if sel_parent == self.drawing_root {
@@ -1006,7 +1019,8 @@ impl Screen {
                     // it's possible that selected_id has been deleted by now
                     // due to it being empty when we entered the function
                     // (double enter for going up a level)
-                    let idx = parent.children
+                    let idx = parent
+                        .children
                         .iter()
                         .position(|&e| e == selected_id)
                         .unwrap_or(0);
@@ -1075,7 +1089,8 @@ impl Screen {
                 let truncated: String = chars.take(max(oldlen, 1) - 1).collect();
                 node.content = truncated;
                 node.content.clone()
-            }) {
+            })
+            {
                 self.grapheme_cache.remove(&selected_id);
                 self.tag_db.reindex(selected_id, content);
             }
@@ -1088,7 +1103,8 @@ impl Screen {
             if let Some(content) = self.with_node_mut(selected_id, |node| {
                 node.content.push(c);
                 node.content.clone()
-            }) {
+            })
+            {
                 self.grapheme_cache.remove(&selected_id);
                 self.tag_db.reindex(selected_id, content);
             }
@@ -1147,11 +1163,13 @@ impl Screen {
         let mut ptr = node_id;
         loop {
             let id = self.parent(ptr).ok_or("node has no parent")?;
-            trace!("anchor loop id: {} ptr: {} selected: {} root: {}",
-                   id,
-                   ptr,
-                   node_id,
-                   self.drawing_root);
+            trace!(
+                "anchor loop id: {} ptr: {} selected: {} root: {}",
+                id,
+                ptr,
+                node_id,
+                self.drawing_root
+            );
             if id != self.drawing_root {
                 ptr = id;
             } else {
@@ -1194,12 +1212,11 @@ impl Screen {
                 let ptr = self.anchor(selected_id).unwrap();
                 trace!("move selected 2");
                 self.with_node_mut_no_meta(ptr, |mut root| {
-                        let (ox, oy) = root.rooted_coords;
-                        let nx = max(ox as i16 + dx, 1) as u16;
-                        let ny = max(oy as i16 + dy, 1) as u16;
-                        root.rooted_coords = (nx, ny);
-                    })
-                    .unwrap();
+                    let (ox, oy) = root.rooted_coords;
+                    let nx = max(ox as i16 + dx, 1) as u16;
+                    let ny = max(oy as i16 + dy, 1) as u16;
+                    root.rooted_coords = (nx, ny);
+                }).unwrap();
             }
 
         } else {
@@ -1211,12 +1228,12 @@ impl Screen {
             self.with_node_mut_no_meta(old_parent, |op| op.children.retain(|c| c != &selected_id))
                 .unwrap();
             let root = self.drawing_root;
-            self.with_node_mut_no_meta(root, |dr| dr.children.push(selected_id)).unwrap();
-            self.with_node_mut_no_meta(selected_id, |s| {
-                    s.rooted_coords = to;
-                    s.parent_id = root;
-                })
+            self.with_node_mut_no_meta(root, |dr| dr.children.push(selected_id))
                 .unwrap();
+            self.with_node_mut_no_meta(selected_id, |s| {
+                s.rooted_coords = to;
+                s.parent_id = root;
+            }).unwrap();
         }
         trace!("leaving move_selected");
     }
@@ -1323,7 +1340,8 @@ impl Screen {
                 return;
             }
             self.with_node_mut_no_meta(parent_id, |mut parent| {
-                let idx = parent.children
+                let idx = parent
+                    .children
                     .iter()
                     .position(|&e| e == selected_id)
                     .unwrap();
@@ -1345,7 +1363,8 @@ impl Screen {
                 return;
             }
             self.with_node_mut_no_meta(parent_id, |mut parent| {
-                let idx = parent.children
+                let idx = parent
+                    .children
                     .iter()
                     .position(|&e| e == selected_id)
                     .unwrap();
@@ -1574,13 +1593,16 @@ impl Screen {
         if let Some(arrow) = self.selected.map(|to| (from, to)) {
             let (from, to) = arrow;
             if self.nodes.get(&from).is_some() && self.nodes.get(&to).is_some() {
-                let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
-                    if nl1 == &from && nl2 == &to {
+                let contains = self.arrows.iter().fold(
+                    false,
+                    |acc, &(ref nl1, ref nl2)| if nl1 == &from &&
+                        nl2 == &to
+                    {
                         true
                     } else {
                         false || acc
-                    }
-                });
+                    },
+                );
                 if contains {
                     self.arrows.retain(|e| e != &arrow);
                 } else {
@@ -1642,10 +1664,12 @@ impl Screen {
 
         // print logs
         if self.show_logs && self.dims.0 > 4 && self.dims.1 > 7 {
-            let mut sep = format!("{}{}logs{}",
-                                  cursor::Goto(0, self.dims.1 - 6),
-                                  style::Invert,
-                                  style::Reset);
+            let mut sep = format!(
+                "{}{}logs{}",
+                cursor::Goto(0, self.dims.1 - 6),
+                style::Invert,
+                style::Reset
+            );
             for _ in 0..self.dims.0 - 4 {
                 sep.push('█');
             }
@@ -1720,33 +1744,35 @@ impl Screen {
 
     fn draw_children_of_root(&mut self) {
         trace!("draw_children_of_root()");
-        let anchors = self.with_node(self.drawing_root, |n| n.children.clone()).unwrap();
-        trace!("drawing children of root({}): {:?}",
-               self.drawing_root,
-               anchors);
+        let anchors = self.with_node(self.drawing_root, |n| n.children.clone())
+            .unwrap();
+        trace!("drawing children of root({}): {:?}", self.drawing_root, anchors);
         for child_id in anchors {
             let child_coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
             let child_color = self.with_node(child_id, |n| n.color.clone()).unwrap();
             let hide_stricken = self.with_node(self.drawing_root, |n| n.hide_stricken)
                 .unwrap();
-            self.draw_node(child_id,
-                           "".to_owned(),
-                           child_coords,
-                           false,
-                           hide_stricken,
-                           child_color);
+            self.draw_node(
+                child_id,
+                "".to_owned(),
+                child_coords,
+                false,
+                hide_stricken,
+                child_color,
+            );
         }
     }
 
     // recursively draw node and children, returning how many have been drawn
-    fn draw_node(&mut self,
-                 node_id: NodeID,
-                 prefix: String,
-                 internal_coords: Coords,
-                 last: bool,
-                 hide_stricken: bool,
-                 color: String)
-                 -> usize {
+    fn draw_node(
+        &mut self,
+        node_id: NodeID,
+        prefix: String,
+        internal_coords: Coords,
+        last: bool,
+        hide_stricken: bool,
+        color: String,
+    ) -> usize {
         trace!("draw_node({})", node_id);
         let mut ephemeral = false;
         let raw_node = self.nodes
@@ -1805,12 +1831,14 @@ impl Screen {
             write!(&mut buf, "{}", node.content).unwrap();
 
             let max_width = (max(self.dims.0, 1 + x) - 1 - x) as usize;
-            let visible_graphemes = self.grapheme_cache.get(&node.id).cloned().unwrap_or_else(|| {
-                let visible = buf.replace(reset, "").replace(&*pre_meta, "");
-                let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
-                self.grapheme_cache.insert(node.id, vg.clone());
-                vg
-            });
+            let visible_graphemes = self.grapheme_cache.get(&node.id).cloned().unwrap_or_else(
+                || {
+                    let visible = buf.replace(reset, "").replace(&*pre_meta, "");
+                    let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
+                    self.grapheme_cache.insert(node.id, vg.clone());
+                    vg
+                },
+            );
             if visible_graphemes > max_width {
                 let buf_clone = buf.clone();
                 let chars = buf_clone.chars();
@@ -1823,12 +1851,14 @@ impl Screen {
             print!("{}{}", buf, style::Reset);
         }
 
-        let visible_graphemes = self.grapheme_cache.get(&node.id).cloned().unwrap_or_else(|| {
-            let visible = buf.replace(reset, "").replace(&*pre_meta, "");
-            let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
-            self.grapheme_cache.insert(node.id, vg.clone());
-            vg
-        });
+        let visible_graphemes = self.grapheme_cache.get(&node.id).cloned().unwrap_or_else(
+            || {
+                let visible = buf.replace(reset, "").replace(&*pre_meta, "");
+                let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
+                self.grapheme_cache.insert(node.id, vg.clone());
+                vg
+            },
+        );
 
         self.drawn_at.insert(node_id, internal_coords);
         for x in (internal_coords.0..(internal_coords.0 + visible_graphemes as u16)).rev() {
@@ -1852,17 +1882,17 @@ impl Screen {
         let mut drawn = 1;
         if !node.collapsed {
             let n_children = node.children.len();
-            for (n, &child) in node.children
-                .iter()
-                .enumerate() {
+            for (n, &child) in node.children.iter().enumerate() {
                 let last = n + 1 == n_children;
                 let child_coords = (internal_coords.0, internal_coords.1 + drawn as u16);
-                let child_drew = self.draw_node(child,
-                                                prefix.clone(),
-                                                child_coords,
-                                                last,
-                                                node.hide_stricken,
-                                                color.clone());
+                let child_drew = self.draw_node(
+                    child,
+                    prefix.clone(),
+                    child_coords,
+                    last,
+                    node.hide_stricken,
+                    color.clone(),
+                );
                 drawn += child_drew;
             }
         }
@@ -1870,8 +1900,10 @@ impl Screen {
     }
 
     fn draw_path(&self, internal_path: Vec<Coords>, start_dir: Dir, dest_dir: Dir) {
-        let path: Vec<_> =
-            internal_path.iter().filter_map(|&c| self.internal_to_screen_xy(c)).collect();
+        let path: Vec<_> = internal_path
+            .iter()
+            .filter_map(|&c| self.internal_to_screen_xy(c))
+            .collect();
         trace!("draw_path({:?}, {:?}, {:?})", path, start_dir, dest_dir);
         print!("{}", random_fg_color());
         if path.len() == 1 {
@@ -1935,11 +1967,13 @@ impl Screen {
         header_text.push_str(&*plot_line);
 
         if self.dims.0 > header_text.len() as u16 && self.dims.1 > 1 {
-            let mut sep = format!("{}{}{}{}",
-                                  cursor::Goto(0, 1),
-                                  style::Invert,
-                                  header_text,
-                                  style::Reset);
+            let mut sep = format!(
+                "{}{}{}{}",
+                cursor::Goto(0, 1),
+                style::Invert,
+                header_text,
+                style::Reset
+            );
             let text_len = header_text.chars().count();
             for _ in 0..(max(self.dims.0 as usize, text_len) - text_len) {
                 sep.push('█');
@@ -1958,17 +1992,17 @@ impl Screen {
         }
         let (s1, s2) = startbounds.unwrap();
         let init = (self.path(s2, to), (Dir::R, Dir::R));
-        let paths = vec![
-            (self.path(s1, to), (Dir::L, Dir::R)),
-        ];
-        paths.into_iter()
-            .fold(init, |(spath, sdirs), (path, dirs)| {
-                if path.len() < spath.len() {
-                    (path, dirs)
-                } else {
-                    (spath, sdirs)
-                }
-            })
+        let paths = vec![(self.path(s1, to), (Dir::L, Dir::R))];
+        paths.into_iter().fold(
+            init,
+            |(spath, sdirs), (path, dirs)| if path.len() <
+                spath.len()
+            {
+                (path, dirs)
+            } else {
+                (spath, sdirs)
+            },
+        )
     }
 
     fn path_between_nodes(&self, start: NodeID, to: NodeID) -> (Vec<Coords>, (Dir, Dir)) {
@@ -1988,28 +2022,34 @@ impl Screen {
             (self.path(s2, t1), (Dir::R, Dir::L)),
             (self.path(s1, t1), (Dir::L, Dir::L)),
         ];
-        paths.into_iter()
-            .fold(init, |(spath, sdirs), (path, dirs)| {
-                if path.len() < spath.len() {
-                    (path, dirs)
-                } else {
-                    (spath, sdirs)
-                }
-            })
+        paths.into_iter().fold(
+            init,
+            |(spath, sdirs), (path, dirs)| if path.len() <
+                spath.len()
+            {
+                (path, dirs)
+            } else {
+                (spath, sdirs)
+            },
+        )
     }
 
     fn path(&self, start: Coords, dest: Coords) -> Vec<Coords> {
-        trace!("path({:?}, {:?} (screen size: {} x {})",
-               start,
-               dest,
-               self.dims.0,
-               self.dims.1);
+        trace!(
+            "path({:?}, {:?} (screen size: {} x {})",
+            start,
+            dest,
+            self.dims.0,
+            self.dims.1
+        );
         fn perms(c: Coords) -> Vec<Coords> {
-            vec![(c.0 + 1, c.1),
-                 (max(c.0, 1) - 1, c.1),
-                 (c.0, c.1 + 1),
-                 // we ensure Y is >= 1, since Goto will panic otherwise
-                 (c.0, max(c.1, 2) - 1)]
+            vec![
+                (c.0 + 1, c.1),
+                (max(c.0, 1) - 1, c.1),
+                (c.0, c.1 + 1),
+                // we ensure Y is >= 1, since Goto will panic otherwise
+                (c.0, max(c.1, 2) - 1),
+            ]
         }
         // maps from location to previous location
         let mut visited: HashMap<Coords, Coords> = HashMap::new();
@@ -2020,8 +2060,9 @@ impl Screen {
         while cursor != dest {
             for neighbor in perms(cursor) {
                 if (!(neighbor.0 >= self.dims.0) && !(neighbor.1 >= self.dims.1 + self.view_y) &&
-                    !self.occupied(neighbor) || neighbor == dest) &&
-                   !visited.contains_key(&neighbor) {
+                        !self.occupied(neighbor) || neighbor == dest) &&
+                    !visited.contains_key(&neighbor)
+                {
                     let c = std::u16::MAX - cost(neighbor, dest);
                     pq.push((c, neighbor));
                     visited.insert(neighbor, cursor);
@@ -2054,15 +2095,10 @@ impl Screen {
         let now = time::get_time().sec as u64;
         let day_in_sec = 60 * 60 * 24;
         let last_week = now - (day_in_sec * 7);
-        let tasks_finished_in_last_week = self.recursive_child_filter_map(0,
-                                                                          &mut |n: &Node| {
+        let tasks_finished_in_last_week = self.recursive_child_filter_map(0, &mut |n: &Node| {
             let f = n.meta.finish_time;
             if let Some(t) = f {
-                if t > last_week {
-                    Some(t)
-                } else {
-                    None
-                }
+                if t > last_week { Some(t) } else { None }
             } else {
                 None
             }
@@ -2123,7 +2159,8 @@ impl Screen {
                 tagged_children = Some(children.into_iter().collect());
             }
         }
-        let queried_nodes = tagged_children.map(|tc| tc.into_iter().collect())
+        let queried_nodes = tagged_children
+            .map(|tc| tc.into_iter().collect())
             .unwrap_or(vec![]);
 
         let mut since_opt = None;
@@ -2144,13 +2181,17 @@ impl Screen {
                 }
             }
         }
-        if let Some(since) = re_matches::<String>(&RE_SINCE, &*node.content).iter().nth(0) {
+        if let Some(since) = re_matches::<String>(&RE_SINCE, &*node.content).iter().nth(
+            0,
+        )
+        {
             since_opt = dateparse(since.clone());
             if let Some(cutoff) = since_opt {
                 let mut new = vec![];
                 for &c in &node.children {
-                    let valid = self.with_node(c, |c| c.meta.mtime >= cutoff)
-                        .unwrap_or(false);
+                    let valid = self.with_node(c, |c| c.meta.mtime >= cutoff).unwrap_or(
+                        false,
+                    );
                     if valid {
                         new.push(c);
                     }
@@ -2158,13 +2199,17 @@ impl Screen {
                 node.children = new;
             }
         }
-        if let Some(until) = re_matches::<String>(&RE_UNTIL, &*node.content).iter().nth(0) {
+        if let Some(until) = re_matches::<String>(&RE_UNTIL, &*node.content).iter().nth(
+            0,
+        )
+        {
             until_opt = dateparse(until.clone());
             if let Some(cutoff) = until_opt {
                 let mut new = vec![];
                 for &c in &node.children {
-                    let valid = self.with_node(c, |c| c.meta.mtime <= cutoff)
-                        .unwrap_or(false);
+                    let valid = self.with_node(c, |c| c.meta.mtime <= cutoff).unwrap_or(
+                        false,
+                    );
                     if valid {
                         new.push(c);
                     }
@@ -2196,32 +2241,30 @@ impl Screen {
         node
     }
 
-    fn plot(&self,
-            queried_nodes: Vec<NodeID>,
-            kind: PlotType,
-            buckets: usize,
-            since: u64,
-            until: u64)
-            -> String {
+    fn plot(
+        &self,
+        queried_nodes: Vec<NodeID>,
+        kind: PlotType,
+        buckets: usize,
+        since: u64,
+        until: u64,
+    ) -> String {
         let mut nodes = vec![];
         for &c in &queried_nodes {
-            let mut new = self.recursive_child_filter_map(c,
-                                                          &mut |n: &Node| {
-                match kind {
-                    PlotType::Done => {
-                        if let Some(ft) = n.meta.finish_time {
-                            if ft >= since {
-                                return Some(ft as i64);
-                            }
+            let mut new = self.recursive_child_filter_map(c, &mut |n: &Node| match kind {
+                PlotType::Done => {
+                    if let Some(ft) = n.meta.finish_time {
+                        if ft >= since {
+                            return Some(ft as i64);
                         }
-                        None
                     }
-                    PlotType::New => {
-                        if n.meta.ctime >= since {
-                            Some(n.meta.ctime as i64)
-                        } else {
-                            None
-                        }
+                    None
+                }
+                PlotType::New => {
+                    if n.meta.ctime >= since {
+                        Some(n.meta.ctime as i64)
+                    } else {
+                        None
                     }
                 }
             });
