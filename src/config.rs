@@ -80,6 +80,7 @@ fn str_to_action(input: String) -> Option<Action> {
         "raise_selected" => Some(Action::RaiseSelected),
         "lower_selected" => Some(Action::LowerSelected),
         "search" => Some(Action::Search),
+        "undo_delete" => Some(Action::UndoDelete),
         "help" => Some(Action::Help),
         _ => None,
     }
