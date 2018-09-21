@@ -51,6 +51,10 @@ impl Node {
         self.stricken = !self.stricken;
     }
 
+    pub fn recolor(&mut self) {
+        self.color = random_fg_color();
+    }
+
     pub fn toggle_hide_stricken(&mut self) {
         self.hide_stricken = !self.hide_stricken;
     }

@@ -224,6 +224,7 @@ impl Screen {
                     Action::LowerSelected => self.lower_selected(),
                     Action::Search => self.search_forward(),
                     Action::UndoDelete => self.undo_delete(),
+                    Action::Recolor => self.recolor_selected(),
                 }
             }
             None => warn!("received unknown input"),
@@ -1515,6 +1516,13 @@ impl Screen {
             self.move_selected(from, to);
         }
         trace!("leaving release");
+    }
+
+    fn recolor_selected(&mut self) {
+        match self.selected {
+            Some(node_id) => self.with_node_mut(node_id, |n| n.recolor()),
+            _ => None
+        };
     }
 
     pub fn assert_node_consistency(&self) {

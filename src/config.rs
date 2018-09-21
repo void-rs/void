@@ -46,6 +46,7 @@ pub enum Action {
     Search,
     UndoDelete,
     Help,
+    Recolor,
 }
 
 fn str_to_action(input: String) -> Option<Action> {
