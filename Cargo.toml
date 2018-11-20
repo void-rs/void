@@ -16,6 +16,7 @@ path = "test/test.rs"
 default = []
 
 [dependencies]
+dirs="1.0"
 termion = "1.1"
 log = "0.3"
 lazy_static = "0.2"

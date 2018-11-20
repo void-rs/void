@@ -1,5 +1,6 @@
 extern crate getopts;
 extern crate fs2;
+extern crate dirs;
 extern crate voidmap;
 
 #[macro_use]
@@ -22,7 +23,7 @@ fn main() {
 
     let mut args: Vec<String> = std::env::args().collect();
     let program = args.remove(0);
-    let default = std::env::home_dir().and_then(|mut h| {
+    let default = dirs::home_dir().and_then(|mut h| {
         h.push(".void.db");
         h.to_str().map(|p| p.to_owned())
     });
