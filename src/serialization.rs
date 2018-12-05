@@ -53,6 +53,7 @@ fn serialize_node(node: &Node) -> pb::Node {
     node_pb.set_children(node.children.clone());
     node_pb.set_collapsed(node.collapsed);
     node_pb.set_stricken(node.stricken);
+    node_pb.set_selected(node.selected);
     node_pb.set_hide_stricken(node.hide_stricken);
     node_pb.set_parent_id(node.parent_id);
     node_pb.set_x(node.rooted_coords.0 as u32);
