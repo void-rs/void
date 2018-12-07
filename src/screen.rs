@@ -39,8 +39,8 @@ pub struct Screen {
     pub dims: Coords,
     pub is_test: bool,
 
+    pub drawing_root: NodeID,
     // non-pub members are ephemeral
-    drawing_root: NodeID,
     show_logs: bool,
     selected: Option<NodeID>,
     cut: Option<NodeID>,
@@ -52,9 +52,9 @@ pub struct Screen {
     stdout: Option<MouseTerminal<RawTerminal<AlternateScreen<Stdout>>>>,
     lowest_drawn: u16,
     // where we start drawing from
-    view_y: u16,
+    pub view_y: u16,
     // when we drill down then pop up, we should go to last focus, stored here
-    focus_stack: Vec<(NodeID, NodeID, u16)>,
+    pub focus_stack: Vec<(NodeID, NodeID, u16)>,
     last_search: Option<(String, NodeID)>,
 
     // undo info
@@ -1842,7 +1842,7 @@ impl Screen {
                     .unwrap_or_else(|| {
                         let visible = buf.replace(reset, "").replace(&*pre_meta, "");
                         let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
-                        self.grapheme_cache.insert(node.id, vg.clone());
+                        self.grapheme_cache.insert(node.id, vg);
                         vg
                     });
             if visible_graphemes > max_width {

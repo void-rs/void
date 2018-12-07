@@ -5,6 +5,9 @@ use crate::{pb, random_fg_color, Meta, Node, Screen};
 pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
     let mut screen_pb = pb::Screen::default();
     screen_pb.set_max_id(screen.max_id);
+    screen_pb.set_drawing_root(screen.drawing_root);
+    screen_pb.set_view_y(u32::from(screen.view_y));
+
     let nodes = screen
         .nodes
         .iter()
@@ -22,6 +25,20 @@ pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
         })
         .collect();
     screen_pb.set_arrows(protobuf::RepeatedField::from_vec(arrows));
+
+    let stack = screen
+        .focus_stack
+        .iter()
+        .map(|&(root, selected, view_y)| {
+            let mut entry_pb = pb::ViewStackEntry::default();
+            entry_pb.set_drawing_id(root);
+            entry_pb.set_selected_id(selected);
+            entry_pb.set_view_y(u32::from(view_y));
+            entry_pb
+        })
+        .collect();
+    screen_pb.set_view_stack(protobuf::RepeatedField::from_vec(stack));
+
     screen_pb.write_to_bytes().unwrap()
 }
 
@@ -117,6 +134,9 @@ pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufErr
     let screen_pb: pb::Screen = protobuf::parse_from_bytes(&*data)?;
     let mut screen = Screen::default();
     screen.max_id = screen_pb.get_max_id();
+    screen.drawing_root = screen_pb.get_drawing_root();
+    screen.view_y = screen_pb.get_view_y() as u16;
+
     screen.nodes = screen_pb
         .get_nodes()
         .iter()
@@ -136,5 +156,17 @@ pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufErr
             (from, to)
         })
         .collect();
+
+    screen.focus_stack = screen_pb
+        .get_view_stack()
+        .iter()
+        .map(|entry_pb| {
+            let root_id = entry_pb.get_drawing_id();
+            let selected_id = entry_pb.get_selected_id();
+            let view_y = entry_pb.get_view_y();
+            (root_id, selected_id, view_y as u16)
+        })
+        .collect();
+
     Ok(screen)
 }
