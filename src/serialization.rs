@@ -1,17 +1,22 @@
 use protobuf::{self, Message};
 
-use {Screen, Node, Meta, random_fg_color};
 use pb;
+use random_fg_color;
+use Meta;
+use Node;
+use Screen;
 
 pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
     let mut screen_pb = pb::Screen::default();
     screen_pb.set_max_id(screen.max_id);
-    let nodes = screen.nodes
+    let nodes = screen
+        .nodes
         .iter()
         .map(|(_, node)| serialize_node(node))
         .collect();
     screen_pb.set_nodes(protobuf::RepeatedField::from_vec(nodes));
-    let arrows = screen.arrows
+    let arrows = screen
+        .arrows
         .iter()
         .map(|&(from, to)| {
             let mut arrow_pb = pb::Arrow::default();
@@ -81,7 +86,8 @@ fn deserialize_meta(meta_pb: &pb::Meta) -> Meta {
             None
         },
         gps: (gps.get_lat(), gps.get_lon()),
-        tags: meta_pb.get_tags()
+        tags: meta_pb
+            .get_tags()
             .iter()
             .map(|tag| (tag.get_key().to_owned(), tag.get_value().to_owned()))
             .collect(),
@@ -114,7 +120,8 @@ pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufErr
     let screen_pb: pb::Screen = protobuf::parse_from_bytes(&*data)?;
     let mut screen = Screen::default();
     screen.max_id = screen_pb.get_max_id();
-    screen.nodes = screen_pb.get_nodes()
+    screen.nodes = screen_pb
+        .get_nodes()
         .iter()
         .map(|node_pb| {
             let node = deserialize_node(node_pb);
@@ -123,7 +130,8 @@ pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufErr
         })
         .collect();
 
-    screen.arrows = screen_pb.get_arrows()
+    screen.arrows = screen_pb
+        .get_arrows()
         .iter()
         .map(|arrow_pb| {
             let from = arrow_pb.get_from_node();

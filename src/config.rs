@@ -1,12 +1,12 @@
-use std::fmt;
-use std::env;
-use std::fs::File;
-use std::collections::HashMap;
-use std::io::{self, Error, ErrorKind, Read};
+use std::{
+    collections::HashMap,
+    env, fmt,
+    fs::File,
+    io::{self, Error, ErrorKind, Read},
+};
 
 use regex::Regex;
 use termion::event::{Event, Key, MouseEvent};
-
 
 #[derive(Debug, Copy, Clone, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Action {
@@ -105,13 +105,12 @@ fn str_to_key(input: String) -> Option<Key> {
         "backspace" => Some(Backspace),
         "enter" => Some(Char('\n')),
         "tab" => Some(Char('\t')),
-        other => {
-            RE.captures_iter(other)
-                .nth(0)
-                .and_then(|n| n.at(1))
-                .and_then(|r| r.chars().nth(0))
-                .map(|c| Ctrl(c))
-        }
+        other => RE
+            .captures_iter(other)
+            .nth(0)
+            .and_then(|n| n.at(1))
+            .and_then(|r| r.chars().nth(0))
+            .map(|c| Ctrl(c)),
     }
 }
 
@@ -159,8 +158,8 @@ impl Default for Config {
                 (Ctrl('z'), Action::UndoDelete),
                 (Ctrl('?'), Action::Help),
             ]
-                .into_iter()
-                .collect(),
+            .into_iter()
+            .collect(),
         }
     }
 }
@@ -218,8 +217,7 @@ impl Config {
     }
 
     pub fn map(&self, e: Event) -> Option<Action> {
-        use termion::event::Key::*;
-        use termion::event::MouseButton;
+        use termion::event::{Key::*, MouseButton};
         match e {
             Event::Key(Char(c)) => {
                 if let Some(action) = self.config.get(&Char(c)).cloned() {
@@ -227,24 +225,24 @@ impl Config {
                 } else {
                     Some(Action::Char(c))
                 }
-            }
+            },
             Event::Mouse(MouseEvent::Press(MouseButton::Right, x, y)) => {
                 Some(Action::RightClick(x, y))
-            }
+            },
             Event::Mouse(MouseEvent::Press(_, x, y)) => Some(Action::LeftClick(x, y)),
             Event::Mouse(MouseEvent::Release(x, y)) => Some(Action::Release(x, y)),
-            Event::Mouse(MouseEvent::Hold(_, _)) => None,
+            Event::Mouse(MouseEvent::Hold(..)) => None,
             Event::Key(other) => {
                 let lookup = self.config.get(&other).cloned();
                 if lookup.is_none() {
                     warn!("Weird event {:?}", other);
                 }
                 lookup
-            }
+            },
             other => {
                 warn!("Unknown event received: {:?}", other);
                 None
-            }
+            },
         }
     }
 }

@@ -1,17 +1,18 @@
-use std::env;
-use std::io::{self, Read};
-use std::collections::HashMap;
-use std::num;
+use std::{
+    collections::HashMap,
+    env,
+    io::{self, Read},
+    num,
+};
 
-use hyper;
-use hyper::client::Client;
+use hyper::{self, client::Client};
 use time;
 
 lazy_static! {
     static ref LOC: (f32, f32) = gps_query().unwrap_or_else(|e| {
-                error!("failed to get gps: {:?}", e);
-                (0.0, 0.0)
-            });
+        error!("failed to get gps: {:?}", e);
+        (0.0, 0.0)
+    });
 }
 
 #[derive(Debug, Clone)]
@@ -39,21 +40,13 @@ impl Default for Meta {
 }
 
 impl Meta {
-    pub fn bump_mtime(&mut self) {
-        self.mtime = time::get_time().sec as u64;
-    }
+    pub fn bump_mtime(&mut self) { self.mtime = time::get_time().sec as u64; }
 
-    pub fn finish(&mut self) {
-        self.finish_time = Some(time::get_time().sec as u64);
-    }
+    pub fn finish(&mut self) { self.finish_time = Some(time::get_time().sec as u64); }
 
-    pub fn unfinish(&mut self) {
-        self.finish_time = None;
-    }
+    pub fn unfinish(&mut self) { self.finish_time = None; }
 
-    pub fn at(&self) -> u64 {
-        self.finish_time.unwrap_or(self.mtime)
-    }
+    pub fn at(&self) -> u64 { self.finish_time.unwrap_or(self.mtime) }
 }
 
 fn gps_query() -> Result<(f32, f32), GpsError> {
@@ -87,20 +80,13 @@ enum GpsError {
 }
 
 impl From<hyper::Error> for GpsError {
-    fn from(err: hyper::Error) -> GpsError {
-        GpsError::Hyper(err)
-    }
+    fn from(err: hyper::Error) -> GpsError { GpsError::Hyper(err) }
 }
 
-
 impl From<io::Error> for GpsError {
-    fn from(err: io::Error) -> GpsError {
-        GpsError::Io(err)
-    }
+    fn from(err: io::Error) -> GpsError { GpsError::Io(err) }
 }
 
 impl From<num::ParseFloatError> for GpsError {
-    fn from(err: num::ParseFloatError) -> GpsError {
-        GpsError::Parse(err)
-    }
+    fn from(err: num::ParseFloatError) -> GpsError { GpsError::Parse(err) }
 }
