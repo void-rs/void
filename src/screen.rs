@@ -763,7 +763,7 @@ impl Screen {
 
             self.with_node_mut_no_meta(selected_id, |mut n| {
                 // if parseable date, change date
-                if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).iter().nth(0) {
+                if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).get(0) {
                     if let Some(date) = dateparse(date.clone()) {
                         n.content = RE_DATE.replace(&*n.content, "").trim_right().to_owned();
                         if n.meta.finish_time.is_some() {
@@ -1478,7 +1478,7 @@ impl Screen {
             }
         }
         node_costs.sort_by_key(|&(_, ref cost)| cost.clone());
-        node_costs.iter().nth(0).map(|&(&id, _)| id)
+        node_costs.get(0).map(|&(&id, _)| id)
     }
 
     fn select_node(&mut self, node_id: NodeID) {
@@ -2214,10 +2214,7 @@ impl Screen {
                 }
             }
         }
-        if let Some(since) = re_matches::<String>(&RE_SINCE, &*node.content)
-            .iter()
-            .nth(0)
-        {
+        if let Some(since) = re_matches::<String>(&RE_SINCE, &*node.content).get(0) {
             since_opt = dateparse(since.clone());
             if let Some(cutoff) = since_opt {
                 let mut new = vec![];
@@ -2232,10 +2229,7 @@ impl Screen {
                 node.children = new;
             }
         }
-        if let Some(until) = re_matches::<String>(&RE_UNTIL, &*node.content)
-            .iter()
-            .nth(0)
-        {
+        if let Some(until) = re_matches::<String>(&RE_UNTIL, &*node.content).get(0) {
             until_opt = dateparse(until.clone());
             if let Some(cutoff) = until_opt {
                 let mut new = vec![];
@@ -2253,13 +2247,13 @@ impl Screen {
         if RE_REV.is_match(&*node.content) {
             node.children = node.children.into_iter().rev().collect();
         }
-        if let Some(&limit) = re_matches(&RE_LIMIT, &*node.content).iter().nth(0) {
+        if let Some(&limit) = re_matches(&RE_LIMIT, &*node.content).get(0) {
             node.children.truncate(limit);
         }
 
         let re_n = re_matches::<usize>(&RE_N, &*node.content);
-        let n_opt = re_n.iter().nth(0);
-        if let Some(plot) = re_matches::<String>(&RE_PLOT, &*node.content).iter().nth(0) {
+        let n_opt = re_n.get(0);
+        if let Some(plot) = re_matches::<String>(&RE_PLOT, &*node.content).get(0) {
             let now = time::get_time().sec as u64;
             let buckets = n_opt.cloned().unwrap_or(7);
             let since = since_opt.unwrap_or_else(|| now - 60 * 60 * 24 * 7);
