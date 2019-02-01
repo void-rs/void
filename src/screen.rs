@@ -758,7 +758,7 @@ impl Screen {
                 // if parseable date, change date
                 if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).get(0) {
                     if let Some(date) = dateparse(date.clone()) {
-                        n.content = RE_DATE.replace(&*n.content, "").trim_right().to_owned();
+                        n.content = RE_DATE.replace(&*n.content, "").trim_end().to_owned();
                         if n.meta.finish_time.is_some() {
                             n.meta.finish_time = Some(date);
                         } else {
