@@ -194,18 +194,17 @@ impl Screen {
                     let internal_coords = self.screen_to_internal_xy((x, y));
                     self.release(internal_coords)
                 },
+                Action::Char(c) if self.selected.is_some() => {
+                    self.append(c);
+                },
+                Action::Char(c) if c == '/' => {
+                    self.search_forward();
+                },
+                Action::Char(c) if c == '?' => {
+                    self.search_backward();
+                },
                 Action::Char(c) => {
-                    if self.selected.is_some() {
-                        self.append(c);
-                    } else {
-                        if c == '/' {
-                            self.search_forward();
-                        } else if c == '?' {
-                            self.search_backward();
-                        } else {
-                            self.prefix_jump_to(c.to_string());
-                        }
-                    }
+                    self.prefix_jump_to(c.to_string());
                 },
                 Action::Help => self.help(),
                 Action::UnselectRet => return self.unselect().is_some(),
