@@ -38,7 +38,7 @@ impl TagDB {
             let mut nodes = self
                 .tag_to_nodes
                 .remove(tag)
-                .unwrap_or_else(|| HashSet::new());
+                .unwrap_or_else(HashSet::new);
 
             nodes.insert(node);
 
@@ -56,7 +56,7 @@ impl TagDB {
                 let mut nodes = self
                     .tag_to_nodes
                     .remove(tag)
-                    .unwrap_or_else(|| HashSet::new());
+                    .unwrap_or_else(HashSet::new);
 
                 nodes.insert(node);
 

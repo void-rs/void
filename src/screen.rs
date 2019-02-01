@@ -1167,7 +1167,7 @@ impl Screen {
     }
 
     fn anchor(&self, node_id: NodeID) -> Result<NodeID, String> {
-        if let None = self.drawn_at(node_id) {
+        if self.drawn_at(node_id).is_none() {
             return Err("node not drawn on this screen".to_owned());
         }
 
