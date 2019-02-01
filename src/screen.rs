@@ -134,7 +134,7 @@ impl Default for Screen {
 impl Screen {
     fn help(&mut self) {
         self.cleanup();
-        print!("{}{}{}\n", cursor::Goto(1, 1), clear::All, self.config);
+        println!("{}{}{}", cursor::Goto(1, 1), clear::All, self.config);
         self.start_raw_mode();
         if let Err(_) = self.single_key_prompt("") {
             // likely here because of testing
