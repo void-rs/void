@@ -2187,7 +2187,7 @@ impl Screen {
         }
         let queried_nodes = tagged_children
             .map(|tc| tc.into_iter().collect())
-            .unwrap_or(vec![]);
+            .unwrap_or_else(|| vec![]);
 
         let mut since_opt = None;
         let mut until_opt = None;
