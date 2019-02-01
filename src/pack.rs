@@ -1,6 +1,6 @@
 use std::cmp;
 
-use Coords;
+use crate::Coords;
 
 #[derive(Debug)]
 pub struct Pack {

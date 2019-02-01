@@ -6,6 +6,7 @@ description = "terminal mind-map + task tracker + tsdb"
 license = "GPL-3.0"
 homepage = "https://github.com/spacejam/void"
 keywords = ["cli", "commandline", "visualization", "ui"]
+edition = "2018"
 
 [[test]]
 

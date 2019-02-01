@@ -24,22 +24,22 @@ use regex::Regex;
 use time;
 use unicode_segmentation::UnicodeSegmentation;
 
-use cost;
-use dateparse;
-use distances;
-use logging;
-use plot;
-use random_fg_color;
-use re_matches;
-use serialization;
-use Action;
-use Config;
-use Coords;
-use Dir;
-use Node;
-use NodeID;
-use Pack;
-use TagDB;
+use crate::cost;
+use crate::dateparse;
+use crate::distances;
+use crate::logging;
+use crate::plot;
+use crate::random_fg_color;
+use crate::re_matches;
+use crate::serialization;
+use crate::Action;
+use crate::Config;
+use crate::Coords;
+use crate::Dir;
+use crate::Node;
+use crate::NodeID;
+use crate::Pack;
+use crate::TagDB;
 
 pub struct Screen {
     pub max_id: u64,

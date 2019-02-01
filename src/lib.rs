@@ -1,5 +1,14 @@
 #![cfg_attr(feature = "clippy", feature(plugin))]
 #![cfg_attr(feature = "clippy", plugin(clippy))]
+#![feature(
+    box_patterns,
+    infer_static_outlives_requirements,
+    nll,
+    slice_patterns,
+    test,
+    trivial_bounds,
+    type_ascription
+)]
 
 #[macro_use]
 extern crate lazy_static;
@@ -37,7 +46,7 @@ pub use colors::random_fg_color;
 pub use config::{Action, Config};
 pub use dateparse::dateparse;
 pub use logging::init_screen_log;
-pub use meta::Meta;
+pub use crate::meta::Meta;
 pub use node::Node;
 pub use pack::Pack;
 pub use screen::Screen;
