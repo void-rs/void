@@ -28,7 +28,7 @@ where T: Into<i64> {
     let start = start.into();
     let end = end.into();
     let nums: Vec<_> = nums_in.into_iter().map(|n| n.into()).collect();
-    let step = (end.clone() - start.clone()) / bars as i64;
+    let step = (end - start) / bars as i64;
     let mut counts = vec![0; bars];
 
     if step == 0 || nums.is_empty() || end <= start {

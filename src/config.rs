@@ -110,7 +110,7 @@ fn str_to_key(input: String) -> Option<Key> {
             .nth(0)
             .and_then(|n| n.at(1))
             .and_then(|r| r.chars().nth(0))
-            .map(|c| Ctrl(c)),
+            .map(Ctrl),
     }
 }
 
@@ -169,7 +169,7 @@ impl fmt::Display for Config {
         writeln!(f, "Configured Hotkeys:").unwrap();
         for (key, action) in &self.config {
             // writeln!(f, "    {:?}: {:?}", action, key).unwrap();
-            write!(f, "    {:?}: {:?}\n", action, key).unwrap();
+            writeln!(f, "    {:?}: {:?}", action, key).unwrap();
         }
         Ok(())
     }
@@ -192,7 +192,7 @@ impl Config {
         for (line_number, line) in buf.lines().enumerate() {
             let e = format!("invalid config at line {}: {}", line_number, line);
 
-            let parts: Vec<_> = line.split(":").map(|p| p.trim()).collect();
+            let parts: Vec<_> = line.split(':').map(|p| p.trim()).collect();
             if parts.len() != 2 {
                 error!("{}", e);
                 return Err(Error::new(ErrorKind::Other, e));

@@ -24,22 +24,10 @@ use regex::Regex;
 use time;
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::cost;
-use crate::dateparse;
-use crate::distances;
-use crate::logging;
-use crate::plot;
-use crate::random_fg_color;
-use crate::re_matches;
-use crate::serialization;
-use crate::Action;
-use crate::Config;
-use crate::Coords;
-use crate::Dir;
-use crate::Node;
-use crate::NodeID;
-use crate::Pack;
-use crate::TagDB;
+use crate::{
+    cost, dateparse, distances, logging, plot, random_fg_color, re_matches, serialization, Action,
+    Config, Coords, Dir, Node, NodeID, Pack, TagDB,
+};
 
 pub struct Screen {
     pub max_id: u64,
@@ -136,7 +124,7 @@ impl Screen {
         self.cleanup();
         println!("{}{}{}", cursor::Goto(1, 1), clear::All, self.config);
         self.start_raw_mode();
-        if let Err(_) = self.single_key_prompt("") {
+        if self.single_key_prompt("").is_err() {
             // likely here because of testing
         }
     }
@@ -145,12 +133,6 @@ impl Screen {
         self.max_id += 1;
         assert!(self.max_id < self.ephemeral_max_id);
         self.max_id
-    }
-
-    fn new_ephemeral_node_id(&mut self) -> NodeID {
-        self.ephemeral_max_id -= 1;
-        assert!(self.max_id < self.ephemeral_max_id);
-        self.ephemeral_max_id
     }
 
     fn new_node(&mut self) -> NodeID {
@@ -438,7 +420,7 @@ impl Screen {
             SearchDirection::Backward => format!("search backwards{}:", last_search_str),
         };
         if let Ok(Some(mut query)) = self.prompt(&*prompt) {
-            if query == "".to_owned() {
+            if query == "" {
                 if let Some((ref last, _)) = self.last_search {
                     query = last.clone();
                 } else {
@@ -576,7 +558,7 @@ impl Screen {
                     error!("command failed to start: {}", content);
                 }
             } else {
-                let shell = env::var("SHELL").unwrap_or("bash".to_owned());
+                let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_owned());
                 let cmd = process::Command::new(shell)
                     .arg("-c")
                     .arg(content.to_owned())
@@ -592,14 +574,14 @@ impl Screen {
         let text = self
             .with_node(node_id, |n| n.free_text.clone())
             .unwrap()
-            .unwrap_or("".to_owned());
+            .unwrap_or_else(|| "".to_owned());
 
         let pid = unsafe { getpid() };
         let path = format!("/tmp/void_buffer.tmp.{}", pid);
         debug!("trying to open {} in editor", path);
 
         // remove old tmp file
-        if let Ok(_) = remove_file(&path) {
+        if remove_file(&path).is_ok() {
             warn!("removed stale tmp file");
         }
 
@@ -616,8 +598,8 @@ impl Screen {
         self.cleanup();
 
         // open text editor
-        let ed = env::var("EDITOR").unwrap_or("vim".to_owned());
-        process::Command::new(ed)
+        let editor = env::var("EDITOR").unwrap_or_else(|_| "vim".to_owned());
+        process::Command::new(editor)
             .arg(&path)
             .spawn()
             .expect("failed to open text editor")
@@ -1483,8 +1465,12 @@ impl Screen {
             // selection) being empty.  To account for this, we need
             // to only set self.selected to node_id if the with_node
             // succeeds.
-            self.with_node_mut_no_meta(node_id, |node| node.selected = true)
-                .map(|_| self.selected = Some(node_id));
+            if self
+                .with_node_mut_no_meta(node_id, |node| node.selected = true)
+                .is_some()
+            {
+                self.selected = Some(node_id);
+            }
         }
     }
 
@@ -1569,7 +1555,7 @@ impl Screen {
         if let Some(ref path) = self.work_path {
             let mut tmp_path = path.clone();
             tmp_path.push_str(".tmp");
-            if let Ok(_) = remove_file(&tmp_path) {
+            if remove_file(&tmp_path).is_ok() {
                 warn!("removed stale tmp file");
             }
             let mut f = File::create(&tmp_path).unwrap();
@@ -1609,7 +1595,7 @@ impl Screen {
                     if nl1 == &from && nl2 == &to {
                         true
                     } else {
-                        false || acc
+                        acc
                     }
                 });
                 if contains {
@@ -1734,12 +1720,12 @@ impl Screen {
 
     fn draw_scrollbar(&self) {
         let bar_height = max(self.dims.1, 1) - 1;
-        let normalized_lowest = max(self.lowest_drawn, 1) as f64;
-        let fraction_viewable = self.dims.1 as f64 / normalized_lowest;
-        let shade_start_fraction = self.view_y as f64 / normalized_lowest;
+        let normalized_lowest = f64::from(max(self.lowest_drawn, 1));
+        let fraction_viewable = f64::from(self.dims.1) / normalized_lowest;
+        let shade_start_fraction = f64::from(self.view_y) / normalized_lowest;
 
-        let shade_amount = (bar_height as f64 * fraction_viewable) as usize;
-        let shade_start = (bar_height as f64 * shade_start_fraction) as usize;
+        let shade_amount = (f64::from(bar_height) * fraction_viewable) as usize;
+        let shade_start = (f64::from(bar_height) * shade_start_fraction) as usize;
         let shade_end = shade_start + shade_amount;
 
         for (i, y) in (2..bar_height + 2).enumerate() {
@@ -1855,7 +1841,7 @@ impl Screen {
                     .unwrap_or_else(|| {
                         let visible = buf.replace(reset, "").replace(&*pre_meta, "");
                         let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
-                        self.grapheme_cache.insert(node.id, vg.clone());
+                        self.grapheme_cache.insert(node.id, vg);
                         vg
                     });
             if visible_graphemes > max_width {
@@ -1877,7 +1863,7 @@ impl Screen {
             .unwrap_or_else(|| {
                 let visible = buf.replace(reset, "").replace(&*pre_meta, "");
                 let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
-                self.grapheme_cache.insert(node.id, vg.clone());
+                self.grapheme_cache.insert(node.id, vg);
                 vg
             });
 
@@ -2079,8 +2065,8 @@ impl Screen {
         trace!("starting draw");
         while cursor != dest {
             for neighbor in perms(cursor) {
-                if (!(neighbor.0 >= self.dims.0)
-                    && !(neighbor.1 >= self.dims.1 + self.view_y)
+                if (neighbor.0 < self.dims.0
+                    && neighbor.1 < self.dims.1 + self.view_y
                     && !self.occupied(neighbor)
                     || neighbor == dest)
                     && !visited.contains_key(&neighbor)
