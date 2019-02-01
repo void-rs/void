@@ -47,7 +47,7 @@ fn main() {
 
     // exclusively lock the file
     f.try_lock_exclusive()
-        .unwrap_or_else(|e| panic!("another void process is using this path already."));
+        .unwrap_or_else(|_| panic!("another void process is using this path already."));
 
     f.read_to_end(&mut data).unwrap();
 

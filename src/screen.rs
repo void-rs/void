@@ -663,7 +663,7 @@ impl Screen {
     pub fn recursive_child_filter_map<F, B>(
         &self,
         node_id: NodeID,
-        mut filter_map: &mut F,
+        filter_map: &mut F,
     ) -> Vec<B>
         where F: FnMut(&Node) -> Option<B>
     {
@@ -733,7 +733,7 @@ impl Screen {
         }
         if let Some(selected_id) = self.selected {
             // nuke node if it's empty and has no children
-            let deletable = self.with_node_mut_no_meta(selected_id, |mut n| {
+            let deletable = self.with_node_mut_no_meta(selected_id, |n| {
                 n.selected = false;
                 n.content.is_empty() && n.children.is_empty()
             }).unwrap_or(false);
@@ -742,7 +742,7 @@ impl Screen {
                 return None;
             }
 
-            self.with_node_mut_no_meta(selected_id, |mut n| {
+            self.with_node_mut_no_meta(selected_id, |n| {
                 // if parseable date, change date
                 if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).iter().nth(0) {
                     if let Some(date) = dateparse(date.clone()) {
@@ -793,7 +793,7 @@ impl Screen {
         if self.dragging_from.is_none() {
             self.unselect();
             if let Some(&node_id) = self.lookup(coords) {
-                return self.with_node_mut_no_meta(node_id, |mut node| {
+                return self.with_node_mut_no_meta(node_id, |node| {
                     trace!("selected node {} at {:?}", node_id, coords);
                     node.selected = true;
                     node_id
@@ -900,7 +900,7 @@ impl Screen {
 
     fn toggle_auto_arrange(&mut self) {
         let root = self.drawing_root;
-        self.with_node_mut_no_meta(root, |mut n| n.auto_arrange = !n.auto_arrange)
+        self.with_node_mut_no_meta(root, |n| n.auto_arrange = !n.auto_arrange)
             .unwrap()
     }
 
@@ -1211,7 +1211,7 @@ impl Screen {
                 // than create a cycle, we move the subtree.
                 let ptr = self.anchor(selected_id).unwrap();
                 trace!("move selected 2");
-                self.with_node_mut_no_meta(ptr, |mut root| {
+                self.with_node_mut_no_meta(ptr, |root| {
                     let (ox, oy) = root.rooted_coords;
                     let nx = max(ox as i16 + dx, 1) as u16;
                     let ny = max(oy as i16 + dy, 1) as u16;
@@ -1339,7 +1339,7 @@ impl Screen {
                 // principle: don't modify things that are above the visible scope
                 return;
             }
-            self.with_node_mut_no_meta(parent_id, |mut parent| {
+            self.with_node_mut_no_meta(parent_id, |parent| {
                 let idx = parent
                     .children
                     .iter()
@@ -1362,7 +1362,7 @@ impl Screen {
                 // principle: don't modify things that are above the visible scope
                 return;
             }
-            self.with_node_mut_no_meta(parent_id, |mut parent| {
+            self.with_node_mut_no_meta(parent_id, |parent| {
                 let idx = parent
                     .children
                     .iter()
@@ -1470,7 +1470,7 @@ impl Screen {
             // selection) being empty.  To account for this, we need
             // to only set self.selected to node_id if the with_node
             // succeeds.
-            self.with_node_mut_no_meta(node_id, |mut node| node.selected = true)
+            self.with_node_mut_no_meta(node_id, |node| node.selected = true)
                 .map(|_| self.selected = Some(node_id));
         }
     }
