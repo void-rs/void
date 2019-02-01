@@ -2104,9 +2104,9 @@ impl Screen {
         let mut back_cursor = dest;
         let mut path = vec![dest];
         while back_cursor != start {
-            let prev = visited.get(&back_cursor).unwrap();
-            path.push(*prev);
-            back_cursor = *prev;
+            let prev = visited[&back_cursor];
+            path.push(prev);
+            back_cursor = prev;
         }
         path.reverse();
         trace!("leaving path()");
@@ -2142,10 +2142,10 @@ impl Screen {
         }
         let today_normalized = now / day_in_sec * day_in_sec;
         let counts_clone = counts.clone();
-        let finished_today = counts_clone.get(&today_normalized).unwrap();
+        let finished_today = counts_clone[&today_normalized];
         let week_line: Vec<i64> = counts.into_iter().map(|(_, v)| v).collect();
         let plot = plot::plot_sparkline(week_line);
-        (plot, *finished_today as usize)
+        (plot, finished_today as usize)
     }
 
     fn format_node(&mut self, raw_node: &Node) -> Node {
