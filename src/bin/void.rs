@@ -3,7 +3,6 @@ extern crate fs2;
 extern crate getopts;
 extern crate voidmap;
 
-#[macro_use]
 extern crate log;
 
 use std::{fs::OpenOptions, io::Read};
