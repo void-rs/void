@@ -179,10 +179,10 @@ impl Screen {
                 Action::Char(c) if self.selected.is_some() => {
                     self.append(c);
                 },
-                Action::Char(c) if c == '/' => {
+                Action::Char('/') => {
                     self.search_forward();
                 },
-                Action::Char(c) if c == '?' => {
+                Action::Char('?') => {
                     self.search_backward();
                 },
                 Action::Char(c) => {
