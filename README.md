@@ -106,70 +106,72 @@ to specify a different storage file:
 
 #### keys
 
-+-----------------+-----------------+-----------------+-----------------+
-| feature         | control         | feature         | control         |
-+=================+=================+=================+=================+
-| new node        | C-n             | new node (child | Tab             |
-|                 |                 | of selected)    |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| new node        | click blank     | new node        | Enter           |
-| (freeform)      | space           | (sibling of     |                 |
-|                 |                 | selected)       |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| delete selected | Delete          | move subtree    | drag parent to  |
-| node and its    |                 |                 | new location    |
-| children        |                 |                 |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| undo delete     | C-z             | auto arrange    | C-p             |
-|                 |                 | nodes in view   |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| mark selected   | C-a             | drill-down into | C-w             |
-| node complete   |                 | selected node   |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| pop up          | C-q             | hide children   | C-t             |
-| selection       |                 | of selected     |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| open text       | C-k             | prefix-jump     | type a letter   |
-| editor for      |                 | with no         |                 |
-| `txt:...` node  |                 | selection       |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| prefix-jump     | C-f             | hide completed  | C-h             |
-| with other      |                 | children of     |                 |
-| selected        |                 | node            |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| select arrow    | C-r             | erase arrow     | select start,   |
-| start/destinati |                 |                 | C-r, then       |
-| on              |                 |                 | destination,    |
-|                 |                 |                 | C-r             |
-+-----------------+-----------------+-----------------+-----------------+
-| show debug log  | C-l             | reparent node   | drag node to    |
-|                 |                 |                 | new parent      |
-+-----------------+-----------------+-----------------+-----------------+
-| scroll up       | PgUp            | scroll down     | PgDn            |
-+-----------------+-----------------+-----------------+-----------------+
-| select up       | Up              | select down     | Down            |
-+-----------------+-----------------+-----------------+-----------------+
-| select subtree  | Left            | select subtree  | Right           |
-| to left         |                 | to right        |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| de-select node  | Esc             | save            | C-x             |
-+-----------------+-----------------+-----------------+-----------------+
-| exit            | Esc with        | exit            | C-c             |
-|                 | nothing         |                 |                 |
-|                 | selected        |                 |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| jump to         | C-v             | cut / paste     | C-y             |
-| weighted next   |                 | node            |                 |
-| task            |                 |                 |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| move selected   | C-g             | move selected   | C-d             |
-| up in child     |                 | down in child   |                 |
-| list            |                 | list            |                 |
-+-----------------+-----------------+-----------------+-----------------+
-| search for node | C-u             |                 |                 |
-| at or below     |                 |                 |                 |
-| current view    |                 |                 |                 |
-+-----------------+-----------------+-----------------+-----------------+
++-------------------+------------+---------------+-------------------+
+| feature           | control    | feature       | control           |
++===================+============+===============+===================+
+| new node          | C-n        | new node      | Tab               |
+|                   |            | (child of     |                   |
+|                   |            | selected)     |                   |
++-------------------+------------+---------------+-------------------+
+| new node          | click      | new node      | Enter             |
+| (freeform)        | blank      | (sibling of   |                   |
+|                   | space      | selected)     |                   |
++-------------------+------------+---------------+-------------------+
+| delete selected   | Delete     | move subtree  | drag parent to    |
+| node and its      |            |               | new location      |
+| children          |            |               |                   |
++-------------------+------------+---------------+-------------------+
+| undo delete       | C-z        | auto arrange  | C-p               |
+|                   |            | nodes in view |                   |
++-------------------+------------+---------------+-------------------+
+| mark selected     | C-a        | drill-down    | C-w               |
+| node complete     |            | into selected |                   |
+|                   |            | node          |                   |
++-------------------+------------+---------------+-------------------+
+| pop up selection  | C-q        | hide children | C-t               |
+|                   |            | of selected   |                   |
++-------------------+------------+---------------+-------------------+
+| open text editor  | C-k        | prefix-jump   | type a letter     |
+| for `txt:...`     |            | with no       |                   |
+| node              |            | selection     |                   |
++-------------------+------------+---------------+-------------------+
+| prefix-jump with  | C-f        | hide          | C-h               |
+| other selected    |            | completed     |                   |
+|                   |            | children of   |                   |
+|                   |            | node          |                   |
++-------------------+------------+---------------+-------------------+
+| select arrow      | C-r        | erase arrow   | select start,     |
+| start/destinati   |            |               | C-r, then         |
+| on                |            |               | destination, C-r  |
++-------------------+------------+---------------+-------------------+
+| show debug log    | C-l        | reparent node | drag node to new  |
+|                   |            |               | parent            |
++-------------------+------------+---------------+-------------------+
+| scroll up         | PgUp       | scroll down   | PgDn              |
++-------------------+------------+---------------+-------------------+
+| select up         | Up         | select down   | Down              |
++-------------------+------------+---------------+-------------------+
+| select subtree to | Left       | select        | Right             |
+| left              |            | subtree to    |                   |
+|                   |            | right         |                   |
++-------------------+------------+---------------+-------------------+
+| de-select node    | Esc        | save          | C-x               |
++-------------------+------------+---------------+-------------------+
+| exit              | Esc with   | exit          | C-c               |
+|                   | nothing    |               |                   |
+|                   | selected   |               |                   |
++-------------------+------------+---------------+-------------------+
+| jump to weighted  | C-v        | cut / paste   | C-y               |
+| next task         |            | node          |                   |
++-------------------+------------+---------------+-------------------+
+| move selected up  | C-g        | move selected | C-d               |
+| in child list     |            | down in child |                   |
+|                   |            | list          |                   |
++-------------------+------------+---------------+-------------------+
+| search for node   | C-u        |               |                   |
+| at or below       |            |               |                   |
+| current view      |            |               |                   |
++-------------------+------------+---------------+-------------------+
 
 can be customized by setting the `KEYFILE` env var to the path of a [key
 configuration file](default.keys)

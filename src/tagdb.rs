@@ -2,8 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use regex::Regex;
 
-use crate::re_matches;
-use crate::NodeID;
+use crate::{re_matches, NodeID};
 
 pub struct TagDB {
     node_to_tags: HashMap<NodeID, HashSet<String>>,
@@ -35,10 +34,7 @@ impl TagDB {
                 tags.insert(tag.clone());
             }
 
-            let mut nodes = self
-                .tag_to_nodes
-                .remove(tag)
-                .unwrap_or_else(HashSet::new);
+            let mut nodes = self.tag_to_nodes.remove(tag).unwrap_or_else(HashSet::new);
 
             nodes.insert(node);
 
@@ -53,10 +49,7 @@ impl TagDB {
                     tags.insert(tag.clone());
                 }
 
-                let mut nodes = self
-                    .tag_to_nodes
-                    .remove(tag)
-                    .unwrap_or_else(HashSet::new);
+                let mut nodes = self.tag_to_nodes.remove(tag).unwrap_or_else(HashSet::new);
 
                 nodes.insert(node);
 

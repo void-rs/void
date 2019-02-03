@@ -42,11 +42,11 @@ use std::{cmp, collections::HashMap};
 
 use regex::Regex;
 
+pub use crate::meta::Meta;
 pub use colors::random_fg_color;
 pub use config::{Action, Config};
 pub use dateparse::dateparse;
 pub use logging::init_screen_log;
-pub use crate::meta::Meta;
 pub use node::Node;
 pub use pack::Pack;
 pub use screen::Screen;
