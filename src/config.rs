@@ -193,7 +193,7 @@ impl Config {
         for (line_number, line) in buf.lines().enumerate() {
             let e = format!("invalid config at line {}: {}", line_number, line);
 
-            let parts: Vec<_> = line.split(":").map(|p| p.trim()).collect();
+            let parts: Vec<_> = line.splitn(2, ':').map(|p| p.trim()).collect();
             if parts.len() != 2 {
                 error!("{}", e);
                 return Err(Error::new(ErrorKind::Other, e));
