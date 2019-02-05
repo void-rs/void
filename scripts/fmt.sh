@@ -7,4 +7,4 @@ ROOT="$(git rev-parse --show-toplevel)"
 # Format markdown
 find "$ROOT" -type f  -name '*.md' -exec pandoc -f "$input_fmt"  -t "$output_fmt"  --wrap=auto --atx-headers -o {} {} \;
 # Format Rust
-cargo fmt --all
+cargo +nightly fmt --all
