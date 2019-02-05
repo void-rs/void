@@ -5,9 +5,7 @@ use std::{
     io::{self, Error, ErrorKind, Read},
 };
 
-use regex::Regex;
 use termion::event::{Event, Key, MouseEvent};
-
 
 #[derive(Debug, Copy, Clone, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Action {
@@ -87,32 +85,33 @@ fn to_action(input: String) -> Option<Action> {
     }
 }
 
-    use termion::event::Key::*;
-fn to_key(input: String) -> Option<Key> {
+// Alt and Control must be specified with capital letters C- and A-
+fn to_key(raw_key: String) -> Option<Key> {
+    use termion::event::Key::{self, Alt, Char, Ctrl};
 
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"C-(.)").unwrap();
-    }
+    fn extract_key(raw_key: &str, idx: usize) -> char { raw_key.chars().nth(idx).unwrap() }
 
-    match &*input {
-        "esc" => Some(Esc),
-        "pgup" => Some(PageUp),
-        "pgdn" => Some(PageDown),
-        "del" => Some(Delete),
-        "up" => Some(Up),
-        "down" => Some(Down),
-        "left" => Some(Left),
-        "right" => Some(Right),
-        "backspace" => Some(Backspace),
+    match &*raw_key {
+        "esc" => Some(Key::Esc),
+        "pgup" => Some(Key::PageUp),
+        "pgdn" => Some(Key::PageDown),
+        "del" => Some(Key::Delete),
+        "backspace" => Some(Key::Backspace),
+        "up" => Some(Key::Up),
+        "down" => Some(Key::Down),
+        "left" => Some(Key::Left),
+        "right" => Some(Key::Right),
+
+        "space" => Some(Char(' ')),
         "enter" => Some(Char('\n')),
         "tab" => Some(Char('\t')),
-        other => {
-            RE.captures_iter(other)
-                .nth(0)
-                .and_then(|n| n.at(1))
-                .and_then(|r| r.chars().nth(0))
-                .map(|c| Ctrl(c))
-        }
+
+        key if key.len() == 1 => Some(Char(extract_key(key, 0))),
+
+        key if key.starts_with("A-") => Some(Alt(extract_key(key, 2))),
+        key if key.starts_with("C-") => Some(Ctrl(extract_key(key, 2))),
+
+        _ => None,
     }
 }
 
