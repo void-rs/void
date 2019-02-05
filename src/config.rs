@@ -192,6 +192,8 @@ impl Config {
         let mut config = Config::default();
         for (line_number, line) in buf.lines().enumerate() {
             let e = format!("invalid config at line {}: {}", line_number, line);
+            // zero based indexing inappropriate here
+            line_num += 1;
 
             let parts: Vec<_> = line.splitn(2, ':').map(|p| p.trim()).collect();
             if parts.len() != 2 {
