@@ -49,7 +49,7 @@ pub enum Action {
     Help,
 }
 
-fn str_to_action(input: String) -> Option<Action> {
+fn to_action(input: String) -> Option<Action> {
     match &*input {
         "unselect" => Some(Action::UnselectRet),
         "scroll_up" => Some(Action::ScrollUp),
@@ -87,8 +87,8 @@ fn str_to_action(input: String) -> Option<Action> {
     }
 }
 
-fn str_to_key(input: String) -> Option<Key> {
     use termion::event::Key::*;
+fn to_key(input: String) -> Option<Key> {
 
     lazy_static! {
         static ref RE: Regex = Regex::new(r"C-(.)").unwrap();
@@ -179,13 +179,13 @@ impl fmt::Display for Config {
 impl Config {
     pub fn maybe_parsed_from_env() -> io::Result<Config> {
         if let Ok(p) = env::var("KEYFILE") {
-            Config::parse_file(p)
+            Config::parse_keyfile(p)
         } else {
             Ok(Config::default())
         }
     }
 
-    pub fn parse_file(p: String) -> io::Result<Config> {
+    pub fn parse_keyfile(p: String) -> io::Result<Config> {
         let mut buf = String::new();
         let mut f = File::open(p)?;
         f.read_to_string(&mut buf)?;
@@ -206,8 +206,8 @@ impl Config {
 
             let (raw_action, raw_key) = (parts[0], parts[1]);
 
-            let key_opt = str_to_key(raw_key.to_owned());
-            let action_opt = str_to_action(raw_action.to_owned());
+            let key_opt = to_key(raw_key.to_owned());
+            let action_opt = to_action(raw_action.to_owned());
 
             if key_opt.is_none() || action_opt.is_none() {
                 error!("{}", e);
