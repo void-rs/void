@@ -1,11 +1,10 @@
-use std::os::unix::io::AsRawFd;
-use std::fs::OpenOptions;
+use std::{fs::OpenOptions, os::unix::io::AsRawFd};
 
 use libc::dup2;
 
-use rand;
-use termion::event::{Key, Event, MouseEvent, MouseButton};
 use quickcheck::{Arbitrary, Gen, QuickCheck, StdGen};
+use rand;
+use termion::event::{Event, Key, MouseButton, MouseEvent};
 
 use voidmap::*;
 

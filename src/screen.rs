@@ -1,17 +1,22 @@
-use std;
-use std::cmp::{max, min};
-use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
-use std::env;
-use std::fmt::Write as FmtWrite;
-use std::fs::{File, OpenOptions, remove_file, rename};
-use std::io::{self, Error, ErrorKind, Read, Seek, SeekFrom, Stdout, Write, stdin, stdout};
-use std::process;
+use std::{
+    self,
+    cmp::{max, min},
+    collections::{BTreeMap, BinaryHeap, HashMap, HashSet},
+    env,
+    fmt::Write as FmtWrite,
+    fs::{remove_file, rename, File, OpenOptions},
+    io::{self, stdin, stdout, Error, ErrorKind, Read, Seek, SeekFrom, Stdout, Write},
+    process,
+};
 
-use termion::{clear, color, cursor, style, terminal_size};
-use termion::event::{Event, Key};
-use termion::input::{MouseTerminal, TermRead};
-use termion::raw::{IntoRawMode, RawTerminal};
-use termion::screen::AlternateScreen;
+use termion::{
+    clear, color, cursor,
+    event::{Event, Key},
+    input::{MouseTerminal, TermRead},
+    raw::{IntoRawMode, RawTerminal},
+    screen::AlternateScreen,
+    style, terminal_size,
+};
 
 use libc::getpid;
 use rand::{self, Rng};
@@ -19,8 +24,10 @@ use regex::Regex;
 use time;
 use unicode_segmentation::UnicodeSegmentation;
 
-use {Action, Config, Coords, Dir, Node, NodeID, Pack, TagDB, cost, dateparse, distances, logging,
-     plot, random_fg_color, re_matches, serialization};
+use crate::{
+    cost, dateparse, distances, logging, plot, random_fg_color, re_matches, serialization, Action,
+    Config, Coords, Dir, Node, NodeID, Pack, TagDB,
+};
 
 pub struct Screen {
     pub max_id: u64,

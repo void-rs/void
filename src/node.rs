@@ -1,6 +1,6 @@
-use {Coords, NodeID, Meta, random_fg_color};
+use crate::{random_fg_color, Coords, Meta, NodeID};
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone)]
 pub struct Node {
     pub rooted_coords: Coords,
     pub parent_id: NodeID,

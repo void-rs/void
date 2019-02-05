@@ -1,10 +1,11 @@
-use std::env;
-use std::io::{self, Read};
-use std::collections::HashMap;
-use std::num;
+use std::{
+    collections::HashMap,
+    env,
+    io::{self, Read},
+    num,
+};
 
-use hyper;
-use hyper::client::Client;
+use hyper::{self, client::Client};
 use time;
 
 lazy_static! {

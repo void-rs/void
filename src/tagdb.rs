@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use regex::Regex;
 
-use {NodeID, re_matches};
+use crate::{re_matches, NodeID};
 
 pub struct TagDB {
     node_to_tags: HashMap<NodeID, HashSet<String>>,

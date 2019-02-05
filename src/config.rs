@@ -1,8 +1,9 @@
-use std::fmt;
-use std::env;
-use std::fs::File;
-use std::collections::HashMap;
-use std::io::{self, Error, ErrorKind, Read};
+use std::{
+    collections::HashMap,
+    env, fmt,
+    fs::File,
+    io::{self, Error, ErrorKind, Read},
+};
 
 use regex::Regex;
 use termion::event::{Event, Key, MouseEvent};
@@ -218,8 +219,7 @@ impl Config {
     }
 
     pub fn map(&self, e: Event) -> Option<Action> {
-        use termion::event::Key::*;
-        use termion::event::MouseButton;
+        use termion::event::{Key::*, MouseButton};
         match e {
             Event::Key(Char(c)) => {
                 if let Some(action) = self.config.get(&Char(c)).cloned() {

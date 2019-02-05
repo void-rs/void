@@ -1,49 +1,48 @@
-#![cfg_attr(feature="clippy", feature(plugin))]
-#![cfg_attr(feature="clippy", plugin(clippy))]
+#![cfg_attr(feature = "clippy", feature(plugin))]
+#![cfg_attr(feature = "clippy", plugin(clippy))]
 
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
 
-extern crate unicode_segmentation;
-extern crate regex;
-extern crate time;
 extern crate hyper;
-extern crate rand;
-extern crate termion;
-extern crate protobuf;
 extern crate libc;
+extern crate protobuf;
+extern crate rand;
+extern crate regex;
+extern crate termion;
+extern crate time;
+extern crate unicode_segmentation;
 
+mod colors;
+mod config;
+mod dateparse;
 mod logging;
-mod serialization;
-mod screen;
+mod meta;
 mod node;
 mod pack;
-mod meta;
-mod plot;
-mod task;
-mod colors;
 mod pb;
-mod config;
+mod plot;
+mod screen;
+mod serialization;
 mod tagdb;
-mod dateparse;
+mod task;
 
-use std::cmp;
-use std::collections::HashMap;
+use std::{cmp, collections::HashMap};
 
 use regex::Regex;
 
-pub use serialization::{serialize_screen, deserialize_screen};
-pub use screen::Screen;
-pub use node::Node;
-pub use pack::Pack;
-pub use colors::random_fg_color;
-pub use config::{Config, Action};
-pub use logging::init_screen_log;
-pub use meta::Meta;
-pub use tagdb::TagDB;
-pub use dateparse::dateparse;
+pub use crate::meta::Meta;
+pub use crate::colors::random_fg_color;
+pub use crate::config::{Action, Config};
+pub use crate::dateparse::dateparse;
+pub use crate::logging::init_screen_log;
+pub use crate::node::Node;
+pub use crate::pack::Pack;
+pub use crate::screen::Screen;
+pub use crate::serialization::{deserialize_screen, serialize_screen};
+pub use crate::tagdb::TagDB;
 
 pub type Coords = (u16, u16);
 pub type NodeID = u64;

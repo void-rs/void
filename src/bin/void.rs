@@ -1,17 +1,15 @@
-extern crate getopts;
-extern crate fs2;
 extern crate dirs;
+extern crate fs2;
+extern crate getopts;
 extern crate voidmap;
 
-#[macro_use]
 extern crate log;
 
-use std::fs::OpenOptions;
-use std::io::Read;
+use std::{fs::OpenOptions, io::Read};
 
 use fs2::FileExt;
 
-use voidmap::{Screen, Config, deserialize_screen, init_screen_log};
+use voidmap::{deserialize_screen, init_screen_log, Config, Screen};
 
 fn print_usage(program: &str) {
     println!("Usage: {} /path/to/workfile", program);
