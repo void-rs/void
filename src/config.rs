@@ -168,9 +168,10 @@ impl Default for Config {
 
 impl fmt::Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Configured Hotkeys:\n").unwrap();
+        writeln!(f, "Configured Hotkeys:").unwrap();
         for (key, action) in &self.config {
-            write!(f, "    {:?}: {:?}\n", action, key).unwrap();
+            // writeln!(f, "    {:?}: {:?}", action, key).unwrap();
+            writeln!(f, "    {:?}: {:?}", action, key).unwrap();
         }
         Ok(())
     }
