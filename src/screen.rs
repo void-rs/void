@@ -349,9 +349,9 @@ impl Screen {
         self.with_node(node_id, |n| n.content.clone()).and_then(
             |c| {
                 if RE.is_match(&*c) {
-                    RE.captures_iter(&*c).nth(0).and_then(|n| {
-                        n.at(1).unwrap().parse::<usize>().ok()
-                    })
+                    RE.captures_iter(&*c)
+                        .nth(0)
+                        .and_then(|n| n.get(1).unwrap().as_str().parse::<usize>().ok())
                 } else {
                     None
                 }

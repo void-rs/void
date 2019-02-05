@@ -70,8 +70,8 @@ pub fn re_matches<A: std::str::FromStr>(re: &Regex, on: &str) -> Vec<A> {
     let mut ret = vec![];
     if re.is_match(on) {
         for cap in re.captures_iter(on) {
-            if let Some(a) = cap.at(1) {
-                if let Ok(e) = a.parse::<A>() {
+            if let Some(a) = cap.get(1) {
+                if let Ok(e) = a.as_str().parse::<A>() {
                     ret.push(e)
                 }
             }
