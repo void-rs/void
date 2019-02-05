@@ -167,66 +167,65 @@ impl Screen {
     // return of false signals to the caller that we are done in this view
     pub fn handle_event(&mut self, evt: Event) -> bool {
         match self.config.map(evt) {
-            Some(e) => {
-                match e {
-                    Action::LeftClick(x, y) => {
-                        let internal_coords = self.screen_to_internal_xy((x, y));
-                        self.click_screen(internal_coords)
-                    }
-                    Action::RightClick(_, _) => {
-                        self.pop_focus();
-                    }
-                    Action::Release(x, y) => {
-                        let internal_coords = self.screen_to_internal_xy((x, y));
-                        self.release(internal_coords)
-                    }
-                    Action::Char(c) => {
-                        if self.selected.is_some() {
-                            self.append(c);
-                        } else {
-                            if c == '/' {
-                                self.search_forward();
-                            } else if c == '?' {
-                                self.search_backward();
-                            } else {
-                                self.prefix_jump_to(c.to_string());
-                            }
-                        }
-                    }
-                    Action::Help => self.help(),
-                    Action::UnselectRet => return self.unselect().is_some(),
-                    Action::ScrollUp => self.scroll_up(),
-                    Action::ScrollDown => self.scroll_down(),
-                    Action::DeleteSelected => self.delete_selected(true),
-                    Action::SelectUp => self.select_up(),
-                    Action::SelectDown => self.select_down(),
-                    Action::SelectLeft => self.select_left(),
-                    Action::SelectRight => self.select_right(),
-                    Action::EraseChar => self.backspace(),
-                    Action::CreateSibling => self.create_sibling(),
-                    Action::CreateChild => self.create_child(),
-                    Action::CreateFreeNode => self.create_free_node(),
-                    Action::ExecSelected => self.exec_selected(),
-                    Action::DrillDown => self.drill_down(),
-                    Action::PopUp => self.pop_focus(),
-                    Action::PrefixJump => self.prefix_jump_prompt(),
-                    Action::ToggleCompleted => self.toggle_stricken(),
-                    Action::ToggleHideCompleted => self.toggle_hide_stricken(),
-                    Action::Arrow => self.add_or_remove_arrow(),
-                    Action::AutoArrange => self.toggle_auto_arrange(),
-                    Action::ToggleCollapsed => self.toggle_collapsed(),
-                    Action::Quit => return false,
-                    Action::Save => self.save(),
-                    Action::ToggleShowLogs => self.toggle_show_logs(),
-                    Action::EnterCmd => self.enter_cmd(),
-                    Action::FindTask => self.auto_task(),
-                    Action::YankPasteNode => self.cut_paste(),
-                    Action::RaiseSelected => self.raise_selected(),
-                    Action::LowerSelected => self.lower_selected(),
-                    Action::Search => self.search_forward(),
-                    Action::UndoDelete => self.undo_delete(),
-                }
-            }
+            Some(e) => match e {
+                Action::LeftClick(x, y) => {
+                    let internal_coords = self.screen_to_internal_xy((x, y));
+                    self.click_screen(internal_coords)
+                },
+                Action::RightClick(..) => {
+                    self.pop_focus();
+                },
+                Action::Release(x, y) => {
+                    let internal_coords = self.screen_to_internal_xy((x, y));
+                    self.release(internal_coords)
+                },
+                // Write character to selection
+                Action::Char(c) if self.selected.is_some() => {
+                    self.append(c);
+                },
+                // TODO is the / and hardcoded?
+                Action::Char('/') => {
+                    self.search_forward();
+                },
+                Action::Char('?') => {
+                    self.search_backward();
+                },
+                Action::Char(c) => {
+                    self.prefix_jump_to(c.to_string());
+                },
+                Action::Help => self.help(),
+                Action::UnselectRet => return self.unselect().is_some(),
+                Action::ScrollUp => self.scroll_up(),
+                Action::ScrollDown => self.scroll_down(),
+                Action::DeleteSelected => self.delete_selected(true),
+                Action::SelectUp => self.select_up(),
+                Action::SelectDown => self.select_down(),
+                Action::SelectLeft => self.select_left(),
+                Action::SelectRight => self.select_right(),
+                Action::EraseChar => self.backspace(),
+                Action::CreateSibling => self.create_sibling(),
+                Action::CreateChild => self.create_child(),
+                Action::CreateFreeNode => self.create_free_node(),
+                Action::ExecSelected => self.exec_selected(),
+                Action::DrillDown => self.drill_down(),
+                Action::PopUp => self.pop_focus(),
+                Action::PrefixJump => self.prefix_jump_prompt(),
+                Action::ToggleCompleted => self.toggle_stricken(),
+                Action::ToggleHideCompleted => self.toggle_hide_stricken(),
+                Action::Arrow => self.add_or_remove_arrow(),
+                Action::AutoArrange => self.toggle_auto_arrange(),
+                Action::ToggleCollapsed => self.toggle_collapsed(),
+                Action::Quit => return false,
+                Action::Save => self.save(),
+                Action::ToggleShowLogs => self.toggle_show_logs(),
+                Action::EnterCmd => self.enter_cmd(),
+                Action::FindTask => self.auto_task(),
+                Action::YankPasteNode => self.cut_paste(),
+                Action::RaiseSelected => self.raise_selected(),
+                Action::LowerSelected => self.lower_selected(),
+                Action::Search => self.search_forward(),
+                Action::UndoDelete => self.undo_delete(),
+            },
             None => warn!("received unknown input"),
         }
         true
