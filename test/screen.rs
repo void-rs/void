@@ -120,7 +120,7 @@ impl Arbitrary for OpVec {
                 ops.append(&mut content.0);
             }
         }
-        OpVec { ops: ops }
+        OpVec { ops }
     }
 
     fn shrink(&self) -> Box<Iterator<Item = OpVec>> {

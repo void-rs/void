@@ -54,8 +54,8 @@ fn serialize_node(node: &Node) -> pb::Node {
     node_pb.set_stricken(node.stricken);
     node_pb.set_hide_stricken(node.hide_stricken);
     node_pb.set_parent_id(node.parent_id);
-    node_pb.set_x(node.rooted_coords.0 as u32);
-    node_pb.set_y(node.rooted_coords.1 as u32);
+    node_pb.set_x(u32::from(node.rooted_coords.0));
+    node_pb.set_y(u32::from(node.rooted_coords.1));
     node_pb.set_meta(serialize_meta(&node.meta));
     node_pb.set_auto_arrange(node.auto_arrange);
     if let Some(ref free_text) = node.free_text {

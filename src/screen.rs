@@ -122,9 +122,9 @@ impl Default for Screen {
 impl Screen {
     fn help(&mut self) {
         self.cleanup();
-        print!("{}{}{}\n", cursor::Goto(1, 1), clear::All, self.config);
+        println!("{}{}{}", cursor::Goto(1, 1), clear::All, self.config);
         self.start_raw_mode();
-        if let Err(_) = self.single_key_prompt("") {
+        if self.single_key_prompt("").is_err() {
             // likely here because of testing
         }
     }
@@ -133,12 +133,6 @@ impl Screen {
         self.max_id += 1;
         assert!(self.max_id < self.ephemeral_max_id);
         self.max_id
-    }
-
-    fn new_ephemeral_node_id(&mut self) -> NodeID {
-        self.ephemeral_max_id -= 1;
-        assert!(self.max_id < self.ephemeral_max_id);
-        self.ephemeral_max_id
     }
 
     fn new_node(&mut self) -> NodeID {
@@ -353,8 +347,8 @@ impl Screen {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"#prio=(\d+)").unwrap();
         }
-        self.with_node(node_id, |n| n.content.clone()).and_then(
-            |c| {
+        self.with_node(node_id, |n| n.content.clone())
+            .and_then(|c| {
                 if RE.is_match(&*c) {
                     RE.captures_iter(&*c)
                         .nth(0)
@@ -362,8 +356,7 @@ impl Screen {
                 } else {
                     None
                 }
-            },
-        )
+            })
     }
 
     fn single_key_prompt(&mut self, prompt: &str) -> io::Result<Key> {
@@ -437,7 +430,7 @@ impl Screen {
             SearchDirection::Backward => format!("search backwards{}:", last_search_str),
         };
         if let Ok(Some(mut query)) = self.prompt(&*prompt) {
-            if query == "".to_owned() {
+            if query == "" {
                 if let Some((ref last, _)) = self.last_search {
                     query = last.clone();
                 } else {
@@ -570,7 +563,7 @@ impl Screen {
                     error!("command failed to start: {}", content);
                 }
             } else {
-                let shell = env::var("SHELL").unwrap_or("bash".to_owned());
+                let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_owned());
                 let cmd = process::Command::new(shell)
                     .arg("-c")
                     .arg(content.to_owned())
@@ -583,16 +576,17 @@ impl Screen {
     }
 
     fn exec_text_editor(&mut self, node_id: NodeID) {
-        let text = self.with_node(node_id, |n| n.free_text.clone())
+        let text = self
+            .with_node(node_id, |n| n.free_text.clone())
             .unwrap()
-            .unwrap_or("".to_owned());
+            .unwrap_or_else(|| "".to_owned());
 
         let pid = unsafe { getpid() };
         let path = format!("/tmp/void_buffer.tmp.{}", pid);
         debug!("trying to open {} in editor", path);
 
         // remove old tmp file
-        if let Ok(_) = remove_file(&path) {
+        if remove_file(&path).is_ok() {
             warn!("removed stale tmp file");
         }
 
@@ -609,8 +603,8 @@ impl Screen {
         self.cleanup();
 
         // open text editor
-        let ed = env::var("EDITOR").unwrap_or("vim".to_owned());
-        process::Command::new(ed)
+        let editor = env::var("EDITOR").unwrap_or_else(|_| "vim".to_owned());
+        process::Command::new(editor)
             .arg(&path)
             .spawn()
             .expect("failed to open text editor")
@@ -751,9 +745,9 @@ impl Screen {
 
             self.with_node_mut_no_meta(selected_id, |n| {
                 // if parseable date, change date
-                if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).iter().nth(0) {
+                if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).get(0) {
                     if let Some(date) = dateparse(date.clone()) {
-                        n.content = RE_DATE.replace(&*n.content, "").trim_right().to_owned();
+                        n.content = RE_DATE.replace(&*n.content, "").trim_end().to_owned();
                         if n.meta.finish_time.is_some() {
                             n.meta.finish_time = Some(date);
                         } else {
@@ -1161,7 +1155,7 @@ impl Screen {
     }
 
     fn anchor(&self, node_id: NodeID) -> Result<NodeID, String> {
-        if let None = self.drawn_at(node_id) {
+        if self.drawn_at(node_id).is_none() {
             return Err("node not drawn on this screen".to_owned());
         }
 
@@ -1465,7 +1459,7 @@ impl Screen {
             }
         }
         node_costs.sort_by_key(|&(_, ref cost)| cost.clone());
-        node_costs.iter().nth(0).map(|&(&id, _)| id)
+        node_costs.get(0).map(|&(&id, _)| id)
     }
 
     fn select_node(&mut self, node_id: NodeID) {
@@ -1477,8 +1471,12 @@ impl Screen {
             // selection) being empty.  To account for this, we need
             // to only set self.selected to node_id if the with_node
             // succeeds.
-            self.with_node_mut_no_meta(node_id, |node| node.selected = true)
-                .map(|_| self.selected = Some(node_id));
+            if self
+                .with_node_mut_no_meta(node_id, |node| node.selected = true)
+                .is_some()
+            {
+                self.selected = Some(node_id);
+            }
         }
     }
 
@@ -1564,7 +1562,7 @@ impl Screen {
         if let Some(ref path) = self.work_path {
             let mut tmp_path = path.clone();
             tmp_path.push_str(".tmp");
-            if let Ok(_) = remove_file(&tmp_path) {
+            if remove_file(&tmp_path).is_ok() {
                 warn!("removed stale tmp file");
             }
             let mut f = File::create(&tmp_path).unwrap();
@@ -1591,7 +1589,7 @@ impl Screen {
         self.lookup.contains_key(&coords)
     }
 
-    pub fn add_or_remove_arrow(&mut self) {
+  pub fn add_or_remove_arrow(&mut self) {
         if self.drawing_arrow.is_none() {
             self.drawing_arrow = self.selected;
             return;
@@ -1607,7 +1605,7 @@ impl Screen {
                     {
                         true
                     } else {
-                        false || acc
+                        acc
                     },
                 );
                 if contains {
@@ -1732,12 +1730,12 @@ impl Screen {
 
     fn draw_scrollbar(&self) {
         let bar_height = max(self.dims.1, 1) - 1;
-        let normalized_lowest = max(self.lowest_drawn, 1) as f64;
-        let fraction_viewable = self.dims.1 as f64 / normalized_lowest;
-        let shade_start_fraction = self.view_y as f64 / normalized_lowest;
+        let normalized_lowest = f64::from(max(self.lowest_drawn, 1));
+        let fraction_viewable = f64::from(self.dims.1) / normalized_lowest;
+        let shade_start_fraction = f64::from(self.view_y) / normalized_lowest;
 
-        let shade_amount = (bar_height as f64 * fraction_viewable) as usize;
-        let shade_start = (bar_height as f64 * shade_start_fraction) as usize;
+        let shade_amount = (f64::from(bar_height) * fraction_viewable) as usize;
+        let shade_start = (f64::from(bar_height) * shade_start_fraction) as usize;
         let shade_end = shade_start + shade_amount;
 
         for (i, y) in (2..bar_height + 2).enumerate() {
@@ -1862,7 +1860,7 @@ impl Screen {
             || {
                 let visible = buf.replace(reset, "").replace(&*pre_meta, "");
                 let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
-                self.grapheme_cache.insert(node.id, vg.clone());
+                self.grapheme_cache.insert(node.id, vg);
                 vg
             },
         );
@@ -2066,9 +2064,11 @@ impl Screen {
         trace!("starting draw");
         while cursor != dest {
             for neighbor in perms(cursor) {
-                if (!(neighbor.0 >= self.dims.0) && !(neighbor.1 >= self.dims.1 + self.view_y) &&
-                        !self.occupied(neighbor) || neighbor == dest) &&
-                    !visited.contains_key(&neighbor)
+                if (neighbor.0 < self.dims.0
+                    && neighbor.1 < self.dims.1 + self.view_y
+                    && !self.occupied(neighbor)
+                    || neighbor == dest)
+                    && !visited.contains_key(&neighbor)
                 {
                     let c = std::u16::MAX - cost(neighbor, dest);
                     pq.push((c, neighbor));
@@ -2089,9 +2089,9 @@ impl Screen {
         let mut back_cursor = dest;
         let mut path = vec![dest];
         while back_cursor != start {
-            let prev = visited.get(&back_cursor).unwrap();
-            path.push(*prev);
-            back_cursor = *prev;
+            let prev = visited[&back_cursor];
+            path.push(prev);
+            back_cursor = prev;
         }
         path.reverse();
         trace!("leaving path()");
@@ -2123,10 +2123,10 @@ impl Screen {
         }
         let today_normalized = now / day_in_sec * day_in_sec;
         let counts_clone = counts.clone();
-        let finished_today = counts_clone.get(&today_normalized).unwrap();
+        let finished_today = counts_clone[&today_normalized];
         let week_line: Vec<i64> = counts.into_iter().map(|(_, v)| v).collect();
         let plot = plot::plot_sparkline(week_line);
-        (plot, *finished_today as usize)
+        (plot, finished_today as usize)
     }
 
     fn format_node(&mut self, raw_node: &Node) -> Node {
@@ -2168,7 +2168,7 @@ impl Screen {
         }
         let queried_nodes = tagged_children
             .map(|tc| tc.into_iter().collect())
-            .unwrap_or(vec![]);
+            .unwrap_or_else(|| vec![]);
 
         let mut since_opt = None;
         let mut until_opt = None;
@@ -2188,10 +2188,7 @@ impl Screen {
                 }
             }
         }
-        if let Some(since) = re_matches::<String>(&RE_SINCE, &*node.content).iter().nth(
-            0,
-        )
-        {
+        if let Some(since) = re_matches::<String>(&RE_SINCE, &*node.content).get(0) {
             since_opt = dateparse(since.clone());
             if let Some(cutoff) = since_opt {
                 let mut new = vec![];
@@ -2206,10 +2203,7 @@ impl Screen {
                 node.children = new;
             }
         }
-        if let Some(until) = re_matches::<String>(&RE_UNTIL, &*node.content).iter().nth(
-            0,
-        )
-        {
+        if let Some(until) = re_matches::<String>(&RE_UNTIL, &*node.content).get(0) {
             until_opt = dateparse(until.clone());
             if let Some(cutoff) = until_opt {
                 let mut new = vec![];
@@ -2227,13 +2221,13 @@ impl Screen {
         if RE_REV.is_match(&*node.content) {
             node.children = node.children.into_iter().rev().collect();
         }
-        if let Some(&limit) = re_matches(&RE_LIMIT, &*node.content).iter().nth(0) {
+        if let Some(&limit) = re_matches(&RE_LIMIT, &*node.content).get(0) {
             node.children.truncate(limit);
         }
 
         let re_n = re_matches::<usize>(&RE_N, &*node.content);
-        let n_opt = re_n.iter().nth(0);
-        if let Some(plot) = re_matches::<String>(&RE_PLOT, &*node.content).iter().nth(0) {
+        let n_opt = re_n.get(0);
+        if let Some(plot) = re_matches::<String>(&RE_PLOT, &*node.content).get(0) {
             let now = time::get_time().sec as u64;
             let buckets = n_opt.cloned().unwrap_or(7);
             let since = since_opt.unwrap_or_else(|| now - 60 * 60 * 24 * 7);
