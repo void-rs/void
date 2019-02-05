@@ -190,8 +190,11 @@ impl Config {
         let mut f = File::open(p)?;
         f.read_to_string(&mut buf)?;
         let mut config = Config::default();
-        for (line_number, line) in buf.lines().enumerate() {
-            let e = format!("invalid config at line {}: {}", line_number, line);
+        for (mut line_num, line) in buf.lines().enumerate() {
+            if line == "" || line.starts_with('#') {
+                continue;
+            }
+
             // zero based indexing inappropriate here
             line_num += 1;
 
