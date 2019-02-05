@@ -198,6 +198,9 @@ impl Config {
 
             // zero based indexing inappropriate here
             line_num += 1;
+            // TODO Separate error messages to be more informative in each of the two cases
+            // below.
+            let e = format!("invalid config at line {}: {}", line_num, line);
 
             let parts: Vec<_> = line.splitn(2, ':').map(|p| p.trim()).collect();
             if parts.len() != 2 {
