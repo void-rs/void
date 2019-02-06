@@ -1,7 +1,4 @@
-# This is a comment
-# Blank lines are also supported
-# You can put spaces between the colons
-# Spacebar can be mapped using the name "space"
+# Comments are supported.
 
 unselect:esc
 scroll_up:pgup
