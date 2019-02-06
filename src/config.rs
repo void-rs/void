@@ -195,14 +195,12 @@ impl Config {
                 continue;
             }
 
-            // zero based indexing inappropriate here
+            // Zero based indexing inappropriate here.
             line_num += 1;
-            // TODO Separate error messages to be more informative in each of the two cases
-            // below.
-            let e = format!("invalid config at line {}: {}", line_num, line);
 
             let parts: Vec<_> = line.splitn(2, ':').map(|p| p.trim()).collect();
             if parts.len() != 2 {
+                let e = format!("No colon found on line {}", line_num);
                 error!("{}", e);
                 return Err(Error::new(ErrorKind::Other, e));
             }
@@ -213,6 +211,7 @@ impl Config {
             let action_opt = to_action(raw_action.to_owned());
 
             if key_opt.is_none() || action_opt.is_none() {
+                let e = format!("invalid config at line {}: {}", line_num, line);
                 error!("{}", e);
                 return Err(Error::new(ErrorKind::Other, e));
             }
