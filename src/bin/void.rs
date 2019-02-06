@@ -1,10 +1,3 @@
-extern crate dirs;
-extern crate fs2;
-extern crate getopts;
-extern crate voidmap;
-
-extern crate log;
-
 use std::{fs::OpenOptions, io::Read};
 
 use fs2::FileExt;

@@ -6,15 +6,6 @@ extern crate lazy_static;
 #[macro_use]
 extern crate log;
 
-extern crate hyper;
-extern crate libc;
-extern crate protobuf;
-extern crate rand;
-extern crate regex;
-extern crate termion;
-extern crate time;
-extern crate unicode_segmentation;
-
 mod colors;
 mod config;
 mod dateparse;
