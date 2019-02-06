@@ -169,7 +169,6 @@ impl fmt::Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "Configured Hotkeys:").unwrap();
         for (key, action) in &self.config {
-            // writeln!(f, "    {:?}: {:?}", action, key).unwrap();
             writeln!(f, "    {:?}: {:?}", action, key).unwrap();
         }
         Ok(())
