@@ -18,7 +18,6 @@ use termion::{
     style, terminal_size,
 };
 
-use libc::getpid;
 use rand::{self, Rng};
 use regex::Regex;
 use time;
@@ -578,7 +577,7 @@ impl Screen {
             .unwrap()
             .unwrap_or_else(|| "".to_owned());
 
-        let pid = unsafe { getpid() };
+        let pid = process::id();
         let path = format!("/tmp/void_buffer.tmp.{}", pid);
         debug!("trying to open {} in editor", path);
 
