@@ -1,13 +1,12 @@
 language: rust
-rust:
-  - stable
-  - nightly
-  - nightly-2019-02-02
 script: |
-  cargo +stable build --verbose
-  cargo +stable test --verbose --all
+  cargo build --verbose
+  cargo test --verbose --all
 matrix:
   include:
+    - rust: stable
+    - rust: nightly
+    # Pinned for clippy and rustfmt
     - rust: nightly-2019-02-02
       env: CLIPPY=YESPLEASE
       before_script: |
