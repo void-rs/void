@@ -13,7 +13,6 @@ use termion::input::{MouseTerminal, TermRead};
 use termion::raw::{IntoRawMode, RawTerminal};
 use termion::screen::AlternateScreen;
 
-use libc::getpid;
 use rand::{self, Rng};
 use regex::Regex;
 use time;
@@ -580,7 +579,7 @@ impl Screen {
             .unwrap()
             .unwrap_or("".to_owned());
 
-        let pid = unsafe { getpid() };
+        let pid = process::id();
         let path = format!("/tmp/void_buffer.tmp.{}", pid);
         debug!("trying to open {} in editor", path);
 
