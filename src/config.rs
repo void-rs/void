@@ -159,8 +159,8 @@ impl Default for Config {
                 (Ctrl('z'), Action::UndoDelete),
                 (Ctrl('?'), Action::Help),
             ]
-                .into_iter()
-                .collect(),
+            .into_iter()
+            .collect(),
         }
     }
 }
@@ -233,24 +233,24 @@ impl Config {
                 } else {
                     Some(Action::Char(c))
                 }
-            }
+            },
             Event::Mouse(MouseEvent::Press(MouseButton::Right, x, y)) => {
                 Some(Action::RightClick(x, y))
-            }
+            },
             Event::Mouse(MouseEvent::Press(_, x, y)) => Some(Action::LeftClick(x, y)),
             Event::Mouse(MouseEvent::Release(x, y)) => Some(Action::Release(x, y)),
-            Event::Mouse(MouseEvent::Hold(_, _)) => None,
+            Event::Mouse(MouseEvent::Hold(..)) => None,
             Event::Key(other) => {
                 let lookup = self.config.get(&other).cloned();
                 if lookup.is_none() {
                     warn!("Weird event {:?}", other);
                 }
                 lookup
-            }
+            },
             other => {
                 warn!("Unknown event received: {:?}", other);
                 None
-            }
+            },
         }
     }
 }

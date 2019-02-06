@@ -24,16 +24,18 @@ use std::{cmp, collections::HashMap};
 
 use regex::Regex;
 
-pub use crate::meta::Meta;
-pub use crate::colors::random_fg_color;
-pub use crate::config::{Action, Config};
-pub use crate::dateparse::dateparse;
-pub use crate::logging::init_screen_log;
-pub use crate::node::Node;
-pub use crate::pack::Pack;
-pub use crate::screen::Screen;
-pub use crate::serialization::{deserialize_screen, serialize_screen};
-pub use crate::tagdb::TagDB;
+pub use crate::{
+    colors::random_fg_color,
+    config::{Action, Config},
+    dateparse::dateparse,
+    logging::init_screen_log,
+    meta::Meta,
+    node::Node,
+    pack::Pack,
+    screen::Screen,
+    serialization::{deserialize_screen, serialize_screen},
+    tagdb::TagDB,
+};
 
 pub type Coords = (u16, u16);
 pub type NodeID = u64;
@@ -73,6 +75,8 @@ pub fn re_matches<A: std::str::FromStr>(re: &Regex, on: &str) -> Vec<A> {
 #[test]
 fn test_regex_parsing() {
     let re = Regex::new(r"(\S+)").unwrap();
-    assert_eq!(re_matches::<String>(&re, "yo ho ho"),
-               vec!["yo".to_owned(), "ho".to_owned(), "ho".to_owned()]);
+    assert_eq!(
+        re_matches::<String>(&re, "yo ho ho"),
+        vec!["yo".to_owned(), "ho".to_owned(), "ho".to_owned()]
+    );
 }

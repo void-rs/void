@@ -1,8 +1,7 @@
 use std::cmp;
 
 pub fn plot_sparkline<T>(nums_in: Vec<T>) -> String
-    where T: Into<i64>
-{
+where T: Into<i64> {
     const BARS: [char; 9] = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
     let nums: Vec<_> = nums_in.into_iter().map(|n| n.into()).collect();
@@ -21,8 +20,7 @@ pub fn plot_sparkline<T>(nums_in: Vec<T>) -> String
 }
 
 pub fn bounded_count_sparkline<T>(nums_in: Vec<T>, start: T, end: T, bars: usize) -> String
-    where T: Into<i64>
-{
+where T: Into<i64> {
     if bars == 0 {
         return String::new();
     }

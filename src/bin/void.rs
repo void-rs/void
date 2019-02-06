@@ -22,7 +22,8 @@ fn main() {
 
     // load from file if present
     let mut data = vec![];
-    let mut f = path.clone()
+    let mut f = path
+        .clone()
         .map(|path| {
             OpenOptions::new()
                 .write(true)

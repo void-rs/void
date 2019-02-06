@@ -6,9 +6,7 @@ use time;
 struct ScreenLogger;
 
 impl log::Log for ScreenLogger {
-    fn enabled(&self, metadata: &LogMetadata) -> bool {
-        metadata.level() <= LogLevel::Info
-    }
+    fn enabled(&self, metadata: &LogMetadata) -> bool { metadata.level() <= LogLevel::Info }
 
     fn log(&self, record: &LogRecord) {
         if self.enabled(record.metadata()) {
@@ -17,12 +15,14 @@ impl log::Log for ScreenLogger {
             logs.insert(0, line);
             logs.truncate(5);
         }
-        let line = format!("{} {} {}:{}] {}\n",
-                           time::get_time().sec,
-                           record.level(),
-                           record.location().file().split("/").last().unwrap(),
-                           record.location().line(),
-                           record.args());
+        let line = format!(
+            "{} {} {}:{}] {}\n",
+            time::get_time().sec,
+            record.level(),
+            record.location().file().split("/").last().unwrap(),
+            record.location().line(),
+            record.args()
+        );
 
         if let Ok(path) = env::var("LOGFILE") {
             let mut f = OpenOptions::new()
@@ -42,9 +42,7 @@ pub fn init_screen_log() -> Result<(), SetLoggerError> {
     })
 }
 
-pub fn read_logs() -> Vec<String> {
-    LOGS.read().unwrap().clone()
-}
+pub fn read_logs() -> Vec<String> { LOGS.read().unwrap().clone() }
 
 lazy_static! {
     static ref LOGS: RwLock<Vec<String>> = RwLock::new(vec![]);

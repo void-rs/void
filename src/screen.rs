@@ -144,14 +144,12 @@ impl Screen {
     }
 
     pub fn with_node<B, F>(&self, k: NodeID, mut f: F) -> Option<B>
-        where F: FnMut(&Node) -> B
-    {
+    where F: FnMut(&Node) -> B {
         self.nodes.get(&k).map(|node| f(node))
     }
 
     fn with_node_mut<B, F>(&mut self, k: NodeID, mut f: F) -> Option<B>
-        where F: FnMut(&mut Node) -> B
-    {
+    where F: FnMut(&mut Node) -> B {
         self.nodes.get_mut(&k).map(|mut node| {
             node.meta.bump_mtime();
             f(&mut node)
@@ -159,8 +157,7 @@ impl Screen {
     }
 
     fn with_node_mut_no_meta<B, F>(&mut self, k: NodeID, mut f: F) -> Option<B>
-        where F: FnMut(&mut Node) -> B
-    {
+    where F: FnMut(&mut Node) -> B {
         self.nodes.get_mut(&k).map(|mut node| f(&mut node))
     }
 
@@ -231,9 +228,7 @@ impl Screen {
         true
     }
 
-    fn exists(&self, node_id: NodeID) -> bool {
-        self.nodes.get(&node_id).is_some()
-    }
+    fn exists(&self, node_id: NodeID) -> bool { self.nodes.get(&node_id).is_some() }
 
     fn cut_paste(&mut self) {
         if let Some(selected_id) = self.selected {
@@ -291,7 +286,8 @@ impl Screen {
         let mut leaves = vec![];
         while let Some(root_id) = task_roots.pop() {
             let node = self.with_node(root_id, |n| n.clone()).unwrap();
-            let mut incomplete_children: Vec<_> = node.children
+            let mut incomplete_children: Vec<_> = node
+                .children
                 .iter()
                 .cloned()
                 .filter(|&c| self.with_node(c, |c| !c.stricken).unwrap())
@@ -313,7 +309,8 @@ impl Screen {
         let mut prio_pairs = vec![];
         let mut total_prio = 0;
         for &leaf in &leaves {
-            let prio = self.lineage(leaf)
+            let prio = self
+                .lineage(leaf)
                 .iter()
                 .filter_map(|&p| self.node_priority(p))
                 .max()
@@ -409,13 +406,9 @@ impl Screen {
         }
     }
 
-    fn search_forward(&mut self) {
-        self.search(SearchDirection::Forward)
-    }
+    fn search_forward(&mut self) { self.search(SearchDirection::Forward) }
 
-    fn search_backward(&mut self) {
-        self.search(SearchDirection::Backward)
-    }
+    fn search_backward(&mut self) { self.search(SearchDirection::Backward) }
 
     fn search(&mut self, direction: SearchDirection) {
         trace!("search()");
@@ -502,7 +495,13 @@ impl Screen {
         for (&c, &node_id) in &mapping {
             let &coords = self.drawn_at(node_id).unwrap();
             let (x, y) = self.internal_to_screen_xy(coords).unwrap();
-            print!("{}{}{}{}", cursor::Goto(x, y), style::Invert, c, style::Reset);
+            print!(
+                "{}{}{}{}",
+                cursor::Goto(x, y),
+                style::Invert,
+                c,
+                style::Reset
+            );
         }
 
         // read the choice
@@ -519,8 +518,7 @@ impl Screen {
     }
 
     fn find_visible_nodes<F>(&self, mut filter: F) -> Vec<NodeID>
-        where F: FnMut(NodeID) -> bool
-    {
+    where F: FnMut(NodeID) -> bool {
         self.drawn_at
             .keys()
             .filter(|&node_id| self.node_is_visible(*node_id).unwrap())
@@ -633,14 +631,15 @@ impl Screen {
         trace!("arrange");
         let mut real_estate = Pack {
             children: None,
-            top: 2, // leave room for header
-            left: 1, // 1-indexed screen
+            top: 2,                // leave room for header
+            left: 1,               // 1-indexed screen
             bottom: std::u16::MAX, // make this "bottomless" since we can paginate
             right: max(self.dims.0, 1) - 1,
             elem: None,
         };
 
-        let nodes = self.with_node(self.drawing_root, |n| n.children.clone())
+        let nodes = self
+            .with_node(self.drawing_root, |n| n.children.clone())
             .unwrap();
         let mut node_dims: Vec<(NodeID, Coords)> = nodes
             .into_iter()
@@ -660,13 +659,8 @@ impl Screen {
         }
     }
 
-    pub fn recursive_child_filter_map<F, B>(
-        &self,
-        node_id: NodeID,
-        filter_map: &mut F,
-    ) -> Vec<B>
-        where F: FnMut(&Node) -> Option<B>
-    {
+    pub fn recursive_child_filter_map<F, B>(&self, node_id: NodeID, filter_map: &mut F) -> Vec<B>
+    where F: FnMut(&Node) -> Option<B> {
         trace!("recursive_child_filter_map({}, F...)", node_id);
         let mut ret = vec![];
 
@@ -706,8 +700,8 @@ impl Screen {
                     let stricken = self.with_node(child, |c| c.stricken).unwrap();
                     if !(hide_stricken && stricken) {
                         // ASSUMES node.children are all valid
-                        let mut child_widths = self.drawable_subtree_widths(child, depth + 1)
-                            .unwrap();
+                        let mut child_widths =
+                            self.drawable_subtree_widths(child, depth + 1).unwrap();
                         ret.append(&mut child_widths);
                     }
                 }
@@ -733,10 +727,12 @@ impl Screen {
         }
         if let Some(selected_id) = self.selected {
             // nuke node if it's empty and has no children
-            let deletable = self.with_node_mut_no_meta(selected_id, |n| {
-                n.selected = false;
-                n.content.is_empty() && n.children.is_empty()
-            }).unwrap_or(false);
+            let deletable = self
+                .with_node_mut_no_meta(selected_id, |n| {
+                    n.selected = false;
+                    n.content.is_empty() && n.children.is_empty()
+                })
+                .unwrap_or(false);
             if deletable {
                 self.delete_selected(false);
                 return None;
@@ -756,7 +752,6 @@ impl Screen {
                         }
                     }
                 }
-
             });
         }
         self.selected.take()
@@ -773,7 +768,10 @@ impl Screen {
     }
 
     fn screen_to_internal_xy(&self, coords: Coords) -> Coords {
-        (coords.0, min(coords.1, std::u16::MAX - self.view_y) + self.view_y)
+        (
+            coords.0,
+            min(coords.1, std::u16::MAX - self.view_y) + self.view_y,
+        )
     }
 
     fn coords_are_visible(&self, (_, y): Coords) -> bool {
@@ -793,11 +791,13 @@ impl Screen {
         if self.dragging_from.is_none() {
             self.unselect();
             if let Some(&node_id) = self.lookup(coords) {
-                return self.with_node_mut_no_meta(node_id, |node| {
-                    trace!("selected node {} at {:?}", node_id, coords);
-                    node.selected = true;
-                    node_id
-                }).and_then(|id| {
+                return self
+                    .with_node_mut_no_meta(node_id, |node| {
+                        trace!("selected node {} at {:?}", node_id, coords);
+                        node.selected = true;
+                        node_id
+                    })
+                    .and_then(|id| {
                         self.selected = Some(node_id);
                         self.dragging_from = Some(coords);
                         self.dragging_to = Some(coords);
@@ -833,9 +833,8 @@ impl Screen {
         trace!("delete_recursive({})", node_id);
         if let Some(node) = self.nodes.remove(&node_id) {
             // clean up any arrow state
-            self.arrows.retain(|&(ref from, ref to)| {
-                from != &node_id && to != &node_id
-            });
+            self.arrows
+                .retain(|&(ref from, ref to)| from != &node_id && to != &node_id);
 
             // remove from tag_db
             self.tag_db.remove(node_id);
@@ -879,9 +878,12 @@ impl Screen {
 
     fn recursive_restore(&mut self, node_id: NodeID) -> Result<(), ()> {
         if let Some(node) = self.undo_nodes.remove(&node_id) {
-            self.with_node_mut_no_meta(node.parent_id, |p| if !p.children.contains(&node.id) {
-                p.children.push(node.id);
-            }).unwrap();
+            self.with_node_mut_no_meta(node.parent_id, |p| {
+                if !p.children.contains(&node.id) {
+                    p.children.push(node.id);
+                }
+            })
+            .unwrap();
             let children = node.children.clone();
             self.nodes.insert(node_id, node);
             for &child in &children {
@@ -943,13 +945,12 @@ impl Screen {
         }
     }
 
-    fn toggle_show_logs(&mut self) {
-        self.show_logs = !self.show_logs;
-    }
+    fn toggle_show_logs(&mut self) { self.show_logs = !self.show_logs; }
 
     fn create_child(&mut self) {
         if let Some(mut selected_id) = self.selected {
-            if self.with_node(selected_id, |n| n.content.is_empty())
+            if self
+                .with_node(selected_id, |n| n.content.is_empty())
                 .unwrap()
             {
                 // we may have hit tab after enter by accident,
@@ -962,14 +963,16 @@ impl Screen {
                     return;
                 }
 
-                let above = self.with_node(parent_id, |parent| {
-                    let idx = parent
-                        .children
-                        .iter()
-                        .position(|&e| e == selected_id)
-                        .unwrap();
-                    parent.children[max(idx, 1) - 1]
-                }).unwrap();
+                let above = self
+                    .with_node(parent_id, |parent| {
+                        let idx = parent
+                            .children
+                            .iter()
+                            .position(|&e| e == selected_id)
+                            .unwrap();
+                        parent.children[max(idx, 1) - 1]
+                    })
+                    .unwrap();
 
                 self.select_node(above);
                 selected_id = above;
@@ -978,10 +981,9 @@ impl Screen {
 
             let node_id = self.new_node();
             self.with_node_mut_no_meta(node_id, |node| node.parent_id = selected_id);
-            let added = self.with_node_mut_no_meta(
-                selected_id,
-                |selected| { selected.children.push(node_id); },
-            );
+            let added = self.with_node_mut_no_meta(selected_id, |selected| {
+                selected.children.push(node_id);
+            });
             if added.is_some() {
                 self.select_node(node_id);
             } else {
@@ -992,7 +994,8 @@ impl Screen {
 
     fn create_sibling(&mut self) {
         if let Some(mut selected_id) = self.selected {
-            if self.with_node(selected_id, |n| n.content.is_empty())
+            if self
+                .with_node(selected_id, |n| n.content.is_empty())
                 .unwrap()
             {
                 // we just hit enter twice, so go back a level
@@ -1089,8 +1092,7 @@ impl Screen {
                 let truncated: String = chars.take(max(oldlen, 1) - 1).collect();
                 node.content = truncated;
                 node.content.clone()
-            })
-            {
+            }) {
                 self.grapheme_cache.remove(&selected_id);
                 self.tag_db.reindex(selected_id, content);
             }
@@ -1103,21 +1105,16 @@ impl Screen {
             if let Some(content) = self.with_node_mut(selected_id, |node| {
                 node.content.push(c);
                 node.content.clone()
-            })
-            {
+            }) {
                 self.grapheme_cache.remove(&selected_id);
                 self.tag_db.reindex(selected_id, content);
             }
         }
     }
 
-    pub fn drawn_at(&self, node_id: NodeID) -> Option<&Coords> {
-        self.drawn_at.get(&node_id)
-    }
+    pub fn drawn_at(&self, node_id: NodeID) -> Option<&Coords> { self.drawn_at.get(&node_id) }
 
-    pub fn lookup(&self, coords: Coords) -> Option<&NodeID> {
-        self.lookup.get(&coords)
-    }
+    pub fn lookup(&self, coords: Coords) -> Option<&NodeID> { self.lookup.get(&coords) }
 
     fn lineage(&self, node_id: NodeID) -> Vec<NodeID> {
         let mut lineage = vec![node_id];
@@ -1216,9 +1213,9 @@ impl Screen {
                     let nx = max(ox as i16 + dx, 1) as u16;
                     let ny = max(oy as i16 + dy, 1) as u16;
                     root.rooted_coords = (nx, ny);
-                }).unwrap();
+                })
+                .unwrap();
             }
-
         } else {
             // destination is not another node, so redraw selected at coords
             // 1. remove from old parent's children
@@ -1233,7 +1230,8 @@ impl Screen {
             self.with_node_mut_no_meta(selected_id, |s| {
                 s.rooted_coords = to;
                 s.parent_id = root;
-            }).unwrap();
+            })
+            .unwrap();
         }
         trace!("leaving move_selected");
     }
@@ -1432,20 +1430,19 @@ impl Screen {
     }
 
     fn select_relative<F, O: Ord + Clone>(&mut self, filter_cost: F)
-        where F: FnMut((Coords, Coords), (Coords, Coords)) -> Option<O>
-    {
+    where F: FnMut((Coords, Coords), (Coords, Coords)) -> Option<O> {
         if let Some(node_id) = self.find_relative_node(filter_cost) {
             self.select_node(node_id);
         }
     }
 
     fn find_relative_node<F, O: Ord + Clone>(&mut self, mut filter_cost: F) -> Option<NodeID>
-        where F: FnMut((Coords, Coords), (Coords, Coords)) -> Option<O>
-    {
+    where F: FnMut((Coords, Coords), (Coords, Coords)) -> Option<O> {
         let default_coords = (self.dims.0 / 2, self.dims.1 / 2);
         let rel_def_coords = self.screen_to_internal_xy(default_coords);
 
-        let cur = self.selected
+        let cur = self
+            .selected
             .and_then(|s| self.bounds_for_lookup(s))
             .unwrap_or((rel_def_coords, rel_def_coords));
 
@@ -1545,7 +1542,6 @@ impl Screen {
             assert!(self.is_parent(0, node_id));
         }
 
-
         debug!("testing that all arrows are existing nodes");
         // no arrows that don't exist
         for &(ref a, ref b) in &self.arrows {
@@ -1580,15 +1576,15 @@ impl Screen {
 
     pub fn start_raw_mode(&mut self) {
         if self.stdout.is_none() {
-            self.stdout = Some(MouseTerminal::from(AlternateScreen::from(stdout()).into_raw_mode().unwrap()));
+            self.stdout = Some(MouseTerminal::from(
+                AlternateScreen::from(stdout()).into_raw_mode().unwrap(),
+            ));
         }
     }
 
-    pub fn occupied(&self, coords: Coords) -> bool {
-        self.lookup.contains_key(&coords)
-    }
+    pub fn occupied(&self, coords: Coords) -> bool { self.lookup.contains_key(&coords) }
 
-  pub fn add_or_remove_arrow(&mut self) {
+    pub fn add_or_remove_arrow(&mut self) {
         if self.drawing_arrow.is_none() {
             self.drawing_arrow = self.selected;
             return;
@@ -1597,16 +1593,13 @@ impl Screen {
         if let Some(arrow) = self.selected.map(|to| (from, to)) {
             let (from, to) = arrow;
             if self.nodes.get(&from).is_some() && self.nodes.get(&to).is_some() {
-                let contains = self.arrows.iter().fold(
-                    false,
-                    |acc, &(ref nl1, ref nl2)| if nl1 == &from &&
-                        nl2 == &to
-                    {
+                let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
+                    if nl1 == &from && nl2 == &to {
                         true
                     } else {
                         acc
-                    },
-                );
+                    }
+                });
                 if contains {
                     self.arrows.retain(|e| e != &arrow);
                 } else {
@@ -1748,13 +1741,19 @@ impl Screen {
 
     fn draw_children_of_root(&mut self) {
         trace!("draw_children_of_root()");
-        let anchors = self.with_node(self.drawing_root, |n| n.children.clone())
+        let anchors = self
+            .with_node(self.drawing_root, |n| n.children.clone())
             .unwrap();
-        trace!("drawing children of root({}): {:?}", self.drawing_root, anchors);
+        trace!(
+            "drawing children of root({}): {:?}",
+            self.drawing_root,
+            anchors
+        );
         for child_id in anchors {
             let child_coords = self.with_node(child_id, |n| n.rooted_coords).unwrap();
             let child_color = self.with_node(child_id, |n| n.color.clone()).unwrap();
-            let hide_stricken = self.with_node(self.drawing_root, |n| n.hide_stricken)
+            let hide_stricken = self
+                .with_node(self.drawing_root, |n| n.hide_stricken)
                 .unwrap();
             self.draw_node(
                 child_id,
@@ -1776,10 +1775,12 @@ impl Screen {
         last: bool,
         hide_stricken: bool,
         color: String,
-    ) -> usize {
+    ) -> usize
+    {
         trace!("draw_node({})", node_id);
         let mut ephemeral = false;
-        let raw_node = self.nodes
+        let raw_node = self
+            .nodes
             .get(&node_id)
             .or_else(|| {
                 ephemeral = true;
@@ -1835,14 +1836,16 @@ impl Screen {
             write!(&mut buf, "{}", node.content).unwrap();
 
             let max_width = (max(self.dims.0, 1 + x) - 1 - x) as usize;
-            let visible_graphemes = self.grapheme_cache.get(&node.id).cloned().unwrap_or_else(
-                || {
-                    let visible = buf.replace(reset, "").replace(&*pre_meta, "");
-                    let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
-                    self.grapheme_cache.insert(node.id, vg.clone());
-                    vg
-                },
-            );
+            let visible_graphemes =
+                self.grapheme_cache
+                    .get(&node.id)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        let visible = buf.replace(reset, "").replace(&*pre_meta, "");
+                        let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
+                        self.grapheme_cache.insert(node.id, vg.clone());
+                        vg
+                    });
             if visible_graphemes > max_width {
                 let buf_clone = buf.clone();
                 let chars = buf_clone.chars();
@@ -1855,14 +1858,16 @@ impl Screen {
             print!("{}{}", buf, style::Reset);
         }
 
-        let visible_graphemes = self.grapheme_cache.get(&node.id).cloned().unwrap_or_else(
-            || {
+        let visible_graphemes = self
+            .grapheme_cache
+            .get(&node.id)
+            .cloned()
+            .unwrap_or_else(|| {
                 let visible = buf.replace(reset, "").replace(&*pre_meta, "");
                 let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
                 self.grapheme_cache.insert(node.id, vg);
                 vg
-            },
-        );
+            });
 
         self.drawn_at.insert(node_id, internal_coords);
         for x in (internal_coords.0..(internal_coords.0 + visible_graphemes as u16)).rev() {
@@ -1958,7 +1963,8 @@ impl Screen {
 
     fn draw_header(&self) {
         trace!("draw_header()");
-        let mut header_text = self.with_node(self.drawing_root, |node| node.content.clone())
+        let mut header_text = self
+            .with_node(self.drawing_root, |node| node.content.clone())
             .unwrap();
 
         if self.should_auto_arrange() {
@@ -1997,16 +2003,15 @@ impl Screen {
         let (s1, s2) = startbounds.unwrap();
         let init = (self.path(s2, to), (Dir::R, Dir::R));
         let paths = vec![(self.path(s1, to), (Dir::L, Dir::R))];
-        paths.into_iter().fold(
-            init,
-            |(spath, sdirs), (path, dirs)| if path.len() <
-                spath.len()
-            {
-                (path, dirs)
-            } else {
-                (spath, sdirs)
-            },
-        )
+        paths
+            .into_iter()
+            .fold(init, |(spath, sdirs), (path, dirs)| {
+                if path.len() < spath.len() {
+                    (path, dirs)
+                } else {
+                    (spath, sdirs)
+                }
+            })
     }
 
     fn path_between_nodes(&self, start: NodeID, to: NodeID) -> (Vec<Coords>, (Dir, Dir)) {
@@ -2026,16 +2031,15 @@ impl Screen {
             (self.path(s2, t1), (Dir::R, Dir::L)),
             (self.path(s1, t1), (Dir::L, Dir::L)),
         ];
-        paths.into_iter().fold(
-            init,
-            |(spath, sdirs), (path, dirs)| if path.len() <
-                spath.len()
-            {
-                (path, dirs)
-            } else {
-                (spath, sdirs)
-            },
-        )
+        paths
+            .into_iter()
+            .fold(init, |(spath, sdirs), (path, dirs)| {
+                if path.len() < spath.len() {
+                    (path, dirs)
+                } else {
+                    (spath, sdirs)
+                }
+            })
     }
 
     fn path(&self, start: Coords, dest: Coords) -> Vec<Coords> {
@@ -2104,7 +2108,11 @@ impl Screen {
         let tasks_finished_in_last_week = self.recursive_child_filter_map(0, &mut |n: &Node| {
             let f = n.meta.finish_time;
             if let Some(t) = f {
-                if t > last_week { Some(t) } else { None }
+                if t > last_week {
+                    Some(t)
+                } else {
+                    None
+                }
             } else {
                 None
             }
@@ -2192,9 +2200,9 @@ impl Screen {
             if let Some(cutoff) = since_opt {
                 let mut new = vec![];
                 for &c in &node.children {
-                    let valid = self.with_node(c, |c| c.meta.mtime >= cutoff).unwrap_or(
-                        false,
-                    );
+                    let valid = self
+                        .with_node(c, |c| c.meta.mtime >= cutoff)
+                        .unwrap_or(false);
                     if valid {
                         new.push(c);
                     }
@@ -2207,9 +2215,9 @@ impl Screen {
             if let Some(cutoff) = until_opt {
                 let mut new = vec![];
                 for &c in &node.children {
-                    let valid = self.with_node(c, |c| c.meta.mtime <= cutoff).unwrap_or(
-                        false,
-                    );
+                    let valid = self
+                        .with_node(c, |c| c.meta.mtime <= cutoff)
+                        .unwrap_or(false);
                     if valid {
                         new.push(c);
                     }
@@ -2248,7 +2256,8 @@ impl Screen {
         buckets: usize,
         since: u64,
         until: u64,
-    ) -> String {
+    ) -> String
+    {
         let mut nodes = vec![];
         for &c in &queried_nodes {
             let mut new = self.recursive_child_filter_map(c, &mut |n: &Node| match kind {
@@ -2259,14 +2268,14 @@ impl Screen {
                         }
                     }
                     None
-                }
+                },
                 PlotType::New => {
                     if n.meta.ctime >= since {
                         Some(n.meta.ctime as i64)
                     } else {
                         None
                     }
-                }
+                },
             });
             nodes.append(&mut new);
         }
@@ -2285,6 +2294,4 @@ enum PlotType {
     Done,
 }
 
-fn visible(view_y: u16, height: u16, y: u16) -> bool {
-    y > view_y && y < view_y + height
-}
+fn visible(view_y: u16, height: u16, y: u16) -> bool { y > view_y && y < view_y + height }

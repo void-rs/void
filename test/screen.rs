@@ -23,29 +23,35 @@ impl fmt::Debug for Op {
 
 impl Arbitrary for Op {
     fn arbitrary<G: Gen>(g: &mut G) -> Op {
-        let (c, u, x, y) =
-            (g.gen_ascii_chars().nth(0).unwrap(), g.gen::<char>(), g.gen::<u16>(), g.gen::<u16>());
+        let (c, u, x, y) = (
+            g.gen_ascii_chars().nth(0).unwrap(),
+            g.gen::<char>(),
+            g.gen::<u16>(),
+            g.gen::<u16>(),
+        );
         let events = vec![
-                Event::Key(Key::Char('\n')),
-                Event::Key(Key::Char('\t')),
-                Event::Key(Key::Char(c)),
-                Event::Key(Key::Char(u)),
-                Event::Key(Key::Ctrl('n')),
-                Event::Key(Key::Ctrl(c)),
-                Event::Key(Key::Ctrl(u)),
-                Event::Key(Key::PageUp),
-                Event::Key(Key::PageDown),
-                Event::Key(Key::Esc),
-                Event::Key(Key::Up),
-                Event::Key(Key::Left),
-                Event::Key(Key::Right),
-                Event::Key(Key::Down),
-                Event::Key(Key::Delete),
-                Event::Key(Key::Backspace),
-                Event::Mouse(MouseEvent::Press(MouseButton::Left, x, y)),
-                Event::Mouse(MouseEvent::Release(x, y)),
-            ];
-        Op { event: g.choose(&*events).unwrap().clone() }
+            Event::Key(Key::Char('\n')),
+            Event::Key(Key::Char('\t')),
+            Event::Key(Key::Char(c)),
+            Event::Key(Key::Char(u)),
+            Event::Key(Key::Ctrl('n')),
+            Event::Key(Key::Ctrl(c)),
+            Event::Key(Key::Ctrl(u)),
+            Event::Key(Key::PageUp),
+            Event::Key(Key::PageDown),
+            Event::Key(Key::Esc),
+            Event::Key(Key::Up),
+            Event::Key(Key::Left),
+            Event::Key(Key::Right),
+            Event::Key(Key::Down),
+            Event::Key(Key::Delete),
+            Event::Key(Key::Backspace),
+            Event::Mouse(MouseEvent::Press(MouseButton::Left, x, y)),
+            Event::Mouse(MouseEvent::Release(x, y)),
+        ];
+        Op {
+            event: g.choose(&*events).unwrap().clone(),
+        }
     }
 }
 
@@ -96,13 +102,16 @@ impl Arbitrary for Content {
             }
         }
 
-
-        Content(choice.into_iter()
-            .map(|c| Op { event: Event::Key(Key::Char(c)) })
-            .collect())
+        Content(
+            choice
+                .into_iter()
+                .map(|c| Op {
+                    event: Event::Key(Key::Char(c)),
+                })
+                .collect(),
+        )
     }
 }
-
 
 #[derive(Debug, Clone)]
 struct OpVec {
