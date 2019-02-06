@@ -4,7 +4,7 @@ version = "1.1.5"
 authors = ["Tyler Neely <t@jujit.su>"]
 description = "terminal mind-map + task tracker + tsdb"
 license = "GPL-3.0"
-homepage = "https://github.com/spacejam/void"
+homepage = "https://github.com/void-rs/void"
 keywords = ["cli", "commandline", "visualization", "ui"]
 
 [[test]]
