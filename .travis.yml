@@ -1,8 +1,18 @@
 language: rust
-before_script:
-  - rustup toolchain add nightly
-  - rustup component add rustfmt
-script:
-  - cargo +nightly fmt --all -- --check
-  - cargo build --verbose
-  - cargo test --verbose
+rust:
+  - stable
+  - nightly
+  - nightly-2019-02-02
+script: |
+  cargo +stable build --verbose
+  cargo +stable test --verbose --all
+matrix:
+  include:
+    - rust: nightly-2019-02-02
+      env: CLIPPY=YESPLEASE
+      before_script: |
+        rustup component add clippy
+        rustup component add rustfmt
+      script: |
+        cargo +nightly-2019-02-02 clippy --all -- --deny warnings
+        cargo +nightly-2019-02-02 fmt --all -- --check
