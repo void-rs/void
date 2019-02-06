@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use regex::Regex;
 
-use {NodeID, re_matches};
+use crate::{re_matches, NodeID};
 
 pub struct TagDB {
     node_to_tags: HashMap<NodeID, HashSet<String>>,
@@ -30,13 +30,11 @@ impl TagDB {
         let tags = re_matches::<String>(&RE_TAG_KEY_VALUE, &*text);
 
         for tag in &tags {
-            if let Some(mut tags) = self.node_to_tags.get_mut(&node) {
+            if let Some(tags) = self.node_to_tags.get_mut(&node) {
                 tags.insert(tag.clone());
             }
 
-            let mut nodes = self.tag_to_nodes
-                .remove(tag)
-                .unwrap_or_else(|| HashSet::new());
+            let mut nodes = self.tag_to_nodes.remove(tag).unwrap_or_else(HashSet::new);
 
             nodes.insert(node);
 
@@ -47,13 +45,11 @@ impl TagDB {
             let tags = re_matches::<String>(&RE_TAG_KEY, &*text);
 
             for tag in &tags {
-                if let Some(mut tags) = self.node_to_tags.get_mut(&node) {
+                if let Some(tags) = self.node_to_tags.get_mut(&node) {
                     tags.insert(tag.clone());
                 }
 
-                let mut nodes = self.tag_to_nodes
-                    .remove(tag)
-                    .unwrap_or_else(|| HashSet::new());
+                let mut nodes = self.tag_to_nodes.remove(tag).unwrap_or_else(HashSet::new);
 
                 nodes.insert(node);
 
@@ -65,7 +61,7 @@ impl TagDB {
     pub fn remove(&mut self, node: NodeID) {
         if let Some(tags_to_clean) = self.node_to_tags.remove(&node) {
             for tag in &tags_to_clean {
-                if let Some(mut nodes) = self.tag_to_nodes.get_mut(tag) {
+                if let Some(nodes) = self.tag_to_nodes.get_mut(tag) {
                     nodes.remove(&node);
                 }
             }

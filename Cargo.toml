@@ -6,6 +6,7 @@ description = "terminal mind-map + task tracker + tsdb"
 license = "GPL-3.0"
 homepage = "https://github.com/void-rs/void"
 keywords = ["cli", "commandline", "visualization", "ui"]
+edition = "2018"
 
 [[test]]
 
@@ -26,7 +27,7 @@ getopts = "0.2"
 protobuf = "1.1"
 rand = "0.3"
 libc = "0.2"
-regex = "0.1"
+regex = "1.1"
 unicode-segmentation = "0.1"
 clippy = {version = "0.0", optional = true}
 fs2 = "0.4.1"

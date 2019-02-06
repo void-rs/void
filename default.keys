@@ -1,3 +1,5 @@
+# Comments are supported.
+
 unselect:esc
 scroll_up:pgup
 scroll_down:pgdn

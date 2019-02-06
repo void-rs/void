@@ -1,17 +1,22 @@
-use std;
-use std::cmp::{max, min};
-use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
-use std::env;
-use std::fmt::Write as FmtWrite;
-use std::fs::{File, OpenOptions, remove_file, rename};
-use std::io::{self, Error, ErrorKind, Read, Seek, SeekFrom, Stdout, Write, stdin, stdout};
-use std::process;
+use std::{
+    self,
+    cmp::{max, min},
+    collections::{BTreeMap, BinaryHeap, HashMap, HashSet},
+    env,
+    fmt::Write as FmtWrite,
+    fs::{remove_file, rename, File, OpenOptions},
+    io::{self, stdin, stdout, Error, ErrorKind, Read, Seek, SeekFrom, Stdout, Write},
+    process,
+};
 
-use termion::{clear, color, cursor, style, terminal_size};
-use termion::event::{Event, Key};
-use termion::input::{MouseTerminal, TermRead};
-use termion::raw::{IntoRawMode, RawTerminal};
-use termion::screen::AlternateScreen;
+use termion::{
+    clear, color, cursor,
+    event::{Event, Key},
+    input::{MouseTerminal, TermRead},
+    raw::{IntoRawMode, RawTerminal},
+    screen::AlternateScreen,
+    style, terminal_size,
+};
 
 use libc::getpid;
 use rand::{self, Rng};
@@ -19,8 +24,10 @@ use regex::Regex;
 use time;
 use unicode_segmentation::UnicodeSegmentation;
 
-use {Action, Config, Coords, Dir, Node, NodeID, Pack, TagDB, cost, dateparse, distances, logging,
-     plot, random_fg_color, re_matches, serialization};
+use crate::{
+    cost, dateparse, distances, logging, plot, random_fg_color, re_matches, serialization, Action,
+    Config, Coords, Dir, Node, NodeID, Pack, TagDB,
+};
 
 pub struct Screen {
     pub max_id: u64,
@@ -115,9 +122,9 @@ impl Default for Screen {
 impl Screen {
     fn help(&mut self) {
         self.cleanup();
-        print!("{}{}{}\n", cursor::Goto(1, 1), clear::All, self.config);
+        println!("{}{}{}", cursor::Goto(1, 1), clear::All, self.config);
         self.start_raw_mode();
-        if let Err(_) = self.single_key_prompt("") {
+        if self.single_key_prompt("").is_err() {
             // likely here because of testing
         }
     }
@@ -126,12 +133,6 @@ impl Screen {
         self.max_id += 1;
         assert!(self.max_id < self.ephemeral_max_id);
         self.max_id
-    }
-
-    fn new_ephemeral_node_id(&mut self) -> NodeID {
-        self.ephemeral_max_id -= 1;
-        assert!(self.max_id < self.ephemeral_max_id);
-        self.ephemeral_max_id
     }
 
     fn new_node(&mut self) -> NodeID {
@@ -166,66 +167,65 @@ impl Screen {
     // return of false signals to the caller that we are done in this view
     pub fn handle_event(&mut self, evt: Event) -> bool {
         match self.config.map(evt) {
-            Some(e) => {
-                match e {
-                    Action::LeftClick(x, y) => {
-                        let internal_coords = self.screen_to_internal_xy((x, y));
-                        self.click_screen(internal_coords)
-                    }
-                    Action::RightClick(_, _) => {
-                        self.pop_focus();
-                    }
-                    Action::Release(x, y) => {
-                        let internal_coords = self.screen_to_internal_xy((x, y));
-                        self.release(internal_coords)
-                    }
-                    Action::Char(c) => {
-                        if self.selected.is_some() {
-                            self.append(c);
-                        } else {
-                            if c == '/' {
-                                self.search_forward();
-                            } else if c == '?' {
-                                self.search_backward();
-                            } else {
-                                self.prefix_jump_to(c.to_string());
-                            }
-                        }
-                    }
-                    Action::Help => self.help(),
-                    Action::UnselectRet => return self.unselect().is_some(),
-                    Action::ScrollUp => self.scroll_up(),
-                    Action::ScrollDown => self.scroll_down(),
-                    Action::DeleteSelected => self.delete_selected(true),
-                    Action::SelectUp => self.select_up(),
-                    Action::SelectDown => self.select_down(),
-                    Action::SelectLeft => self.select_left(),
-                    Action::SelectRight => self.select_right(),
-                    Action::EraseChar => self.backspace(),
-                    Action::CreateSibling => self.create_sibling(),
-                    Action::CreateChild => self.create_child(),
-                    Action::CreateFreeNode => self.create_free_node(),
-                    Action::ExecSelected => self.exec_selected(),
-                    Action::DrillDown => self.drill_down(),
-                    Action::PopUp => self.pop_focus(),
-                    Action::PrefixJump => self.prefix_jump_prompt(),
-                    Action::ToggleCompleted => self.toggle_stricken(),
-                    Action::ToggleHideCompleted => self.toggle_hide_stricken(),
-                    Action::Arrow => self.add_or_remove_arrow(),
-                    Action::AutoArrange => self.toggle_auto_arrange(),
-                    Action::ToggleCollapsed => self.toggle_collapsed(),
-                    Action::Quit => return false,
-                    Action::Save => self.save(),
-                    Action::ToggleShowLogs => self.toggle_show_logs(),
-                    Action::EnterCmd => self.enter_cmd(),
-                    Action::FindTask => self.auto_task(),
-                    Action::YankPasteNode => self.cut_paste(),
-                    Action::RaiseSelected => self.raise_selected(),
-                    Action::LowerSelected => self.lower_selected(),
-                    Action::Search => self.search_forward(),
-                    Action::UndoDelete => self.undo_delete(),
-                }
-            }
+            Some(e) => match e {
+                Action::LeftClick(x, y) => {
+                    let internal_coords = self.screen_to_internal_xy((x, y));
+                    self.click_screen(internal_coords)
+                },
+                Action::RightClick(..) => {
+                    self.pop_focus();
+                },
+                Action::Release(x, y) => {
+                    let internal_coords = self.screen_to_internal_xy((x, y));
+                    self.release(internal_coords)
+                },
+                // Write character to selection
+                Action::Char(c) if self.selected.is_some() => {
+                    self.append(c);
+                },
+                // TODO is the / and hardcoded?
+                Action::Char('/') => {
+                    self.search_forward();
+                },
+                Action::Char('?') => {
+                    self.search_backward();
+                },
+                Action::Char(c) => {
+                    self.prefix_jump_to(c.to_string());
+                },
+                Action::Help => self.help(),
+                Action::UnselectRet => return self.unselect().is_some(),
+                Action::ScrollUp => self.scroll_up(),
+                Action::ScrollDown => self.scroll_down(),
+                Action::DeleteSelected => self.delete_selected(true),
+                Action::SelectUp => self.select_up(),
+                Action::SelectDown => self.select_down(),
+                Action::SelectLeft => self.select_left(),
+                Action::SelectRight => self.select_right(),
+                Action::EraseChar => self.backspace(),
+                Action::CreateSibling => self.create_sibling(),
+                Action::CreateChild => self.create_child(),
+                Action::CreateFreeNode => self.create_free_node(),
+                Action::ExecSelected => self.exec_selected(),
+                Action::DrillDown => self.drill_down(),
+                Action::PopUp => self.pop_focus(),
+                Action::PrefixJump => self.prefix_jump_prompt(),
+                Action::ToggleCompleted => self.toggle_stricken(),
+                Action::ToggleHideCompleted => self.toggle_hide_stricken(),
+                Action::Arrow => self.add_or_remove_arrow(),
+                Action::AutoArrange => self.toggle_auto_arrange(),
+                Action::ToggleCollapsed => self.toggle_collapsed(),
+                Action::Quit => return false,
+                Action::Save => self.save(),
+                Action::ToggleShowLogs => self.toggle_show_logs(),
+                Action::EnterCmd => self.enter_cmd(),
+                Action::FindTask => self.auto_task(),
+                Action::YankPasteNode => self.cut_paste(),
+                Action::RaiseSelected => self.raise_selected(),
+                Action::LowerSelected => self.lower_selected(),
+                Action::Search => self.search_forward(),
+                Action::UndoDelete => self.undo_delete(),
+            },
             None => warn!("received unknown input"),
         }
         true
@@ -346,17 +346,16 @@ impl Screen {
         lazy_static! {
             static ref RE: Regex = Regex::new(r"#prio=(\d+)").unwrap();
         }
-        self.with_node(node_id, |n| n.content.clone()).and_then(
-            |c| {
+        self.with_node(node_id, |n| n.content.clone())
+            .and_then(|c| {
                 if RE.is_match(&*c) {
-                    RE.captures_iter(&*c).nth(0).and_then(|n| {
-                        n.at(1).unwrap().parse::<usize>().ok()
-                    })
+                    RE.captures_iter(&*c)
+                        .nth(0)
+                        .and_then(|n| n.get(1).unwrap().as_str().parse::<usize>().ok())
                 } else {
                     None
                 }
-            },
-        )
+            })
     }
 
     fn single_key_prompt(&mut self, prompt: &str) -> io::Result<Key> {
@@ -430,7 +429,7 @@ impl Screen {
             SearchDirection::Backward => format!("search backwards{}:", last_search_str),
         };
         if let Ok(Some(mut query)) = self.prompt(&*prompt) {
-            if query == "".to_owned() {
+            if query == "" {
                 if let Some((ref last, _)) = self.last_search {
                     query = last.clone();
                 } else {
@@ -563,7 +562,7 @@ impl Screen {
                     error!("command failed to start: {}", content);
                 }
             } else {
-                let shell = env::var("SHELL").unwrap_or("bash".to_owned());
+                let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_owned());
                 let cmd = process::Command::new(shell)
                     .arg("-c")
                     .arg(content.to_owned())
@@ -576,16 +575,17 @@ impl Screen {
     }
 
     fn exec_text_editor(&mut self, node_id: NodeID) {
-        let text = self.with_node(node_id, |n| n.free_text.clone())
+        let text = self
+            .with_node(node_id, |n| n.free_text.clone())
             .unwrap()
-            .unwrap_or("".to_owned());
+            .unwrap_or_else(|| "".to_owned());
 
         let pid = unsafe { getpid() };
         let path = format!("/tmp/void_buffer.tmp.{}", pid);
         debug!("trying to open {} in editor", path);
 
         // remove old tmp file
-        if let Ok(_) = remove_file(&path) {
+        if remove_file(&path).is_ok() {
             warn!("removed stale tmp file");
         }
 
@@ -602,8 +602,8 @@ impl Screen {
         self.cleanup();
 
         // open text editor
-        let ed = env::var("EDITOR").unwrap_or("vim".to_owned());
-        process::Command::new(ed)
+        let editor = env::var("EDITOR").unwrap_or_else(|_| "vim".to_owned());
+        process::Command::new(editor)
             .arg(&path)
             .spawn()
             .expect("failed to open text editor")
@@ -663,7 +663,7 @@ impl Screen {
     pub fn recursive_child_filter_map<F, B>(
         &self,
         node_id: NodeID,
-        mut filter_map: &mut F,
+        filter_map: &mut F,
     ) -> Vec<B>
         where F: FnMut(&Node) -> Option<B>
     {
@@ -733,7 +733,7 @@ impl Screen {
         }
         if let Some(selected_id) = self.selected {
             // nuke node if it's empty and has no children
-            let deletable = self.with_node_mut_no_meta(selected_id, |mut n| {
+            let deletable = self.with_node_mut_no_meta(selected_id, |n| {
                 n.selected = false;
                 n.content.is_empty() && n.children.is_empty()
             }).unwrap_or(false);
@@ -742,11 +742,11 @@ impl Screen {
                 return None;
             }
 
-            self.with_node_mut_no_meta(selected_id, |mut n| {
+            self.with_node_mut_no_meta(selected_id, |n| {
                 // if parseable date, change date
-                if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).iter().nth(0) {
+                if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).get(0) {
                     if let Some(date) = dateparse(date.clone()) {
-                        n.content = RE_DATE.replace(&*n.content, "").trim_right().to_owned();
+                        n.content = RE_DATE.replace(&*n.content, "").trim_end().to_owned();
                         if n.meta.finish_time.is_some() {
                             n.meta.finish_time = Some(date);
                         } else {
@@ -793,7 +793,7 @@ impl Screen {
         if self.dragging_from.is_none() {
             self.unselect();
             if let Some(&node_id) = self.lookup(coords) {
-                return self.with_node_mut_no_meta(node_id, |mut node| {
+                return self.with_node_mut_no_meta(node_id, |node| {
                     trace!("selected node {} at {:?}", node_id, coords);
                     node.selected = true;
                     node_id
@@ -900,7 +900,7 @@ impl Screen {
 
     fn toggle_auto_arrange(&mut self) {
         let root = self.drawing_root;
-        self.with_node_mut_no_meta(root, |mut n| n.auto_arrange = !n.auto_arrange)
+        self.with_node_mut_no_meta(root, |n| n.auto_arrange = !n.auto_arrange)
             .unwrap()
     }
 
@@ -1154,7 +1154,7 @@ impl Screen {
     }
 
     fn anchor(&self, node_id: NodeID) -> Result<NodeID, String> {
-        if let None = self.drawn_at(node_id) {
+        if self.drawn_at(node_id).is_none() {
             return Err("node not drawn on this screen".to_owned());
         }
 
@@ -1211,7 +1211,7 @@ impl Screen {
                 // than create a cycle, we move the subtree.
                 let ptr = self.anchor(selected_id).unwrap();
                 trace!("move selected 2");
-                self.with_node_mut_no_meta(ptr, |mut root| {
+                self.with_node_mut_no_meta(ptr, |root| {
                     let (ox, oy) = root.rooted_coords;
                     let nx = max(ox as i16 + dx, 1) as u16;
                     let ny = max(oy as i16 + dy, 1) as u16;
@@ -1339,7 +1339,7 @@ impl Screen {
                 // principle: don't modify things that are above the visible scope
                 return;
             }
-            self.with_node_mut_no_meta(parent_id, |mut parent| {
+            self.with_node_mut_no_meta(parent_id, |parent| {
                 let idx = parent
                     .children
                     .iter()
@@ -1362,7 +1362,7 @@ impl Screen {
                 // principle: don't modify things that are above the visible scope
                 return;
             }
-            self.with_node_mut_no_meta(parent_id, |mut parent| {
+            self.with_node_mut_no_meta(parent_id, |parent| {
                 let idx = parent
                     .children
                     .iter()
@@ -1458,7 +1458,7 @@ impl Screen {
             }
         }
         node_costs.sort_by_key(|&(_, ref cost)| cost.clone());
-        node_costs.iter().nth(0).map(|&(&id, _)| id)
+        node_costs.get(0).map(|&(&id, _)| id)
     }
 
     fn select_node(&mut self, node_id: NodeID) {
@@ -1470,8 +1470,12 @@ impl Screen {
             // selection) being empty.  To account for this, we need
             // to only set self.selected to node_id if the with_node
             // succeeds.
-            self.with_node_mut_no_meta(node_id, |mut node| node.selected = true)
-                .map(|_| self.selected = Some(node_id));
+            if self
+                .with_node_mut_no_meta(node_id, |node| node.selected = true)
+                .is_some()
+            {
+                self.selected = Some(node_id);
+            }
         }
     }
 
@@ -1557,7 +1561,7 @@ impl Screen {
         if let Some(ref path) = self.work_path {
             let mut tmp_path = path.clone();
             tmp_path.push_str(".tmp");
-            if let Ok(_) = remove_file(&tmp_path) {
+            if remove_file(&tmp_path).is_ok() {
                 warn!("removed stale tmp file");
             }
             let mut f = File::create(&tmp_path).unwrap();
@@ -1584,7 +1588,7 @@ impl Screen {
         self.lookup.contains_key(&coords)
     }
 
-    pub fn add_or_remove_arrow(&mut self) {
+  pub fn add_or_remove_arrow(&mut self) {
         if self.drawing_arrow.is_none() {
             self.drawing_arrow = self.selected;
             return;
@@ -1600,7 +1604,7 @@ impl Screen {
                     {
                         true
                     } else {
-                        false || acc
+                        acc
                     },
                 );
                 if contains {
@@ -1725,12 +1729,12 @@ impl Screen {
 
     fn draw_scrollbar(&self) {
         let bar_height = max(self.dims.1, 1) - 1;
-        let normalized_lowest = max(self.lowest_drawn, 1) as f64;
-        let fraction_viewable = self.dims.1 as f64 / normalized_lowest;
-        let shade_start_fraction = self.view_y as f64 / normalized_lowest;
+        let normalized_lowest = f64::from(max(self.lowest_drawn, 1));
+        let fraction_viewable = f64::from(self.dims.1) / normalized_lowest;
+        let shade_start_fraction = f64::from(self.view_y) / normalized_lowest;
 
-        let shade_amount = (bar_height as f64 * fraction_viewable) as usize;
-        let shade_start = (bar_height as f64 * shade_start_fraction) as usize;
+        let shade_amount = (f64::from(bar_height) * fraction_viewable) as usize;
+        let shade_start = (f64::from(bar_height) * shade_start_fraction) as usize;
         let shade_end = shade_start + shade_amount;
 
         for (i, y) in (2..bar_height + 2).enumerate() {
@@ -1855,7 +1859,7 @@ impl Screen {
             || {
                 let visible = buf.replace(reset, "").replace(&*pre_meta, "");
                 let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
-                self.grapheme_cache.insert(node.id, vg.clone());
+                self.grapheme_cache.insert(node.id, vg);
                 vg
             },
         );
@@ -2059,9 +2063,11 @@ impl Screen {
         trace!("starting draw");
         while cursor != dest {
             for neighbor in perms(cursor) {
-                if (!(neighbor.0 >= self.dims.0) && !(neighbor.1 >= self.dims.1 + self.view_y) &&
-                        !self.occupied(neighbor) || neighbor == dest) &&
-                    !visited.contains_key(&neighbor)
+                if (neighbor.0 < self.dims.0
+                    && neighbor.1 < self.dims.1 + self.view_y
+                    && !self.occupied(neighbor)
+                    || neighbor == dest)
+                    && !visited.contains_key(&neighbor)
                 {
                     let c = std::u16::MAX - cost(neighbor, dest);
                     pq.push((c, neighbor));
@@ -2082,9 +2088,9 @@ impl Screen {
         let mut back_cursor = dest;
         let mut path = vec![dest];
         while back_cursor != start {
-            let prev = visited.get(&back_cursor).unwrap();
-            path.push(*prev);
-            back_cursor = *prev;
+            let prev = visited[&back_cursor];
+            path.push(prev);
+            back_cursor = prev;
         }
         path.reverse();
         trace!("leaving path()");
@@ -2116,10 +2122,10 @@ impl Screen {
         }
         let today_normalized = now / day_in_sec * day_in_sec;
         let counts_clone = counts.clone();
-        let finished_today = counts_clone.get(&today_normalized).unwrap();
+        let finished_today = counts_clone[&today_normalized];
         let week_line: Vec<i64> = counts.into_iter().map(|(_, v)| v).collect();
         let plot = plot::plot_sparkline(week_line);
-        (plot, *finished_today as usize)
+        (plot, finished_today as usize)
     }
 
     fn format_node(&mut self, raw_node: &Node) -> Node {
@@ -2161,7 +2167,7 @@ impl Screen {
         }
         let queried_nodes = tagged_children
             .map(|tc| tc.into_iter().collect())
-            .unwrap_or(vec![]);
+            .unwrap_or_else(|| vec![]);
 
         let mut since_opt = None;
         let mut until_opt = None;
@@ -2181,10 +2187,7 @@ impl Screen {
                 }
             }
         }
-        if let Some(since) = re_matches::<String>(&RE_SINCE, &*node.content).iter().nth(
-            0,
-        )
-        {
+        if let Some(since) = re_matches::<String>(&RE_SINCE, &*node.content).get(0) {
             since_opt = dateparse(since.clone());
             if let Some(cutoff) = since_opt {
                 let mut new = vec![];
@@ -2199,10 +2202,7 @@ impl Screen {
                 node.children = new;
             }
         }
-        if let Some(until) = re_matches::<String>(&RE_UNTIL, &*node.content).iter().nth(
-            0,
-        )
-        {
+        if let Some(until) = re_matches::<String>(&RE_UNTIL, &*node.content).get(0) {
             until_opt = dateparse(until.clone());
             if let Some(cutoff) = until_opt {
                 let mut new = vec![];
@@ -2220,13 +2220,13 @@ impl Screen {
         if RE_REV.is_match(&*node.content) {
             node.children = node.children.into_iter().rev().collect();
         }
-        if let Some(&limit) = re_matches(&RE_LIMIT, &*node.content).iter().nth(0) {
+        if let Some(&limit) = re_matches(&RE_LIMIT, &*node.content).get(0) {
             node.children.truncate(limit);
         }
 
         let re_n = re_matches::<usize>(&RE_N, &*node.content);
-        let n_opt = re_n.iter().nth(0);
-        if let Some(plot) = re_matches::<String>(&RE_PLOT, &*node.content).iter().nth(0) {
+        let n_opt = re_n.get(0);
+        if let Some(plot) = re_matches::<String>(&RE_PLOT, &*node.content).get(0) {
             let now = time::get_time().sec as u64;
             let buckets = n_opt.cloned().unwrap_or(7);
             let since = since_opt.unwrap_or_else(|| now - 60 * 60 * 24 * 7);

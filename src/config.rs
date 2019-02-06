@@ -1,12 +1,11 @@
-use std::fmt;
-use std::env;
-use std::fs::File;
-use std::collections::HashMap;
-use std::io::{self, Error, ErrorKind, Read};
+use std::{
+    collections::HashMap,
+    env, fmt,
+    fs::File,
+    io::{self, Error, ErrorKind, Read},
+};
 
-use regex::Regex;
 use termion::event::{Event, Key, MouseEvent};
-
 
 #[derive(Debug, Copy, Clone, Hash, PartialOrd, Ord, PartialEq, Eq)]
 pub enum Action {
@@ -48,7 +47,7 @@ pub enum Action {
     Help,
 }
 
-fn str_to_action(input: String) -> Option<Action> {
+fn to_action(input: String) -> Option<Action> {
     match &*input {
         "unselect" => Some(Action::UnselectRet),
         "scroll_up" => Some(Action::ScrollUp),
@@ -86,32 +85,33 @@ fn str_to_action(input: String) -> Option<Action> {
     }
 }
 
-fn str_to_key(input: String) -> Option<Key> {
-    use termion::event::Key::*;
+// Alt and Control must be specified with capital letters C- and A-
+fn to_key(raw_key: String) -> Option<Key> {
+    use termion::event::Key::{self, Alt, Char, Ctrl};
 
-    lazy_static! {
-        static ref RE: Regex = Regex::new(r"C-(.)").unwrap();
-    }
+    fn extract_key(raw_key: &str, idx: usize) -> Option<char> { raw_key.chars().nth(idx) }
 
-    match &*input {
-        "esc" => Some(Esc),
-        "pgup" => Some(PageUp),
-        "pgdn" => Some(PageDown),
-        "del" => Some(Delete),
-        "up" => Some(Up),
-        "down" => Some(Down),
-        "left" => Some(Left),
-        "right" => Some(Right),
-        "backspace" => Some(Backspace),
+    match &*raw_key {
+        "esc" => Some(Key::Esc),
+        "pgup" => Some(Key::PageUp),
+        "pgdn" => Some(Key::PageDown),
+        "del" => Some(Key::Delete),
+        "backspace" => Some(Key::Backspace),
+        "up" => Some(Key::Up),
+        "down" => Some(Key::Down),
+        "left" => Some(Key::Left),
+        "right" => Some(Key::Right),
+
+        "space" => Some(Char(' ')),
         "enter" => Some(Char('\n')),
         "tab" => Some(Char('\t')),
-        other => {
-            RE.captures_iter(other)
-                .nth(0)
-                .and_then(|n| n.at(1))
-                .and_then(|r| r.chars().nth(0))
-                .map(|c| Ctrl(c))
-        }
+
+        key if key.len() == 1 => extract_key(key, 0).map(Char),
+
+        key if key.starts_with("A-") => extract_key(key, 2).map(Alt),
+        key if key.starts_with("C-") => extract_key(key, 2).map(Ctrl),
+
+        _ => None,
     }
 }
 
@@ -167,9 +167,9 @@ impl Default for Config {
 
 impl fmt::Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Configured Hotkeys:\n").unwrap();
+        writeln!(f, "Configured Hotkeys:").unwrap();
         for (key, action) in &self.config {
-            write!(f, "    {:?}: {:?}\n", action, key).unwrap();
+            writeln!(f, "    {:?}: {:?}", action, key).unwrap();
         }
         Ok(())
     }
@@ -178,32 +178,39 @@ impl fmt::Display for Config {
 impl Config {
     pub fn maybe_parsed_from_env() -> io::Result<Config> {
         if let Ok(p) = env::var("KEYFILE") {
-            Config::parse_file(p)
+            Config::parse_keyfile(p)
         } else {
             Ok(Config::default())
         }
     }
 
-    pub fn parse_file(p: String) -> io::Result<Config> {
+    pub fn parse_keyfile(p: String) -> io::Result<Config> {
         let mut buf = String::new();
         let mut f = File::open(p)?;
         f.read_to_string(&mut buf)?;
         let mut config = Config::default();
-        for (line_number, line) in buf.lines().enumerate() {
-            let e = format!("invalid config at line {}: {}", line_number, line);
+        for (mut line_num, line) in buf.lines().enumerate() {
+            if line == "" || line.starts_with('#') {
+                continue;
+            }
 
-            let parts: Vec<_> = line.split(":").map(|p| p.trim()).collect();
+            // Zero based indexing inappropriate here.
+            line_num += 1;
+
+            let parts: Vec<_> = line.splitn(2, ':').map(|p| p.trim()).collect();
             if parts.len() != 2 {
+                let e = format!("No colon found on line {}", line_num);
                 error!("{}", e);
                 return Err(Error::new(ErrorKind::Other, e));
             }
 
             let (raw_action, raw_key) = (parts[0], parts[1]);
 
-            let key_opt = str_to_key(raw_key.to_owned());
-            let action_opt = str_to_action(raw_action.to_owned());
+            let key_opt = to_key(raw_key.to_owned());
+            let action_opt = to_action(raw_action.to_owned());
 
             if key_opt.is_none() || action_opt.is_none() {
+                let e = format!("invalid config at line {}: {}", line_num, line);
                 error!("{}", e);
                 return Err(Error::new(ErrorKind::Other, e));
             }
@@ -218,8 +225,7 @@ impl Config {
     }
 
     pub fn map(&self, e: Event) -> Option<Action> {
-        use termion::event::Key::*;
-        use termion::event::MouseButton;
+        use termion::event::{Key::*, MouseButton};
         match e {
             Event::Key(Char(c)) => {
                 if let Some(action) = self.config.get(&Char(c)).cloned() {

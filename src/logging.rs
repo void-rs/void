@@ -1,9 +1,6 @@
-use std::sync::RwLock;
-use std::env;
-use std::fs::OpenOptions;
-use std::io::Write;
+use std::{env, fs::OpenOptions, io::Write, sync::RwLock};
 
-use log::{self, LogRecord, LogLevel, LogLevelFilter, LogMetadata, SetLoggerError};
+use log::{self, LogLevel, LogLevelFilter, LogMetadata, LogRecord, SetLoggerError};
 use time;
 
 struct ScreenLogger;
