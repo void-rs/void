@@ -89,7 +89,7 @@ fn to_action(input: String) -> Option<Action> {
 fn to_key(raw_key: String) -> Option<Key> {
     use termion::event::Key::{self, Alt, Char, Ctrl};
 
-    fn extract_key(raw_key: &str, idx: usize) -> char { raw_key.chars().nth(idx).unwrap() }
+    fn extract_key(raw_key: &str, idx: usize) -> Option<char> { raw_key.chars().nth(idx) }
 
     match &*raw_key {
         "esc" => Some(Key::Esc),
@@ -106,10 +106,10 @@ fn to_key(raw_key: String) -> Option<Key> {
         "enter" => Some(Char('\n')),
         "tab" => Some(Char('\t')),
 
-        key if key.len() == 1 => Some(Char(extract_key(key, 0))),
+        key if key.len() == 1 => extract_key(key, 0).map(Char),
 
-        key if key.starts_with("A-") => Some(Alt(extract_key(key, 2))),
-        key if key.starts_with("C-") => Some(Ctrl(extract_key(key, 2))),
+        key if key.starts_with("A-") => extract_key(key, 2).map(Alt),
+        key if key.starts_with("C-") => extract_key(key, 2).map(Ctrl),
 
         _ => None,
     }
