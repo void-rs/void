@@ -1,4 +1,4 @@
-# void [![Build Status](https://img.shields.io/travis/spacejam/void.svg?style=flat-square)](https://travis-ci.org/spacejam/void) ![State](https://img.shields.io/badge/state-alpha-orange.svg?style=flat-square)
+# void [![Build Status](https://img.shields.io/travis/void-rs/void.svg?style=flat-square)](https://travis-ci.org/void-rs/void) ![State](https://img.shields.io/badge/state-alpha-orange.svg?style=flat-square)
 
 [Tutorial](TUTORIAL.md)
 
