@@ -20,6 +20,9 @@ mod serialization;
 mod tagdb;
 mod task;
 
+// Allow the binary to use CLI module
+pub mod cli;
+
 use std::{cmp, collections::HashMap};
 
 use regex::Regex;
