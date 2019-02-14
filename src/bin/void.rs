@@ -1,6 +1,5 @@
 use fs2::FileExt;
-use std::ffi::OsString;
-use std::{fs::OpenOptions, io::Read};
+use std::{ffi::OsString, fs::OpenOptions, io::Read};
 
 use voidmap::{cli, deserialize_screen, init_screen_log, Config, Screen};
 
