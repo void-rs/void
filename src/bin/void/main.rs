@@ -1,7 +1,8 @@
 use fs2::FileExt;
 use std::{ffi::OsString, fs::OpenOptions, io::Read};
+use voidmap::{deserialize_screen, init_screen_log, Config, Screen};
 
-use voidmap::{cli, deserialize_screen, init_screen_log, Config, Screen};
+mod cli;
 
 fn main() {
     // Initialise the CLI parser

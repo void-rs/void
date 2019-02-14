@@ -1,9 +1,9 @@
 use clap::{App, Arg};
 
-const APP_NAME: &'static str = env!("CARGO_PKG_NAME");
-const VERSION: &'static str = env!("CARGO_PKG_VERSION");
-const AUTHORS: &'static str = env!("CARGO_PKG_AUTHORS");
-const ABOUT: &'static str = env!("CARGO_PKG_DESCRIPTION");
+const APP_NAME: &str = env!("CARGO_PKG_NAME");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
+const ABOUT: &str = env!("CARGO_PKG_DESCRIPTION");
 
 pub fn create<'a>() -> App<'a, 'a> {
     App::new(APP_NAME)
