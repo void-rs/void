@@ -48,14 +48,14 @@ pub enum Dir {
 }
 
 pub fn distances(c1: Coords, c2: Coords) -> (u16, u16) {
-    let xcost = cmp::max(c1.0, c2.0) - cmp::min(c1.0, c2.0);
-    let ycost = cmp::max(c1.1, c2.1) - cmp::min(c1.1, c2.1);
-    (xcost, ycost)
+    let x_cost = cmp::max(c1.0, c2.0) - cmp::min(c1.0, c2.0);
+    let y_cost = cmp::max(c1.1, c2.1) - cmp::min(c1.1, c2.1);
+    (x_cost, y_cost)
 }
 
 pub fn cost(c1: Coords, c2: Coords) -> u16 {
-    let (xcost, ycost) = distances(c1, c2);
-    xcost + ycost
+    let (x_cost, y_cost) = distances(c1, c2);
+    x_cost + y_cost
 }
 
 pub fn re_matches<A: std::str::FromStr>(re: &Regex, on: &str) -> Vec<A> {
