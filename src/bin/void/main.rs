@@ -14,8 +14,8 @@ fn main() {
 
     let path: OsString = matches
         .value_of("PATH")
-        .map(|p| OsString::from(p))
-        .or(dirs::home_dir().and_then(|mut h| {
+        .map(OsString::from)
+        .or_else(|| dirs::home_dir().and_then(|mut h| {
             h.push(".void.db");
             Some(h.into_os_string())
         }))

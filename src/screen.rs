@@ -441,11 +441,10 @@ impl Screen {
                 let idx = candidates
                     .iter()
                     .position(|&e| e.1 == last_choice)
-                    .map(|i| match direction {
+                    .map_or(0, |i| match direction {
                         SearchDirection::Forward => i + 1,
                         SearchDirection::Backward => i + candidates.len() - 1,
-                    })
-                    .unwrap_or(0);
+                    });
                 candidates[idx % candidates.len()]
             } else {
                 candidates[0]
@@ -2171,8 +2170,7 @@ impl Screen {
             }
         }
         let queried_nodes = tagged_children
-            .map(|tc| tc.into_iter().collect())
-            .unwrap_or_else(|| vec![]);
+            .map_or_else(|| vec![], |tc| tc.into_iter().collect());
 
         let mut since_opt = None;
         let mut until_opt = None;

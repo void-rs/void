@@ -71,9 +71,8 @@ impl TagDB {
     pub fn tag_to_nodes(&self, tag: &str) -> Vec<NodeID> {
         let mut res = self
             .tag_to_nodes
-            .get(&tag.to_owned())
-            .map(|set| set.clone().into_iter().collect())
-            .unwrap_or_else(|| vec![]);
+            .get(&*tag)
+            .map_or_else(|| vec![], |set| set.clone().into_iter().collect());
         res.sort();
         res
     }
