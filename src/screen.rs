@@ -108,7 +108,7 @@ impl Default for Screen {
             undo_stack: vec![],
             undo_nodes: HashMap::new(),
             ephemeral_nodes: HashMap::new(),
-            ephemeral_max_id: std::u64::MAX,
+            ephemeral_max_id: u64::max_value(),
             tag_db: TagDB::default(),
             last_click_ms: 0,
             grapheme_cache: HashMap::new(),
@@ -628,7 +628,7 @@ impl Screen {
             children: None,
             top: 2,                // leave room for header
             left: 1,               // 1-indexed screen
-            bottom: std::u16::MAX, // make this "bottomless" since we can paginate
+            bottom: u16::max_value(), // make this "bottomless" since we can paginate
             right: max(self.dims.0, 1) - 1,
             elem: None,
         };
@@ -765,7 +765,7 @@ impl Screen {
     fn screen_to_internal_xy(&self, coords: Coords) -> Coords {
         (
             coords.0,
-            min(coords.1, std::u16::MAX - self.view_y) + self.view_y,
+            min(coords.1, u16::max_value() - self.view_y) + self.view_y,
         )
     }
 
@@ -1638,7 +1638,7 @@ impl Screen {
         // let before = time::get_time();
 
         // clean up before a fresh drawing
-        self.ephemeral_max_id = std::u64::MAX;
+        self.ephemeral_max_id = u64::max_value();
         self.ephemeral_nodes.clear();
         self.lookup.clear();
         self.drawn_at.clear();
@@ -2070,7 +2070,7 @@ impl Screen {
                     || neighbor == dest)
                     && !visited.contains_key(&neighbor)
                 {
-                    let c = std::u16::MAX - cost(neighbor, dest);
+                    let c = u16::max_value() - cost(neighbor, dest);
                     pq.push((c, neighbor));
                     visited.insert(neighbor, cursor);
                 }
