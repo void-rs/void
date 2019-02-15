@@ -10,8 +10,8 @@ pub struct TagDB {
 }
 
 impl Default for TagDB {
-    fn default() -> TagDB {
-        TagDB {
+    fn default() -> Self {
+        Self {
             node_to_tags: HashMap::new(),
             tag_to_nodes: HashMap::new(),
         }

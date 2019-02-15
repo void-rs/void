@@ -26,9 +26,9 @@ pub struct Meta {
 }
 
 impl Default for Meta {
-    fn default() -> Meta {
+    fn default() -> Self {
         let now = time::get_time().sec as u64;
-        Meta {
+        Self {
             ctime: now,
             mtime: now,
             finish_time: None,
@@ -80,13 +80,13 @@ enum GpsError {
 }
 
 impl From<hyper::Error> for GpsError {
-    fn from(err: hyper::Error) -> GpsError { GpsError::Hyper(err) }
+    fn from(err: hyper::Error) -> Self { GpsError::Hyper(err) }
 }
 
 impl From<io::Error> for GpsError {
-    fn from(err: io::Error) -> GpsError { GpsError::Io(err) }
+    fn from(err: io::Error) -> Self { GpsError::Io(err) }
 }
 
 impl From<num::ParseFloatError> for GpsError {
-    fn from(err: num::ParseFloatError) -> GpsError { GpsError::Parse(err) }
+    fn from(err: num::ParseFloatError) -> Self { GpsError::Parse(err) }
 }

@@ -121,9 +121,9 @@ pub struct Config {
 }
 
 impl Default for Config {
-    fn default() -> Config {
+    fn default() -> Self {
         use termion::event::Key::*;
-        Config {
+        Self {
             config: vec![
                 (Esc, Action::UnselectRet),
                 (PageUp, Action::ScrollUp),
@@ -176,19 +176,19 @@ impl fmt::Display for Config {
 }
 
 impl Config {
-    pub fn maybe_parsed_from_env() -> io::Result<Config> {
+    pub fn maybe_parsed_from_env() -> io::Result<Self> {
         if let Ok(p) = env::var("KEYFILE") {
-            Config::parse_keyfile(p)
+            Self::parse_keyfile(p)
         } else {
-            Ok(Config::default())
+            Ok(Self::default())
         }
     }
 
-    pub fn parse_keyfile(p: String) -> io::Result<Config> {
+    pub fn parse_keyfile(p: String) -> io::Result<Self> {
         let mut buf = String::new();
         let mut f = File::open(p)?;
         f.read_to_string(&mut buf)?;
-        let mut config = Config::default();
+        let mut config = Self::default();
         for (mut line_num, line) in buf.lines().enumerate() {
             if line == "" || line.starts_with('#') {
                 continue;

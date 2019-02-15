@@ -80,10 +80,10 @@ pub struct Screen {
 }
 
 impl Default for Screen {
-    fn default() -> Screen {
+    fn default() -> Self {
         let mut root = Node::default();
         root.content = "home".to_owned();
-        let mut screen = Screen {
+        let mut screen = Self {
             config: Config::default(),
             arrows: vec![],
             selected: None,

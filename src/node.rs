@@ -18,8 +18,8 @@ pub struct Node {
 }
 
 impl Default for Node {
-    fn default() -> Node {
-        Node {
+    fn default() -> Self {
+        Self {
             rooted_coords: (1, 2),
             id: 0,
             parent_id: 0,

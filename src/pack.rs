@@ -48,7 +48,7 @@ impl Pack {
             self.right -= dx;
             self.bottom -= dy;
 
-            let right = Pack {
+            let right = Self {
                 children: None,
                 top: self.top,
                 left: self.right,
@@ -57,7 +57,7 @@ impl Pack {
                 elem: None,
             };
 
-            let below = Pack {
+            let below = Self {
                 children: None,
                 top: self.bottom,
                 left: self.left,
