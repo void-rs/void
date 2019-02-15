@@ -15,10 +15,12 @@ fn main() {
     let path: OsString = matches
         .value_of("PATH")
         .map(OsString::from)
-        .or_else(|| dirs::home_dir().and_then(|mut h| {
-            h.push(".void.db");
-            Some(h.into_os_string())
-        }))
+        .or_else(|| {
+            dirs::home_dir().and_then(|mut h| {
+                h.push(".void.db");
+                Some(h.into_os_string())
+            })
+        })
         .unwrap();
 
     // load from file if present
