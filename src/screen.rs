@@ -179,7 +179,6 @@ impl Screen {
                 Action::Char(c) if self.selected.is_some() => {
                     self.append(c);
                 },
-                // TODO is the / and hardcoded?
                 Action::Char('/') => {
                     self.search_forward();
                 },
