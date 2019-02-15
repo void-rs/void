@@ -1,6 +1,6 @@
 use std::cmp;
 
-pub fn plot_sparkline<T>(nums_in: Vec<T>) -> String
+pub fn sparkline<T>(nums_in: Vec<T>) -> String
 where T: Into<i64> {
     const BARS: [char; 9] = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
@@ -43,5 +43,5 @@ where T: Into<i64> {
         let idx = (n - start) / step;
         counts[cmp::min(idx, bars - 1)] += 1;
     }
-    plot_sparkline(counts)
+    sparkline(counts)
 }
