@@ -577,8 +577,7 @@ impl Screen {
             .unwrap()
             .unwrap_or_else(|| "".to_owned());
 
-        let pid = process::id();
-        let path = format!("/tmp/void_buffer.tmp.{}", pid);
+        let path = format!("/tmp/void_buffer.tmp.{}.md", process::id());
         debug!("trying to open {} in editor", path);
 
         // remove old tmp file
