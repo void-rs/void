@@ -112,8 +112,8 @@ fn deserialize_node(node_pb: &pb::Node) -> Node {
     }
 }
 
-pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufError> {
-    let screen_pb: pb::Screen = protobuf::parse_from_bytes(&*data)?;
+pub fn deserialize_screen(data: &[u8]) -> Result<Screen, protobuf::ProtobufError> {
+    let screen_pb: pb::Screen = protobuf::parse_from_bytes(&data)?;
     let mut screen = Screen::default();
     screen.max_id = screen_pb.get_max_id();
     screen.nodes = screen_pb
@@ -121,7 +121,7 @@ pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufErr
         .iter()
         .map(|node_pb| {
             let node = deserialize_node(node_pb);
-            screen.tag_db.reindex(node.id, node.content.clone());
+            screen.tag_db.reindex(node.id, &node.content);
             (node.id, node)
         })
         .collect();

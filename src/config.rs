@@ -47,8 +47,8 @@ pub enum Action {
     Help,
 }
 
-fn to_action(input: String) -> Option<Action> {
-    match &*input {
+fn to_action(input: &str) -> Option<Action> {
+    match input {
         "unselect" => Some(Action::UnselectRet),
         "scroll_up" => Some(Action::ScrollUp),
         "scroll_down" => Some(Action::ScrollDown),
@@ -86,12 +86,12 @@ fn to_action(input: String) -> Option<Action> {
 }
 
 // Alt and Control must be specified with capital letters C- and A-
-fn to_key(raw_key: String) -> Option<Key> {
+fn to_key(raw_key: &str) -> Option<Key> {
     use termion::event::Key::{self, Alt, Char, Ctrl};
 
     fn extract_key(raw_key: &str, idx: usize) -> Option<char> { raw_key.chars().nth(idx) }
 
-    match &*raw_key {
+    match raw_key {
         "esc" => Some(Key::Esc),
         "pgup" => Some(Key::PageUp),
         "pgdn" => Some(Key::PageDown),
@@ -206,8 +206,8 @@ impl Config {
 
             let (raw_action, raw_key) = (parts[0], parts[1]);
 
-            let key_opt = to_key(raw_key.to_owned());
-            let action_opt = to_action(raw_action.to_owned());
+            let key_opt = to_key(raw_key);
+            let action_opt = to_action(raw_action);
 
             if key_opt.is_none() || action_opt.is_none() {
                 let e = format!("invalid config at line {}: {}", line_num, line);

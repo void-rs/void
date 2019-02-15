@@ -50,7 +50,7 @@ impl Arbitrary for Op {
             Event::Mouse(MouseEvent::Release(x, y)),
         ];
         Op {
-            event: g.choose(&*events).unwrap().clone(),
+            event: g.choose(&events).unwrap().clone(),
         }
     }
 }
@@ -94,7 +94,7 @@ impl Arbitrary for Content {
         let mut choice = vec![];
 
         for _ in 0..g.gen_range(0, 2) {
-            let command = g.choose(&*commands).unwrap().clone();
+            let command = g.choose(&commands).unwrap();
             let mut chars = command.chars().collect();
             choice.append(&mut chars);
             if g.gen_range(0, 10) > 0 {

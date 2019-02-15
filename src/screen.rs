@@ -186,7 +186,7 @@ impl Screen {
                     self.search_backward();
                 },
                 Action::Char(c) => {
-                    self.prefix_jump_to(c.to_string());
+                    self.prefix_jump_to(&c.to_string());
                 },
                 Action::Help => self.help(),
                 Action::UnselectRet => return self.unselect().is_some(),
@@ -343,8 +343,8 @@ impl Screen {
         }
         self.with_node(node_id, |n| n.content.clone())
             .and_then(|c| {
-                if RE.is_match(&*c) {
-                    RE.captures_iter(&*c)
+                if RE.is_match(&c) {
+                    RE.captures_iter(&c)
                         .nth(0)
                         .and_then(|n| n.get(1).unwrap().as_str().parse::<usize>().ok())
                 } else {
@@ -419,7 +419,7 @@ impl Screen {
             SearchDirection::Forward => format!("search{}:", last_search_str),
             SearchDirection::Backward => format!("search backwards{}:", last_search_str),
         };
-        if let Ok(Some(mut query)) = self.prompt(&*prompt) {
+        if let Ok(Some(mut query)) = self.prompt(&prompt) {
             if query == "" {
                 if let Some((ref last, _)) = self.last_search {
                     query = last.clone();
@@ -431,7 +431,7 @@ impl Screen {
                 self.last_search.take();
             }
 
-            let mut f = |n: &Node| n.content.find(&*query).map(|idx| (idx, n.id));
+            let mut f = |n: &Node| n.content.find(&query).map(|idx| (idx, n.id));
             let mut candidates = self.recursive_child_filter_map(self.drawing_root, &mut f);
             if candidates.is_empty() {
                 return;
@@ -462,14 +462,14 @@ impl Screen {
             Ok(Key::Char(c)) => c.to_string(),
             _ => return,
         };
-        self.prefix_jump_to(prefix)
+        self.prefix_jump_to(&prefix)
     }
 
-    fn prefix_jump_to(&mut self, prefix: String) {
+    fn prefix_jump_to(&mut self, prefix: &str) {
         let chars = "arstqwfpgdbvcxzoienyuljhkm1234567890ARSTQWFPGDVCXZOIENYULJHBKM";
         // get visible nodes that contain prefix
         let nodes = self.find_visible_nodes(|node_id| {
-            self.with_node(node_id, |n| n.content.starts_with(&*prefix))
+            self.with_node(node_id, |n| n.content.starts_with(prefix))
                 .unwrap()
         });
 
@@ -545,7 +545,7 @@ impl Screen {
         } else if content.starts_with("txt:") {
             self.exec_text_editor(selected_id);
         } else if content.starts_with("http") {
-            #[cfg(any(target_os = "macos",))]
+            #[cfg(target_os = "macos")]
             let default_open_cmd = "open";
             #[cfg(target_os = "linux")]
             let default_open_cmd = "xdg-open";
@@ -561,7 +561,7 @@ impl Screen {
             let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_owned());
             let cmd = process::Command::new(shell).arg("-c").arg(&content).spawn();
             if cmd.is_err() {
-                error!("command failed to start: {}", &content);
+                error!("command failed to start: {}", content);
             }
         }
     }
@@ -625,8 +625,8 @@ impl Screen {
         trace!("arrange");
         let mut real_estate = Pack {
             children: None,
-            top: 2,                // leave room for header
-            left: 1,               // 1-indexed screen
+            top: 2,                   // leave room for header
+            left: 1,                  // 1-indexed screen
             bottom: u16::max_value(), // make this "bottomless" since we can paginate
             right: max(self.dims.0, 1) - 1,
             elem: None,
@@ -734,9 +734,9 @@ impl Screen {
 
             self.with_node_mut_no_meta(selected_id, |n| {
                 // if parseable date, change date
-                if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).get(0) {
-                    if let Some(date) = dateparse(date.clone()) {
-                        n.content = RE_DATE.replace(&*n.content, "").trim_end().to_owned();
+                if let Some(date) = re_matches::<String>(&RE_DATE, &n.content).get(0) {
+                    if let Some(date) = dateparse(&date) {
+                        n.content = RE_DATE.replace(&n.content, "").trim_end().to_owned();
                         if n.meta.finish_time.is_some() {
                             n.meta.finish_time = Some(date);
                         } else {
@@ -1088,7 +1088,7 @@ impl Screen {
                 node.content.clone()
             }) {
                 self.grapheme_cache.remove(&selected_id);
-                self.tag_db.reindex(selected_id, content);
+                self.tag_db.reindex(selected_id, &content);
             }
         }
     }
@@ -1101,7 +1101,7 @@ impl Screen {
                 node.content.clone()
             }) {
                 self.grapheme_cache.remove(&selected_id);
-                self.tag_db.reindex(selected_id, content);
+                self.tag_db.reindex(selected_id, &content);
             }
         }
     }
@@ -1555,7 +1555,7 @@ impl Screen {
                 warn!("removed stale tmp file");
             }
             let mut f = File::create(&tmp_path).unwrap();
-            f.write_all(&*data).unwrap();
+            f.write_all(&data).unwrap();
             f.sync_all().unwrap();
             rename(tmp_path, path).unwrap();
             info!("saved work to {}", path);
@@ -1669,7 +1669,7 @@ impl Screen {
                 let logs = logging::read_logs();
                 for msg in logs.iter().rev() {
                     let line_width = min(msg.len(), self.dims.0 as usize);
-                    println!("\r{}", msg[..line_width as usize].to_owned());
+                    println!("\r{}", &msg[..line_width as usize]);
                 }
             }
         }
@@ -1677,7 +1677,7 @@ impl Screen {
         // print arrows
         for &(ref from, ref to) in &self.arrows {
             let (path, (direction1, direction2)) = self.path_between_nodes(*from, *to);
-            self.draw_path(path, direction1, direction2);
+            self.draw_path(&path, direction1, direction2);
         }
 
         // conditionally print drag dest arrow
@@ -1689,11 +1689,11 @@ impl Screen {
                     if let Some(to_node) = self.lookup(to) {
                         let (path, (direction1, direction2)) =
                             self.path_between_nodes(*from_node, *to_node);
-                        self.draw_path(path, direction1, direction2);
+                        self.draw_path(&path, direction1, direction2);
                     } else {
                         let (path, (direction1, direction2)) =
                             self.path_from_node_to_point(*from_node, to);
-                        self.draw_path(path, direction1, direction2);
+                        self.draw_path(&path, direction1, direction2);
                     }
                 } else {
                     warn!("dragging_from set, but NOT dragging_to");
@@ -1755,7 +1755,7 @@ impl Screen {
                 child_coords,
                 false,
                 hide_stricken,
-                child_color,
+                &child_color,
             );
         }
     }
@@ -1768,7 +1768,7 @@ impl Screen {
         internal_coords: Coords,
         last: bool,
         hide_stricken: bool,
-        color: String,
+        color: &str,
     ) -> usize
     {
         trace!("draw_node({})", node_id);
@@ -1793,7 +1793,7 @@ impl Screen {
             return 0;
         }
 
-        let reset = &*format!("{}", color::Fg(color::Reset));
+        let reset = &format!("{}", color::Fg(color::Reset));
         let mut pre_meta = String::new();
         let mut buf = String::new();
 
@@ -1896,7 +1896,7 @@ impl Screen {
                     child_coords,
                     last,
                     node.hide_stricken,
-                    color.clone(),
+                    color,
                 );
                 drawn += child_drew;
             }
@@ -1904,7 +1904,7 @@ impl Screen {
         drawn
     }
 
-    fn draw_path(&self, internal_path: Vec<Coords>, start_dir: Dir, dest_dir: Dir) {
+    fn draw_path(&self, internal_path: &[Coords], start_dir: Dir, dest_dir: Dir) {
         let path: Vec<_> = internal_path
             .iter()
             .filter_map(|&c| self.internal_to_screen_xy(c))
@@ -1970,7 +1970,7 @@ impl Screen {
         let (plot, finished_today) = self.last_week_of_done_tasks();
         let plot_line = format!("│{}│({} today)", plot, finished_today);
 
-        header_text.push_str(&*plot_line);
+        header_text.push_str(&plot_line);
 
         if self.dims.0 > header_text.len() as u16 && self.dims.1 > 1 {
             let mut sep = format!(
@@ -2128,7 +2128,7 @@ impl Screen {
         let counts_clone = counts.clone();
         let finished_today = counts_clone[&today_normalized];
         let week_line: Vec<i64> = counts.into_iter().map(|(_, v)| v).collect();
-        let plot = plot::plot_sparkline(week_line);
+        let plot = plot::sparkline(week_line);
         (plot, finished_today as usize)
     }
 
@@ -2159,7 +2159,7 @@ impl Screen {
 
         // for tagged queries, AND queries together
         let mut tagged_children: Option<HashSet<NodeID>> = None;
-        for tag in &re_matches::<String>(&RE_TAGGED, &*node.content) {
+        for tag in &re_matches::<String>(&RE_TAGGED, &node.content) {
             let children = self.tag_db.tag_to_nodes(tag);
             if let Some(children_acc) = tagged_children {
                 let children_new = children.into_iter().collect();
@@ -2169,12 +2169,11 @@ impl Screen {
                 tagged_children = Some(children.into_iter().collect());
             }
         }
-        let queried_nodes = tagged_children
-            .map_or_else(|| vec![], |tc| tc.into_iter().collect());
+        let queried_nodes = tagged_children.map_or_else(|| vec![], |tc| tc.into_iter().collect());
 
         let mut since_opt = None;
         let mut until_opt = None;
-        if RE_DONE.is_match(&*node.content) {
+        if RE_DONE.is_match(&node.content) {
             for child in node.children.clone() {
                 let done = self.with_node(child, |c| c.stricken).unwrap();
                 if !done {
@@ -2182,7 +2181,7 @@ impl Screen {
                 }
             }
         }
-        if RE_OPEN.is_match(&*node.content) {
+        if RE_OPEN.is_match(&node.content) {
             for child in node.children.clone() {
                 let open = self.with_node(child, |c| !c.stricken).unwrap();
                 if !open {
@@ -2190,8 +2189,8 @@ impl Screen {
                 }
             }
         }
-        if let Some(since) = re_matches::<String>(&RE_SINCE, &*node.content).get(0) {
-            since_opt = dateparse(since.clone());
+        if let Some(since) = re_matches::<String>(&RE_SINCE, &node.content).get(0) {
+            since_opt = dateparse(&since);
             if let Some(cutoff) = since_opt {
                 let mut new = vec![];
                 for &c in &node.children {
@@ -2205,8 +2204,8 @@ impl Screen {
                 node.children = new;
             }
         }
-        if let Some(until) = re_matches::<String>(&RE_UNTIL, &*node.content).get(0) {
-            until_opt = dateparse(until.clone());
+        if let Some(until) = re_matches::<String>(&RE_UNTIL, &node.content).get(0) {
+            until_opt = dateparse(&until);
             if let Some(cutoff) = until_opt {
                 let mut new = vec![];
                 for &c in &node.children {
@@ -2220,24 +2219,24 @@ impl Screen {
                 node.children = new;
             }
         }
-        if RE_REV.is_match(&*node.content) {
+        if RE_REV.is_match(&node.content) {
             node.children = node.children.into_iter().rev().collect();
         }
-        if let Some(&limit) = re_matches(&RE_LIMIT, &*node.content).get(0) {
+        if let Some(&limit) = re_matches(&RE_LIMIT, &node.content).get(0) {
             node.children.truncate(limit);
         }
 
-        let re_n = re_matches::<usize>(&RE_N, &*node.content);
+        let re_n = re_matches::<usize>(&RE_N, &node.content);
         let n_opt = re_n.get(0);
-        if let Some(plot) = re_matches::<String>(&RE_PLOT, &*node.content).get(0) {
+        if let Some(plot) = re_matches::<String>(&RE_PLOT, &node.content).get(0) {
             let now = time::get_time().sec as u64;
             let buckets = n_opt.cloned().unwrap_or(7);
             let since = since_opt.unwrap_or_else(|| now - 60 * 60 * 24 * 7);
             let until = until_opt.unwrap_or_else(|| now);
 
             node.content = match plot.as_str() {
-                "done" => self.plot(queried_nodes, PlotType::Done, buckets, since, until),
-                "new" => self.plot(queried_nodes, PlotType::New, buckets, since, until),
+                "done" => self.plot(&queried_nodes, PlotType::Done, buckets, since, until),
+                "new" => self.plot(&queried_nodes, PlotType::New, buckets, since, until),
                 _ => node.content,
             };
         }
@@ -2246,7 +2245,7 @@ impl Screen {
 
     fn plot(
         &self,
-        queried_nodes: Vec<NodeID>,
+        queried_nodes: &[NodeID],
         kind: PlotType,
         buckets: usize,
         since: u64,
@@ -2254,7 +2253,7 @@ impl Screen {
     ) -> String
     {
         let mut nodes = vec![];
-        for &c in &queried_nodes {
+        for &c in queried_nodes.iter() {
             let mut new = self.recursive_child_filter_map(c, &mut |n: &Node| match kind {
                 PlotType::Done => {
                     if let Some(ft) = n.meta.finish_time {
