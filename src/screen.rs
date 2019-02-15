@@ -1843,7 +1843,7 @@ impl Screen {
                     .unwrap_or_else(|| {
                         let visible = buf.replace(reset, "").replace(&*pre_meta, "");
                         let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
-                        self.grapheme_cache.insert(node.id, vg.clone());
+                        self.grapheme_cache.insert(node.id, vg);
                         vg
                     });
             if visible_graphemes > max_width {
