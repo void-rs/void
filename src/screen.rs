@@ -1838,8 +1838,8 @@ impl Screen {
                     .get(&node.id)
                     .cloned()
                     .unwrap_or_else(|| {
-                        let visible = buf.replace(reset, "").replace(&*pre_meta, "");
-                        let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
+                        let visible = buf.replace(reset, "").replace(&pre_meta, "");
+                        let vg = visible.graphemes(true).count();
                         self.grapheme_cache.insert(node.id, vg);
                         vg
                     });
@@ -1860,8 +1860,8 @@ impl Screen {
             .get(&node.id)
             .cloned()
             .unwrap_or_else(|| {
-                let visible = buf.replace(reset, "").replace(&*pre_meta, "");
-                let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
+                let visible = buf.replace(reset, "").replace(&pre_meta, "");
+                let vg = visible.graphemes(true).count();
                 self.grapheme_cache.insert(node.id, vg);
                 vg
             });
