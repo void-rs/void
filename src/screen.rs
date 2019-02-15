@@ -526,46 +526,43 @@ impl Screen {
     }
 
     fn exec_selected(&mut self) {
-        if self.is_test {
+        if self.is_test || self.selected.is_none() {
             // tests generate many randomly named nodes, so we don't
             // want to accidentally execute rm -rf /
             return;
         }
-        if let Some(selected_id) = self.selected {
-            let content_opt = self.with_node(selected_id, |n| n.content.clone());
-            if content_opt.is_none() {
-                error!("tried to exec deleted node");
-                return;
-            }
-            let content = content_opt.unwrap();
+        let selected_id = self.selected.unwrap();
 
-            info!("executing command: {}", content);
-            if content.is_empty() {
-                error!("cannot execute empty command");
-                return;
-            }
+        let content_opt = self.with_node(selected_id, |n| n.content.clone());
+        if content_opt.is_none() {
+            error!("tried to exec deleted node");
+            return;
+        }
+        let content = content_opt.unwrap();
+        info!("executing command: {}", content);
 
-            if content.starts_with("txt:") {
-                self.exec_text_editor(selected_id);
-                return;
-            }
+        if content.is_empty() {
+            error!("cannot execute empty command");
+        } else if content.starts_with("txt:") {
+            self.exec_text_editor(selected_id);
+        } else if content.starts_with("http") {
+            #[cfg(any(target_os = "macos",))]
+            let default_open_cmd = "open";
+            #[cfg(target_os = "linux")]
+            let default_open_cmd = "xdg-open";
+            #[cfg(target_os = "windows")]
+            let default_open_cmd = "start";
 
-            if content.starts_with("http") {
-                let cmd = process::Command::new("firefox")
-                    .arg(content.to_owned())
-                    .spawn();
-                if cmd.is_err() {
-                    error!("command failed to start: {}", content);
-                }
-            } else {
-                let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_owned());
-                let cmd = process::Command::new(shell)
-                    .arg("-c")
-                    .arg(content.to_owned())
-                    .spawn();
-                if cmd.is_err() {
-                    error!("command failed to start: {}", content);
-                }
+            let browser = env::var("BROWSER").unwrap_or_else(|_| default_open_cmd.to_owned());
+            let cmd = process::Command::new(browser).arg(&content).spawn();
+            if cmd.is_err() {
+                error!("command failed to start: {}", &content);
+            }
+        } else {
+            let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_owned());
+            let cmd = process::Command::new(shell).arg("-c").arg(&content).spawn();
+            if cmd.is_err() {
+                error!("command failed to start: {}", &content);
             }
         }
     }
