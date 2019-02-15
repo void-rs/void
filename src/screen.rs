@@ -2279,11 +2279,13 @@ impl Screen {
     }
 }
 
+#[derive(Clone, Copy)]
 enum SearchDirection {
     Forward,
     Backward,
 }
 
+#[derive(Clone, Copy)]
 enum PlotType {
     New,
     Done,
