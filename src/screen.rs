@@ -1824,6 +1824,8 @@ impl Screen {
                 write!(&mut buf, "⊞").unwrap();
             } else if node.hide_stricken {
                 write!(&mut buf, "⚔").unwrap();
+            } else if node.free_text.is_some() {
+                write!(&mut buf, "✏").unwrap();
             } else {
                 write!(&mut buf, " ").unwrap();
             }
