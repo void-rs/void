@@ -605,18 +605,14 @@ impl Screen {
         // read new data
         let mut data = vec![];
 
-        #[allow(unused_must_use)]
         {
             // File closed as it slides out of scope.
-            File::open(&path).and_then(|mut f| f.read_to_end(&mut data));
+            let _ = File::open(&path).and_then(|mut f| f.read_to_end(&mut data));
         }
 
         let new_text = String::from_utf8(data).unwrap();
 
-        #[allow(unused_must_use)]
-        {
-            remove_file(&path);
-        }
+        let _ = remove_file(&path);
 
         // set node's saved text
         self.with_node_mut(node_id, |n| n.free_text = Some(new_text.clone()))
