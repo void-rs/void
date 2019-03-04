@@ -45,6 +45,7 @@ pub enum Action {
     Search,
     UndoDelete,
     Help,
+    SelectParent,
 }
 
 fn to_action(input: String) -> Option<Action> {
@@ -81,6 +82,7 @@ fn to_action(input: String) -> Option<Action> {
         "search" => Some(Action::Search),
         "undo_delete" => Some(Action::UndoDelete),
         "help" => Some(Action::Help),
+        "select_parent" => Some(Action::SelectParent),
         _ => None,
     }
 }
@@ -158,6 +160,7 @@ impl Default for Config {
                 (Ctrl('u'), Action::Search),
                 (Ctrl('z'), Action::UndoDelete),
                 (Ctrl('?'), Action::Help),
+                (Alt('p'), Action::SelectParent),
             ]
             .into_iter()
             .collect(),

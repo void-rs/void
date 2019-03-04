@@ -42,6 +42,7 @@ to specify a different storage file:
     result.
 4.  `C-f`: search for visible nodes by entering its first letter
 5.  `<letter of match>` letters will show up next to options
+6.  `<A-p>`: Select parent of current node.
 
 #### scopes
 
