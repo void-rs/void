@@ -100,7 +100,7 @@ de-select node | Esc | save | C-x
 exit | Esc with nothing selected | exit | C-c
 jump to weighted next task | C-v | cut / paste node | C-y
 move selected up in child list | C-g | move selected down in child list | C-d
-search for node at or below current view | C-u
+search for node at or below current view | C-u | Select parent | A-p
 
 can be customized by setting the `KEYFILE` env var to the path of a [key configuration file](default.keys)
 

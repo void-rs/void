@@ -220,6 +220,7 @@ impl Screen {
                 Action::LowerSelected => self.lower_selected(),
                 Action::Search => self.search_forward(),
                 Action::UndoDelete => self.undo_delete(),
+                Action::SelectParent => self.select_parent(),
             },
             None => warn!("received unknown input"),
         }
@@ -1239,6 +1240,19 @@ impl Screen {
         self.drawing_root = root;
         self.view_y = view_y;
         self.select_node(selected);
+    }
+
+    fn select_parent(&mut self) {
+        if let Some(selected_id) = self.selected {
+            // If no parent, this should be a no-op.
+            if let Some(parent_id) = self.parent(selected_id) {
+                // If we're at a toplevel task (i.e., 0 is its parent ID), we don't want to
+                // deselect it.
+                if parent_id != 0 {
+                    self.select_node(parent_id);
+                }
+            }
+        }
     }
 
     fn drill_down(&mut self) {
