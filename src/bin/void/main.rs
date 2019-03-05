@@ -14,8 +14,8 @@ fn main() {
 
     let path: OsString = matches
         .value_of("PATH")
-        .map(|p| OsString::from(p))
-        .or(dirs::home_dir().and_then(|mut h| {
+        .map(OsString::from)
+        .or_else(|| dirs::home_dir().and_then(|mut h| {
             h.push(".void.db");
             Some(h.into_os_string())
         }))
@@ -27,7 +27,7 @@ fn main() {
         .write(true)
         .read(true)
         .create(true)
-        .open(path)
+        .open(&path)
         .unwrap();
 
     // exclusively lock the file
@@ -39,7 +39,11 @@ fn main() {
 
     // Initialise the main working screen
     let mut screen = saved_screen.unwrap_or_else(Screen::default);
-    screen.work_path = matches.value_of("PATH").map(|s| s.into());
+
+    screen.work_path = matches
+        .value_of("PATH")
+        .map(|s| s.into())
+        .or_else(|| Some(path.into_string().unwrap()));
 
     let config = Config::maybe_parsed_from_env().unwrap();
     screen.config = config;
