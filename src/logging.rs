@@ -19,7 +19,7 @@ impl log::Log for ScreenLogger {
             "{} {} {}:{}] {}\n",
             time::get_time().sec,
             record.level(),
-            record.location().file().split("/").last().unwrap(),
+            record.location().file().split('/').last().unwrap(),
             record.location().line(),
             record.args()
         );
