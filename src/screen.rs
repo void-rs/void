@@ -221,6 +221,8 @@ impl Screen {
                 Action::Search => self.search_forward(),
                 Action::UndoDelete => self.undo_delete(),
                 Action::SelectParent => self.select_parent(),
+                Action::SelectNextSibling => self.select_next_sibling(),
+                Action::SelectPrevSibling => self.select_prev_sibling(),
             },
             None => warn!("received unknown input"),
         }
@@ -1253,6 +1255,37 @@ impl Screen {
                 }
             }
         }
+    }
+
+    fn select_next_sibling(&mut self) { self.select_neighbor(SearchDirection::Forward); }
+
+    fn select_prev_sibling(&mut self) { self.select_neighbor(SearchDirection::Backward); }
+
+    fn select_neighbor(&mut self, dir: SearchDirection) -> Option<NodeID> {
+        use SearchDirection::*;
+        let selected_id = self.selected?;
+        let parent = self.nodes.get(&self.parent(selected_id)?)?;
+
+        let selected_idx = parent.children.iter().position(|&id| id == selected_id)? as u64;
+        let offset: isize = if dir == Forward { 1 } else { -1 };
+        if let Some(&neighbor_id) = parent
+            .children
+            .get((selected_idx as isize + offset) as usize)
+        {
+            self.select_node(neighbor_id);
+        } else {
+            let pos = if dir == Forward {
+                0
+            } else {
+                parent.children.len() - 1
+            };
+            // Wrap around if there is no neighbor sibling. We know that
+            // `parent.children` is nonempty because `selected_id` is one of them,
+            // so the indexing is safe.
+            self.select_node(parent.children[pos]);
+        }
+
+        None
     }
 
     fn drill_down(&mut self) {
@@ -2295,6 +2328,7 @@ impl Screen {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum SearchDirection {
     Forward,
     Backward,
