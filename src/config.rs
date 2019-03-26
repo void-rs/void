@@ -46,6 +46,8 @@ pub enum Action {
     UndoDelete,
     Help,
     SelectParent,
+    SelectNextSibling,
+    SelectPrevSibling,
 }
 
 fn to_action(input: String) -> Option<Action> {
@@ -83,6 +85,8 @@ fn to_action(input: String) -> Option<Action> {
         "undo_delete" => Some(Action::UndoDelete),
         "help" => Some(Action::Help),
         "select_parent" => Some(Action::SelectParent),
+        "select_next_sibling" => Some(Action::SelectNextSibling),
+        "select_prev_sibling" => Some(Action::SelectPrevSibling),
         _ => None,
     }
 }
@@ -160,7 +164,9 @@ impl Default for Config {
                 (Ctrl('u'), Action::Search),
                 (Ctrl('z'), Action::UndoDelete),
                 (Ctrl('?'), Action::Help),
-                (Alt('p'), Action::SelectParent),
+                (Alt('P'), Action::SelectParent),
+                (Alt('n'), Action::SelectNextSibling),
+                (Alt('p'), Action::SelectPrevSibling),
             ]
             .into_iter()
             .collect(),
