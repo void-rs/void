@@ -1,3 +1,5 @@
+use nix::sys::signal::Signal;
+use nix::sys::signal::Signal::*;
 use std::{
     collections::HashMap,
     env, fmt,
@@ -124,6 +126,7 @@ fn to_key(raw_key: String) -> Option<Key> {
 #[derive(Debug, Clone)]
 pub struct Config {
     config: HashMap<Key, Action>,
+    signals: HashMap<Signal, Action>,
 }
 
 impl Default for Config {
@@ -167,6 +170,13 @@ impl Default for Config {
                 (Alt('P'), Action::SelectParent),
                 (Alt('n'), Action::SelectNextSibling),
                 (Alt('p'), Action::SelectPrevSibling),
+            ]
+            .into_iter()
+            .collect(),
+            signals: vec![
+                (SIGINT, Action::Quit),
+                (SIGQUIT, Action::Quit),
+                (SIGTERM, Action::Quit),
             ]
             .into_iter()
             .collect(),
