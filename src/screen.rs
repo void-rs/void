@@ -167,29 +167,31 @@ impl Screen {
                 Action::LeftClick(x, y) => {
                     let internal_coords = self.screen_to_internal_xy((x, y));
                     self.click_screen(internal_coords)
-                },
+                }
                 Action::RightClick(..) => {
                     self.pop_focus();
-                },
+                }
                 Action::Release(x, y) => {
                     let internal_coords = self.screen_to_internal_xy((x, y));
                     self.release(internal_coords)
-                },
+                }
                 // Write character to selection
                 Action::Char(c) if self.selected.is_some() => {
                     self.append(c);
-                },
+                }
                 Action::Char('/') => {
                     self.search_forward();
-                },
+                }
                 Action::Char('?') => {
                     self.search_backward();
-                },
+                }
                 Action::Char(c) => {
                     self.prefix_jump_to(c.to_string());
-                },
+                }
                 Action::Help => self.help(),
-                Action::UnselectRet => return self.unselect().is_some(),
+                Action::UnselectRet => {
+                    self.unselect();
+                }
                 Action::ScrollUp => self.scroll_up(),
                 Action::ScrollDown => self.scroll_down(),
                 Action::DeleteSelected => self.delete_selected(true),
