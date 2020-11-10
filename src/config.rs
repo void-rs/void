@@ -93,9 +93,11 @@ fn to_action(input: String) -> Option<Action> {
 
 // Alt and Control must be specified with capital letters C- and A-
 fn to_key(raw_key: String) -> Option<Key> {
-    use termion::event::Key::{self, Alt, Char, Ctrl};
+    use termion::event::Key::{Alt, Char, Ctrl};
 
-    fn extract_key(raw_key: &str, idx: usize) -> Option<char> { raw_key.chars().nth(idx) }
+    fn extract_key(raw_key: &str, idx: usize) -> Option<char> {
+        raw_key.chars().nth(idx)
+    }
 
     match &*raw_key {
         "esc" => Some(Key::Esc),
@@ -242,10 +244,10 @@ impl Config {
                 } else {
                     Some(Action::Char(c))
                 }
-            },
+            }
             Event::Mouse(MouseEvent::Press(MouseButton::Right, x, y)) => {
                 Some(Action::RightClick(x, y))
-            },
+            }
             Event::Mouse(MouseEvent::Press(_, x, y)) => Some(Action::LeftClick(x, y)),
             Event::Mouse(MouseEvent::Release(x, y)) => Some(Action::Release(x, y)),
             Event::Mouse(MouseEvent::Hold(..)) => None,
@@ -255,11 +257,11 @@ impl Config {
                     warn!("Weird event {:?}", other);
                 }
                 lookup
-            },
+            }
             other => {
                 warn!("Unknown event received: {:?}", other);
                 None
-            },
+            }
         }
     }
 }

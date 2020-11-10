@@ -1,4 +1,4 @@
-use rand::{self, Rng};
+use rand::{self, seq::SliceRandom};
 
 pub fn random_fg_color() -> String {
     use termion::color::*;
@@ -13,6 +13,5 @@ pub fn random_fg_color() -> String {
         format!("{}", Fg(LightCyan)),
         format!("{}", Fg(LightWhite)),
     ];
-    let c = &*rand::thread_rng().choose(&*colors).unwrap();
-    c.clone()
+    colors.choose(&mut rand::thread_rng()).unwrap().clone()
 }
