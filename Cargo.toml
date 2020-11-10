@@ -19,7 +19,7 @@ default = []
 [dependencies]
 dirs = "3.0.1"
 clap = "2.33.3"
-termion = "1.5.5"
+termion = "= 1.5.2"
 log = "0.4.11"
 lazy_static = "1.4.0"
 time = "0.2.22"
