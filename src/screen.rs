@@ -924,7 +924,7 @@ impl Screen {
         self.dims = terminal_size().unwrap();
         self.draw();
         let stdin = stdin();
-        for c in stdin.events() {
+        for (num_events, c) in stdin.events().enumerate() {
             let evt = c.unwrap();
 
             self.dims = terminal_size().unwrap();
@@ -940,6 +940,11 @@ impl Screen {
 
             // if selected not visible, try to make it visible
             self.scroll_to_selected();
+
+            // auto-save every 25 events to avoid larger data loss
+            if num_events % 25 == 0 {
+                self.save();
+            }
 
             if should_break {
                 self.cleanup();
