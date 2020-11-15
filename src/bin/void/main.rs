@@ -47,6 +47,13 @@ fn main() {
         .map(|s| s.into())
         .or_else(|| Some(path.into_string().unwrap()));
 
+    if let Some(autosave_every) = matches
+        .value_of("AUTOSAVE_EVERY")
+        .and_then(|s| s.parse().ok())
+    {
+        screen.autosave_every = autosave_every;
+    }
+
     let config = Config::maybe_parsed_from_env().unwrap();
     screen.config = config;
 
