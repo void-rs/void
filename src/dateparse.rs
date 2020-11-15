@@ -1,5 +1,3 @@
-use time;
-
 use regex::Regex;
 
 pub fn dateparse(input: String) -> Option<u64> {
@@ -11,7 +9,7 @@ pub fn dateparse(input: String) -> Option<u64> {
         static ref HOURS: Regex = Regex::new(r"(?P<h>\d+)h").unwrap();
     }
 
-    let now_in_s = time::get_time().sec as u64;
+    let now_in_s = crate::now().as_secs();
     let min_in_s = 60;
     let hour_in_s = min_in_s * 60;
     let day_in_s = hour_in_s * 24;

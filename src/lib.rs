@@ -20,7 +20,11 @@ mod serialization;
 mod tagdb;
 mod task;
 
-use std::{cmp, collections::HashMap};
+use std::{
+    cmp,
+    collections::HashMap,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use regex::Regex;
 
@@ -56,6 +60,12 @@ pub fn distances(c1: Coords, c2: Coords) -> (u16, u16) {
 pub fn cost(c1: Coords, c2: Coords) -> u16 {
     let (xcost, ycost) = distances(c1, c2);
     xcost + ycost
+}
+
+fn now() -> Duration {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("should be able to get the time")
 }
 
 pub fn re_matches<A: std::str::FromStr>(re: &Regex, on: &str) -> Vec<A> {

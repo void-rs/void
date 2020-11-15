@@ -17,21 +17,20 @@ path = "test/test.rs"
 default = []
 
 [dependencies]
-dirs = "1.0"
-clap = "2.0"
-termion = "1.1"
-log = "0.3"
-lazy_static = "0.2"
-time = "0.1"
-hyper = "0.10"
-getopts = "0.2"
-protobuf = "1.1"
-rand = "0.3"
-libc = "0.2"
-regex = "1.1"
-unicode-segmentation = "0.1"
-clippy = { version = "0.0", optional = true }
-fs2 = "0.4.1"
+dirs = "3.0.1"
+clap = "2.33.3"
+termion = "= 1.5.2"
+log = "0.4.11"
+lazy_static = "1.4.0"
+time = "0.2.22"
+getopts = "0.2.21"
+protobuf = "1"
+rand = "0.7.3"
+libc = "0.2.80"
+regex = "1.4.2"
+unicode-segmentation = "1.6.0"
+clippy = { version = "0.0.302", optional = true }
+fs2 = "0.4.3"
 
 [dev-dependencies]
-quickcheck = "0.3"
+quickcheck = "0.9.2"

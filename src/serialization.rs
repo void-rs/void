@@ -26,11 +26,8 @@ pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
 }
 
 fn serialize_meta(meta: &Meta) -> pb::Meta {
-    let mut gps_pb = pb::Gps::default();
-    gps_pb.set_lat(meta.gps.0);
-    gps_pb.set_lon(meta.gps.1);
     let mut meta_pb = pb::Meta::default();
-    meta_pb.set_gps(gps_pb);
+    meta_pb.set_gps(pb::Gps::default());
     meta_pb.set_ctime(meta.ctime);
     meta_pb.set_mtime(meta.mtime);
     if let Some(finish_time) = meta.finish_time {
@@ -67,7 +64,6 @@ fn serialize_node(node: &Node) -> pb::Node {
 }
 
 fn deserialize_meta(meta_pb: &pb::Meta) -> Meta {
-    let gps = meta_pb.get_gps();
     Meta {
         ctime: meta_pb.get_ctime(),
         mtime: meta_pb.get_mtime(),
@@ -81,7 +77,6 @@ fn deserialize_meta(meta_pb: &pb::Meta) -> Meta {
         } else {
             None
         },
-        gps: (gps.get_lat(), gps.get_lon()),
         tags: meta_pb
             .get_tags()
             .iter()
