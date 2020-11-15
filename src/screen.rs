@@ -32,6 +32,7 @@ pub struct Screen {
     pub nodes: HashMap<NodeID, Node>,
     pub arrows: Vec<(NodeID, NodeID)>,
     pub work_path: Option<String>,
+    pub autosave_every: usize,
     pub config: Config,
 
     // screen dimensions as detected during the current draw() cycle
@@ -83,6 +84,7 @@ impl Default for Screen {
         let mut root = Node::default();
         root.content = "home".to_owned();
         let mut screen = Screen {
+            autosave_every: 25,
             config: Config::default(),
             arrows: vec![],
             selected: None,
@@ -942,7 +944,7 @@ impl Screen {
             self.scroll_to_selected();
 
             // auto-save every 25 events to avoid larger data loss
-            if num_events % 25 == 0 {
+            if num_events > 0 && num_events % self.autosave_every == 0 {
                 self.save();
             }
 
