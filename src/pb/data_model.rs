@@ -3,6 +3,7 @@
 
 // https://github.com/Manishearth/rust-clippy/issues/702
 #![allow(unknown_lints)]
+#![allow(bare_trait_objects)]
 #![allow(clippy::all)]
 
 #![cfg_attr(rustfmt, rustfmt_skip)]

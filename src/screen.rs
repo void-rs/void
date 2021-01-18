@@ -20,12 +20,11 @@ use termion::{
 
 use rand::{self, Rng};
 use regex::Regex;
-use time;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::{
-    cost, dateparse, distances, logging, plot, random_fg_color, re_matches, serialization, Action,
-    Config, Coords, Dir, Node, NodeID, Pack, TagDB,
+    cost, dateparse, distances, logging, now, plot, random_fg_color, re_matches, serialization,
+    Action, Config, Coords, Dir, Node, NodeID, Pack, TagDB,
 };
 
 pub struct Screen {
@@ -33,6 +32,7 @@ pub struct Screen {
     pub nodes: HashMap<NodeID, Node>,
     pub arrows: Vec<(NodeID, NodeID)>,
     pub work_path: Option<String>,
+    pub autosave_every: usize,
     pub config: Config,
 
     // screen dimensions as detected during the current draw() cycle
@@ -84,6 +84,7 @@ impl Default for Screen {
         let mut root = Node::default();
         root.content = "home".to_owned();
         let mut screen = Screen {
+            autosave_every: 25,
             config: Config::default(),
             arrows: vec![],
             selected: None,
@@ -143,12 +144,16 @@ impl Screen {
     }
 
     pub fn with_node<B, F>(&self, k: NodeID, mut f: F) -> Option<B>
-    where F: FnMut(&Node) -> B {
+    where
+        F: FnMut(&Node) -> B,
+    {
         self.nodes.get(&k).map(|node| f(node))
     }
 
     fn with_node_mut<B, F>(&mut self, k: NodeID, mut f: F) -> Option<B>
-    where F: FnMut(&mut Node) -> B {
+    where
+        F: FnMut(&mut Node) -> B,
+    {
         self.nodes.get_mut(&k).map(|mut node| {
             node.meta.bump_mtime();
             f(&mut node)
@@ -156,7 +161,9 @@ impl Screen {
     }
 
     fn with_node_mut_no_meta<B, F>(&mut self, k: NodeID, mut f: F) -> Option<B>
-    where F: FnMut(&mut Node) -> B {
+    where
+        F: FnMut(&mut Node) -> B,
+    {
         self.nodes.get_mut(&k).map(|mut node| f(&mut node))
     }
 
@@ -231,7 +238,9 @@ impl Screen {
         true
     }
 
-    fn exists(&self, node_id: NodeID) -> bool { self.nodes.get(&node_id).is_some() }
+    fn exists(&self, node_id: NodeID) -> bool {
+        self.nodes.get(&node_id).is_some()
+    }
 
     fn cut_paste(&mut self) {
         if let Some(selected_id) = self.selected {
@@ -364,7 +373,7 @@ impl Screen {
             return Err(Error::new(ErrorKind::Other, "can't prompt in test"));
         }
 
-        let stdin: Box<Read> = Box::new(stdin());
+        let stdin: Box<dyn Read> = Box::new(stdin());
         print!(
             "{}{}{}{}",
             cursor::Goto(0, self.dims.1),
@@ -385,7 +394,7 @@ impl Screen {
             return Err(Error::new(ErrorKind::Other, "can't prompt in test"));
         }
 
-        let mut stdin: Box<Read> = Box::new(stdin());
+        let mut stdin: Box<dyn Read> = Box::new(stdin());
         print!(
             "{}{}{}{}{}",
             style::Invert,
@@ -409,9 +418,13 @@ impl Screen {
         }
     }
 
-    fn search_forward(&mut self) { self.search(SearchDirection::Forward) }
+    fn search_forward(&mut self) {
+        self.search(SearchDirection::Forward)
+    }
 
-    fn search_backward(&mut self) { self.search(SearchDirection::Backward) }
+    fn search_backward(&mut self) {
+        self.search(SearchDirection::Backward)
+    }
 
     fn search(&mut self, direction: SearchDirection) {
         trace!("search()");
@@ -521,7 +534,9 @@ impl Screen {
     }
 
     fn find_visible_nodes<F>(&self, mut filter: F) -> Vec<NodeID>
-    where F: FnMut(NodeID) -> bool {
+    where
+        F: FnMut(NodeID) -> bool,
+    {
         self.drawn_at
             .keys()
             .filter(|&node_id| self.node_is_visible(*node_id).unwrap())
@@ -660,7 +675,9 @@ impl Screen {
     }
 
     pub fn recursive_child_filter_map<F, B>(&self, node_id: NodeID, filter_map: &mut F) -> Vec<B>
-    where F: FnMut(&Node) -> Option<B> {
+    where
+        F: FnMut(&Node) -> Option<B>,
+    {
         trace!("recursive_child_filter_map({}, F...)", node_id);
         let mut ret = vec![];
 
@@ -746,7 +763,7 @@ impl Screen {
                         if n.meta.finish_time.is_some() {
                             n.meta.finish_time = Some(date);
                         } else {
-                            let now_in_s = time::get_time().sec as u64;
+                            let now_in_s = now().as_secs();
                             let future_date = now_in_s + (now_in_s - date);
                             n.meta.due = Some(future_date);
                         }
@@ -911,7 +928,7 @@ impl Screen {
         self.dims = terminal_size().unwrap();
         self.draw();
         let stdin = stdin();
-        for c in stdin.events() {
+        for (num_events, c) in stdin.events().enumerate() {
             let evt = c.unwrap();
 
             self.dims = terminal_size().unwrap();
@@ -927,6 +944,11 @@ impl Screen {
 
             // if selected not visible, try to make it visible
             self.scroll_to_selected();
+
+            // auto-save every 25 events to avoid larger data loss
+            if num_events > 0 && num_events % self.autosave_every == 0 {
+                self.save();
+            }
 
             if should_break {
                 self.cleanup();
@@ -945,7 +967,9 @@ impl Screen {
         }
     }
 
-    fn toggle_show_logs(&mut self) { self.show_logs = !self.show_logs; }
+    fn toggle_show_logs(&mut self) {
+        self.show_logs = !self.show_logs;
+    }
 
     fn create_child(&mut self) {
         if let Some(mut selected_id) = self.selected {
@@ -1112,9 +1136,13 @@ impl Screen {
         }
     }
 
-    pub fn drawn_at(&self, node_id: NodeID) -> Option<&Coords> { self.drawn_at.get(&node_id) }
+    pub fn drawn_at(&self, node_id: NodeID) -> Option<&Coords> {
+        self.drawn_at.get(&node_id)
+    }
 
-    pub fn lookup(&self, coords: Coords) -> Option<&NodeID> { self.lookup.get(&coords) }
+    pub fn lookup(&self, coords: Coords) -> Option<&NodeID> {
+        self.lookup.get(&coords)
+    }
 
     fn lineage(&self, node_id: NodeID) -> Vec<NodeID> {
         let mut lineage = vec![node_id];
@@ -1259,9 +1287,13 @@ impl Screen {
         }
     }
 
-    fn select_next_sibling(&mut self) { self.select_neighbor(SearchDirection::Forward); }
+    fn select_next_sibling(&mut self) {
+        self.select_neighbor(SearchDirection::Forward);
+    }
 
-    fn select_prev_sibling(&mut self) { self.select_neighbor(SearchDirection::Backward); }
+    fn select_prev_sibling(&mut self) {
+        self.select_neighbor(SearchDirection::Backward);
+    }
 
     fn select_neighbor(&mut self, dir: SearchDirection) -> Option<NodeID> {
         use SearchDirection::*;
@@ -1270,11 +1302,12 @@ impl Screen {
 
         let selected_idx = parent.children.iter().position(|&id| id == selected_id)? as u64;
         let offset: isize = if dir == Forward { 1 } else { -1 };
-        if let Some(&neighbor_id) = parent
+
+        let neighbor_id = if let Some(&neighbor_id) = parent
             .children
             .get((selected_idx as isize + offset) as usize)
         {
-            self.select_node(neighbor_id);
+            neighbor_id
         } else {
             let pos = if dir == Forward {
                 0
@@ -1284,8 +1317,10 @@ impl Screen {
             // Wrap around if there is no neighbor sibling. We know that
             // `parent.children` is nonempty because `selected_id` is one of them,
             // so the indexing is safe.
-            self.select_node(parent.children[pos]);
-        }
+            parent.children[pos]
+        };
+
+        self.select_node(neighbor_id);
 
         None
     }
@@ -1474,14 +1509,18 @@ impl Screen {
     }
 
     fn select_relative<F, O: Ord + Clone>(&mut self, filter_cost: F)
-    where F: FnMut((Coords, Coords), (Coords, Coords)) -> Option<O> {
+    where
+        F: FnMut((Coords, Coords), (Coords, Coords)) -> Option<O>,
+    {
         if let Some(node_id) = self.find_relative_node(filter_cost) {
             self.select_node(node_id);
         }
     }
 
     fn find_relative_node<F, O: Ord + Clone>(&mut self, mut filter_cost: F) -> Option<NodeID>
-    where F: FnMut((Coords, Coords), (Coords, Coords)) -> Option<O> {
+    where
+        F: FnMut((Coords, Coords), (Coords, Coords)) -> Option<O>,
+    {
         let default_coords = (self.dims.0 / 2, self.dims.1 / 2);
         let rel_def_coords = self.screen_to_internal_xy(default_coords);
 
@@ -1534,8 +1573,8 @@ impl Screen {
 
         // double click logic:
         // set click time, drill-down if we're below double click threshold
-        let now = time::get_time();
-        let now_ms = (now.sec as u64 * 1000) + (now.nsec as u64 / 1_000_000);
+        let now = now();
+        let now_ms = now.as_millis() as u64;
 
         let elapsed = now_ms - self.last_click_ms;
 
@@ -1626,7 +1665,9 @@ impl Screen {
         }
     }
 
-    pub fn occupied(&self, coords: Coords) -> bool { self.lookup.contains_key(&coords) }
+    pub fn occupied(&self, coords: Coords) -> bool {
+        self.lookup.contains_key(&coords)
+    }
 
     pub fn add_or_remove_arrow(&mut self) {
         if self.drawing_arrow.is_none() {
@@ -1819,8 +1860,7 @@ impl Screen {
         last: bool,
         hide_stricken: bool,
         color: String,
-    ) -> usize
-    {
+    ) -> usize {
         trace!("draw_node({})", node_id);
         let mut ephemeral = false;
         let raw_node = self
@@ -2148,7 +2188,7 @@ impl Screen {
     }
 
     fn last_week_of_done_tasks(&self) -> (String, usize) {
-        let now = time::get_time().sec as u64;
+        let now = now().as_secs();
         let day_in_sec = 60 * 60 * 24;
         let last_week = now - (day_in_sec * 7);
         let tasks_finished_in_last_week = self.recursive_child_filter_map(0, &mut |n: &Node| {
@@ -2281,7 +2321,7 @@ impl Screen {
         let re_n = re_matches::<usize>(&RE_N, &*node.content);
         let n_opt = re_n.get(0);
         if let Some(plot) = re_matches::<String>(&RE_PLOT, &*node.content).get(0) {
-            let now = time::get_time().sec as u64;
+            let now = now().as_secs();
             let buckets = n_opt.cloned().unwrap_or(7);
             let since = since_opt.unwrap_or_else(|| now - 60 * 60 * 24 * 7);
             let until = until_opt.unwrap_or_else(|| now);
@@ -2302,8 +2342,7 @@ impl Screen {
         buckets: usize,
         since: u64,
         until: u64,
-    ) -> String
-    {
+    ) -> String {
         let mut nodes = vec![];
         for &c in &queried_nodes {
             let mut new = self.recursive_child_filter_map(c, &mut |n: &Node| match kind {
@@ -2314,14 +2353,14 @@ impl Screen {
                         }
                     }
                     None
-                },
+                }
                 PlotType::New => {
                     if n.meta.ctime >= since {
                         Some(n.meta.ctime as i64)
                     } else {
                         None
                     }
-                },
+                }
             });
             nodes.append(&mut new);
         }
@@ -2341,4 +2380,6 @@ enum PlotType {
     Done,
 }
 
-fn visible(view_y: u16, height: u16, y: u16) -> bool { y > view_y && y < view_y + height }
+fn visible(view_y: u16, height: u16, y: u16) -> bool {
+    y > view_y && y < view_y + height
+}

@@ -1,14 +1,17 @@
 use std::{env, fs::OpenOptions, io::Write, sync::RwLock};
 
-use log::{self, LogLevel, LogLevelFilter, LogMetadata, LogRecord, SetLoggerError};
-use time;
+use log::{self, Level, LevelFilter, Metadata, Record, SetLoggerError};
 
 struct ScreenLogger;
 
-impl log::Log for ScreenLogger {
-    fn enabled(&self, metadata: &LogMetadata) -> bool { metadata.level() <= LogLevel::Info }
+static SCREEN_LOGGER: ScreenLogger = ScreenLogger;
 
-    fn log(&self, record: &LogRecord) {
+impl log::Log for ScreenLogger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= Level::Info
+    }
+
+    fn log(&self, record: &Record) {
         if self.enabled(record.metadata()) {
             let line = format!("{} - {}", record.level(), record.args());
             let mut logs = LOGS.write().unwrap();
@@ -17,10 +20,10 @@ impl log::Log for ScreenLogger {
         }
         let line = format!(
             "{} {} {}:{}] {}\n",
-            time::get_time().sec,
+            crate::now().as_secs(),
             record.level(),
-            record.location().file().split('/').last().unwrap(),
-            record.location().line(),
+            record.file().unwrap().split('/').last().unwrap(),
+            record.line().unwrap(),
             record.args()
         );
 
@@ -33,16 +36,18 @@ impl log::Log for ScreenLogger {
             f.write_all(line.as_bytes()).unwrap();
         }
     }
+
+    fn flush(&self) {}
 }
 
 pub fn init_screen_log() -> Result<(), SetLoggerError> {
-    log::set_logger(|max_log_level| {
-        max_log_level.set(LogLevelFilter::Debug);
-        Box::new(ScreenLogger)
-    })
+    log::set_max_level(LevelFilter::Debug);
+    log::set_logger(&SCREEN_LOGGER)
 }
 
-pub fn read_logs() -> Vec<String> { LOGS.read().unwrap().clone() }
+pub fn read_logs() -> Vec<String> {
+    LOGS.read().unwrap().clone()
+}
 
 lazy_static! {
     static ref LOGS: RwLock<Vec<String>> = RwLock::new(vec![]);

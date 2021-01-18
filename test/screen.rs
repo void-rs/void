@@ -3,7 +3,7 @@ use std::{fs::OpenOptions, os::unix::io::AsRawFd};
 use libc::dup2;
 
 use quickcheck::{Arbitrary, Gen, QuickCheck, StdGen};
-use rand;
+use rand::{self, distributions::Alphanumeric, seq::SliceRandom, Rng};
 use termion::event::{Event, Key, MouseButton, MouseEvent};
 
 use voidmap::*;
@@ -24,7 +24,7 @@ impl fmt::Debug for Op {
 impl Arbitrary for Op {
     fn arbitrary<G: Gen>(g: &mut G) -> Op {
         let (c, u, x, y) = (
-            g.gen_ascii_chars().nth(0).unwrap(),
+            g.sample(Alphanumeric),
             g.gen::<char>(),
             g.gen::<u16>(),
             g.gen::<u16>(),
@@ -50,7 +50,7 @@ impl Arbitrary for Op {
             Event::Mouse(MouseEvent::Release(x, y)),
         ];
         Op {
-            event: g.choose(&*events).unwrap().clone(),
+            event: events.choose(g).unwrap().clone(),
         }
     }
 }
@@ -94,7 +94,7 @@ impl Arbitrary for Content {
         let mut choice = vec![];
 
         for _ in 0..g.gen_range(0, 2) {
-            let command = g.choose(&*commands).unwrap().clone();
+            let command = commands.choose(g).unwrap().clone();
             let mut chars = command.chars().collect();
             choice.append(&mut chars);
             if g.gen_range(0, 10) > 0 {
@@ -132,7 +132,7 @@ impl Arbitrary for OpVec {
         OpVec { ops }
     }
 
-    fn shrink(&self) -> Box<Iterator<Item = OpVec>> {
+    fn shrink(&self) -> Box<dyn Iterator<Item = OpVec>> {
         let mut smaller = vec![];
         for i in 0..self.ops.len() {
             let mut clone = self.clone();
