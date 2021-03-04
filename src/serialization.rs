@@ -14,7 +14,7 @@ pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
     let arrows = screen
         .arrows
         .iter()
-        .map(|&(from, to)| {
+        .map(|&(from, to, _)| {
             let mut arrow_pb = pb::Arrow::default();
             arrow_pb.set_from_node(from);
             arrow_pb.set_to_node(to);
@@ -127,7 +127,7 @@ pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufErr
         .map(|arrow_pb| {
             let from = arrow_pb.get_from_node();
             let to = arrow_pb.get_to_node();
-            (from, to)
+            (from, to, random_fg_color())
         })
         .collect();
     Ok(screen)
