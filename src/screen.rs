@@ -30,7 +30,7 @@ use crate::{
 pub struct Screen {
     pub max_id: u64,
     pub nodes: HashMap<NodeID, Node>,
-    pub arrows: Vec<(NodeID, NodeID)>,
+    pub arrows: Vec<(NodeID, NodeID, String)>,
     pub work_path: Option<String>,
     pub autosave_every: usize,
     pub config: Config,
@@ -849,7 +849,7 @@ impl Screen {
         if let Some(node) = self.nodes.remove(&node_id) {
             // clean up any arrow state
             self.arrows
-                .retain(|&(ref from, ref to)| from != &node_id && to != &node_id);
+                .retain(|&(ref from, ref to, _)| from != &node_id && to != &node_id);
 
             // remove from tag_db
             self.tag_db.remove(node_id);
@@ -1625,7 +1625,7 @@ impl Screen {
 
         debug!("testing that all arrows are existing nodes");
         // no arrows that don't exist
-        for &(ref a, ref b) in &self.arrows {
+        for &(ref a, ref b, _) in &self.arrows {
             assert!(self.nodes.get(a).is_some());
             assert!(self.nodes.get(b).is_some());
         }
@@ -1673,10 +1673,10 @@ impl Screen {
             return;
         }
         let from = self.drawing_arrow.take().unwrap();
-        if let Some(arrow) = self.selected.map(|to| (from, to)) {
-            let (from, to) = arrow;
+        if let Some(arrow) = self.selected.map(|to| (from, to, random_fg_color())) {
+            let (from, to, _) = arrow;
             if self.nodes.get(&from).is_some() && self.nodes.get(&to).is_some() {
-                let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
+                let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2, _)| {
                     if nl1 == &from && nl2 == &to {
                         true
                     } else {
@@ -1764,9 +1764,9 @@ impl Screen {
         }
 
         // print arrows
-        for &(ref from, ref to) in &self.arrows {
+        for &(ref from, ref to, ref color) in &self.arrows {
             let (path, (direction1, direction2)) = self.path_between_nodes(*from, *to);
-            self.draw_path(path, direction1, direction2);
+            self.draw_path(path, direction1, direction2, color);
         }
 
         // conditionally print drag dest arrow
@@ -1778,11 +1778,11 @@ impl Screen {
                     if let Some(to_node) = self.lookup(to) {
                         let (path, (direction1, direction2)) =
                             self.path_between_nodes(*from_node, *to_node);
-                        self.draw_path(path, direction1, direction2);
+                        self.draw_path(path, direction1, direction2, &random_fg_color());
                     } else {
                         let (path, (direction1, direction2)) =
                             self.path_from_node_to_point(*from_node, to);
-                        self.draw_path(path, direction1, direction2);
+                        self.draw_path(path, direction1, direction2, &random_fg_color());
                     }
                 } else {
                     warn!("dragging_from set, but NOT dragging_to");
@@ -1992,13 +1992,13 @@ impl Screen {
         drawn
     }
 
-    fn draw_path(&self, internal_path: Vec<Coords>, start_dir: Dir, dest_dir: Dir) {
+    fn draw_path(&self, internal_path: Vec<Coords>, start_dir: Dir, dest_dir: Dir, color: &str) {
         let path: Vec<_> = internal_path
             .iter()
             .filter_map(|&c| self.internal_to_screen_xy(c))
             .collect();
         trace!("draw_path({:?}, {:?}, {:?})", path, start_dir, dest_dir);
-        print!("{}", random_fg_color());
+        print!("{}", color);
         if path.len() == 1 {
             print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
         } else if path.len() > 1 {
