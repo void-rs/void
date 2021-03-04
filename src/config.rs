@@ -48,6 +48,7 @@ pub enum Action {
     SelectParent,
     SelectNextSibling,
     SelectPrevSibling,
+    Insert,
 }
 
 fn to_action(input: String) -> Option<Action> {
@@ -87,6 +88,7 @@ fn to_action(input: String) -> Option<Action> {
         "select_parent" => Some(Action::SelectParent),
         "select_next_sibling" => Some(Action::SelectNextSibling),
         "select_prev_sibling" => Some(Action::SelectPrevSibling),
+        "insert" => Some(Action::Insert),
         _ => None,
     }
 }
@@ -126,6 +128,7 @@ fn to_key(raw_key: String) -> Option<Key> {
 #[derive(Debug, Clone)]
 pub struct Config {
     config: HashMap<Key, Action>,
+    pub modal: bool,
 }
 
 impl Default for Config {
@@ -172,6 +175,7 @@ impl Default for Config {
             ]
             .into_iter()
             .collect(),
+            modal: false,
         }
     }
 }
@@ -202,6 +206,10 @@ impl Config {
         let mut config = Config::default();
         for (mut line_num, line) in buf.lines().enumerate() {
             if line == "" || line.starts_with('#') {
+                continue;
+            }
+            if line == "modal" {
+                config.modal = true;
                 continue;
             }
 
