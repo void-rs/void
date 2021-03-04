@@ -51,6 +51,53 @@ pub enum Action {
     Insert,
 }
 
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Action::LeftClick(..) | Action::RightClick(..) | Action::Release(..) => {
+                write!(f, "Other action")
+            }
+            Action::Arrow => write!(f, "Start or end arrow"),
+            Action::AutoArrange => write!(f, "Toggle automatic arrangement"),
+            Action::Char(c) => write!(f, "Input character {}", c),
+            Action::CreateChild => write!(f, "Create new child node"),
+            Action::CreateFreeNode => write!(f, "Create new free node"),
+            Action::CreateSibling => write!(f, "Create new sibling node"),
+            Action::DeleteSelected => write!(f, "Delete selected node"),
+            Action::DrillDown => write!(f, "Move down in hierarchy"),
+            Action::EnterCmd => write!(f, "Enter command"),
+            Action::EraseChar => write!(f, "Erase character"),
+            Action::ExecSelected => write!(f, "Execute node content"),
+            Action::FindTask => write!(f, "Autoassign task"),
+            Action::Help => write!(f, "Display help"),
+            Action::Insert => write!(f, "Enter insert mode"),
+            Action::LowerSelected => write!(f, "Move selected node down"),
+            Action::PopUp => write!(f, "Move up in hierarchy"),
+            Action::PrefixJump => write!(f, "Select by prefix"),
+            Action::Quit => write!(f, "Quit void"),
+            Action::RaiseSelected => write!(f, "Move selected node up"),
+            Action::Save => write!(f, "Save"),
+            Action::ScrollDown => write!(f, "Scroll view down"),
+            Action::ScrollUp => write!(f, "Scroll view up"),
+            Action::Search => write!(f, "Search for node"),
+            Action::SelectDown => write!(f, "Select next node down"),
+            Action::SelectLeft => write!(f, "Select next node left"),
+            Action::SelectNextSibling => write!(f, "Select next sibling"),
+            Action::SelectParent => write!(f, "Select parent node"),
+            Action::SelectPrevSibling => write!(f, "Select previous sibling"),
+            Action::SelectRight => write!(f, "Select next node right"),
+            Action::SelectUp => write!(f, "Select next node up"),
+            Action::ToggleCollapsed => write!(f, "Toggle collapsing of children"),
+            Action::ToggleCompleted => write!(f, "Toggle completed"),
+            Action::ToggleHideCompleted => write!(f, "Toggle hiding of completed tasks"),
+            Action::ToggleShowLogs => write!(f, "Toggle log"),
+            Action::UndoDelete => write!(f, "Undo deletion"),
+            Action::UnselectRet => write!(f, "Unselect node / leave insert mode"),
+            Action::YankPasteNode => write!(f, "Yank node"),
+        }
+    }
+}
+
 fn to_action(input: String) -> Option<Action> {
     match &*input {
         "unselect" => Some(Action::UnselectRet),
@@ -180,11 +227,33 @@ impl Default for Config {
     }
 }
 
+struct FmtKey(Key);
+
+impl fmt::Display for FmtKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.0 {
+            Key::PageDown => write!(f, "{}", "PgDn"),
+            Key::PageUp => write!(f, "{}", "PgUp"),
+            Key::Delete => write!(f, "{}", "Del"),
+            Key::Alt(c) => write!(f, "A-{}", FmtKey(Key::Char(*c))),
+            Key::Ctrl(c) => write!(f, "C-{}", FmtKey(Key::Char(*c))),
+            Key::Char(' ') => write!(f, "{}", "Space"),
+            Key::Char('\n') => write!(f, "{}", "Enter"),
+            Key::Char('\t') => write!(f, "{}", "Tab"),
+            Key::Char(c) => write!(f, "{}", c),
+            other => fmt::Debug::fmt(other, f),
+        }
+    }
+}
+
 impl fmt::Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.modal {
+            writeln!(f, "Modal mode enabled.").unwrap();
+        }
         writeln!(f, "Configured Hotkeys:").unwrap();
         for (key, action) in &self.config {
-            writeln!(f, "    {:?}: {:?}", action, key).unwrap();
+            writeln!(f, "    {}: {}", action, FmtKey(*key)).unwrap();
         }
         Ok(())
     }
@@ -210,6 +279,10 @@ impl Config {
             }
             if line == "modal" {
                 config.modal = true;
+                continue;
+            }
+            if line == "no_defaults" {
+                config.config = HashMap::new();
                 continue;
             }
 

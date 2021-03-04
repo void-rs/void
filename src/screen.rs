@@ -128,8 +128,8 @@ impl Default for Screen {
 impl Screen {
     fn help(&mut self) {
         self.cleanup();
-        println!("{}{}{}", cursor::Goto(1, 1), clear::All, self.config);
         self.start_raw_mode();
+        println!("{}{}{}", cursor::Goto(1, 1), clear::All, self.config.to_string().replace("\n", "\r\n"));
         if self.single_key_prompt("").is_err() {
             // likely here because of testing
         }
