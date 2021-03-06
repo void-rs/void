@@ -252,9 +252,16 @@ impl fmt::Display for Config {
             writeln!(f, "Modal mode enabled.").unwrap();
         }
         writeln!(f, "Configured Hotkeys:").unwrap();
-        for (key, action) in &self.config {
-            writeln!(f, "    {}: {}", action, FmtKey(*key)).unwrap();
-        }
+        let mut hotkeys = self
+            .config
+            .iter()
+            .map(|(key, action)| format!("    {}: {}", action, FmtKey(*key)))
+            .collect::<Vec<_>>();
+        hotkeys.sort();
+        hotkeys
+            .into_iter()
+            .map(|string| writeln!(f, "{}", string))
+            .collect::<Result<Vec<()>, _>>()?;
         Ok(())
     }
 }
