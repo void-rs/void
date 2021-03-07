@@ -2138,6 +2138,9 @@ impl Screen {
         if self.should_auto_arrange() {
             header_text.push_str(" [auto-arrange] ");
         }
+        if self.config.modal && self.is_insert_mode() {
+            header_text.push_str(" [insert] ");
+        }
 
         let (plot, finished_today) = self.last_week_of_done_tasks();
         let plot_line = format!("│{}│({} today)", plot, finished_today);
