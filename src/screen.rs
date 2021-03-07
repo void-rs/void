@@ -1717,8 +1717,8 @@ impl Screen {
             return;
         }
         let from = self.drawing_arrow.take().unwrap();
-        if let Some(arrow) = self.selected.map(|to| (from, to.selected_id, random_fg_color())) {
-            let (from, to, _) = arrow;
+        if let Some(arrow) = self.selected.map(|to| (from, to.selected_id)) {
+            let (from, to) = arrow;
             if self.nodes.get(&from).is_some() && self.nodes.get(&to).is_some() {
                 let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2, _)| {
                     if nl1 == &from && nl2 == &to {
@@ -1728,9 +1728,9 @@ impl Screen {
                     }
                 });
                 if contains {
-                    self.arrows.retain(|e| e != &arrow);
+                    self.arrows.retain(|(old_from, old_to, _)| (*old_from, *old_to) != arrow);
                 } else {
-                    self.arrows.push(arrow);
+                    self.arrows.push((from, to, random_fg_color()));
                 }
             }
         }
