@@ -1045,7 +1045,7 @@ impl Screen {
                 selected.children.push(node_id);
             });
             if added.is_some() {
-                self.select_node(node_id);
+                self.select_node_ensure_inserting(node_id);
             } else {
                 self.delete_recursive(node_id);
             }
@@ -1068,7 +1068,7 @@ impl Screen {
                     // because that's not underneath the drawing root
                     return;
                 }
-                self.select_node(sel_parent);
+                self.select_node_ensure_inserting(sel_parent);
                 selected_id = sel_parent;
             }
             let selected_id = selected_id;
@@ -1093,7 +1093,7 @@ impl Screen {
                     parent.children.insert(idx + 1, node_id);
                 });
                 if added.is_some() {
-                    self.select_node(node_id);
+                    self.select_node_ensure_inserting(node_id);
                 } else {
                     self.delete_recursive(node_id);
                 }
@@ -1142,7 +1142,7 @@ impl Screen {
             node.parent_id = root;
         });
         self.with_node_mut_no_meta(root, |root| root.children.push(node_id));
-        self.select_node(node_id);
+        self.select_node_ensure_inserting(node_id);
     }
 
     fn backspace(&mut self) {
@@ -1596,6 +1596,27 @@ impl Screen {
                 self.selected = Some(Selection {
                     selected_id: node_id,
                     inserting: !self.config.modal,
+                });
+            }
+        }
+    }
+
+    fn select_node_ensure_inserting(&mut self, node_id: NodeID) {
+        trace!("select_node({})", node_id);
+        self.unselect();
+        if node_id != 0 {
+            // it's possible that unselecting above actually caused
+            // this node to be deleted, due to its parent (previous
+            // selection) being empty.  To account for this, we need
+            // to only set self.selected to node_id if the with_node
+            // succeeds.
+            if self
+                .with_node_mut_no_meta(node_id, |node| node.selected = true)
+                .is_some()
+            {
+                self.selected = Some(Selection {
+                    selected_id: node_id,
+                    inserting: true,
                 });
             }
         }
