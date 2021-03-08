@@ -320,7 +320,7 @@ impl Screen {
                 // pass
             } else if node.content.contains("#task") {
                 task_roots.push(node.id);
-            } else {
+            } else if !node.content.contains("#ignr") {
                 to_explore.append(&mut node.children);
             }
         }
@@ -581,6 +581,9 @@ impl Screen {
             // want to accidentally execute rm -rf /
             return;
         }
+        lazy_static![
+            static ref RE_TAG: Regex = Regex::new(r"([^#])#[^#\s]+").unwrap();
+        ];
         let Selection { selected_id, .. } = self.selected.unwrap();
 
         let content_opt = self.with_node(selected_id, |n| n.content.clone());
@@ -588,7 +591,10 @@ impl Screen {
             error!("tried to exec deleted node");
             return;
         }
-        let content = content_opt.unwrap();
+
+        // remove any tags from the exec
+        // except for those that are escaped as ##
+        let content = RE_TAG.replace_all(&content_opt.unwrap(), "$1").replace("##", "#");
         info!("executing command: {}", content);
 
         if content.is_empty() {
