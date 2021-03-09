@@ -320,7 +320,7 @@ impl Screen {
                 // pass
             } else if node.content.contains("#task") {
                 task_roots.push(node.id);
-            } else if !node.content.contains("#ignr") {
+            } else {
                 to_explore.append(&mut node.children);
             }
         }
@@ -328,6 +328,9 @@ impl Screen {
         let mut leaves = vec![];
         while let Some(root_id) = task_roots.pop() {
             let node = self.with_node(root_id, |n| n.clone()).unwrap();
+            if node.content.contains("#ignr") {
+                continue;
+            }
             let mut incomplete_children: Vec<_> = node
                 .children
                 .iter()
