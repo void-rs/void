@@ -328,14 +328,11 @@ impl Screen {
         let mut leaves = vec![];
         while let Some(root_id) = task_roots.pop() {
             let node = self.with_node(root_id, |n| n.clone()).unwrap();
-            if node.content.contains("#ignr") {
-                continue;
-            }
             let mut incomplete_children: Vec<_> = node
                 .children
                 .iter()
                 .cloned()
-                .filter(|&c| self.with_node(c, |c| !c.stricken).unwrap())
+                .filter(|&c| self.with_node(c, |c| !c.stricken && !c.content.contains("#ignr")).unwrap())
                 .collect();
             if incomplete_children.is_empty() {
                 leaves.push(root_id);
