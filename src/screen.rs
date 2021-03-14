@@ -1,5 +1,6 @@
 use std::{
     self,
+    borrow::Cow,
     cmp::{max, min},
     collections::{BTreeMap, BinaryHeap, HashMap, HashSet},
     env,
@@ -2146,6 +2147,15 @@ impl Screen {
         }
         if self.config.modal && self.is_insert_mode() {
             header_text.push_str(" [insert] ");
+        }
+        if let Some(cut) = self.cut {
+            let content = &self.nodes.get(&cut).unwrap().content;
+            let content_ellipsized = if content.len() >= 13 {
+                Cow::from(format!("{}...", &content[..10]))
+            } else {
+                Cow::from(content)
+            };
+            header_text.push_str(&format!(" [yanking: {}] ", content_ellipsized));
         }
 
         let (plot, finished_today) = self.last_week_of_done_tasks();
