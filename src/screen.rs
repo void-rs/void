@@ -1975,13 +1975,13 @@ impl Screen {
                 }
             }
             if node.stricken {
-                write!(&mut buf, "☠").unwrap();
+                buf.write_str(&self.config.stricken).unwrap();
             } else if node.collapsed {
-                write!(&mut buf, "⊞").unwrap();
+                buf.write_str(&self.config.collapsed).unwrap();
             } else if node.hide_stricken {
-                write!(&mut buf, "⚔").unwrap();
+                buf.write_str(&self.config.hide_stricken).unwrap();
             } else if node.free_text.is_some() {
-                write!(&mut buf, "✏").unwrap();
+                buf.write_str(&self.config.free_text).unwrap();
             } else {
                 write!(&mut buf, " ").unwrap();
             }

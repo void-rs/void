@@ -176,6 +176,10 @@ fn to_key(raw_key: String) -> Option<Key> {
 pub struct Config {
     config: HashMap<Key, Action>,
     pub modal: bool,
+    pub stricken: String,
+    pub collapsed: String,
+    pub hide_stricken: String,
+    pub free_text: String,
 }
 
 impl Default for Config {
@@ -223,6 +227,10 @@ impl Default for Config {
             .into_iter()
             .collect(),
             modal: false,
+            stricken: "☠".to_owned(),
+            collapsed: "⊞".to_owned(),
+            hide_stricken: "⚔".to_owned(),
+            free_text: "✏".to_owned(),
         }
     }
 }
@@ -303,21 +311,36 @@ impl Config {
                 return Err(Error::new(ErrorKind::Other, e));
             }
 
-            let (raw_action, raw_key) = (parts[0], parts[1]);
+            let (option, param) = (parts[0], parts[1]);
+            match (option, param) {
+                ("stricken", p) => {
+                    config.stricken = p.to_owned();
+                }
+                ("collapsed", p) => {
+                    config.collapsed = p.to_owned();
+                }
+                ("hide_stricken", p) => {
+                    config.hide_stricken = p.to_owned();
+                }
+                ("free_text", p) => {
+                    config.free_text = p.to_owned();
+                }
+                (raw_action, raw_key) => {
+                    let key_opt = to_key(raw_key.to_owned());
+                    let action_opt = to_action(raw_action.to_owned());
 
-            let key_opt = to_key(raw_key.to_owned());
-            let action_opt = to_action(raw_action.to_owned());
+                    if key_opt.is_none() || action_opt.is_none() {
+                        let e = format!("invalid config at line {}: {}", line_num, line);
+                        error!("{}", e);
+                        return Err(Error::new(ErrorKind::Other, e));
+                    }
 
-            if key_opt.is_none() || action_opt.is_none() {
-                let e = format!("invalid config at line {}: {}", line_num, line);
-                error!("{}", e);
-                return Err(Error::new(ErrorKind::Other, e));
+                    let key = key_opt.unwrap();
+                    let action = action_opt.unwrap();
+
+                    config.config.insert(key, action);
+                }
             }
-
-            let key = key_opt.unwrap();
-            let action = action_opt.unwrap();
-
-            config.config.insert(key, action);
         }
 
         Ok(config)
