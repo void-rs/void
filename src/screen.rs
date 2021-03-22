@@ -1442,10 +1442,6 @@ impl Screen {
             }
         }
 
-        // save old location and jump
-        let old_select = self.unselect().unwrap_or(0);
-        let breadcrumb = (self.drawing_root, old_select, self.view_y);
-        self.focus_stack.push(breadcrumb);
         self.drawing_root = cursor;
         self.select_node(node_id);
         self.draw();
