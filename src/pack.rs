@@ -80,7 +80,9 @@ impl Pack {
         )
     }
 
-    fn is_leaf(&self) -> bool { self.children.is_none() }
+    fn is_leaf(&self) -> bool {
+        self.children.is_none()
+    }
 
     fn can_accomodate(&self, dim: Coords) -> bool {
         let capacity = self.dim();

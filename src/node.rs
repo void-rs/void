@@ -38,7 +38,9 @@ impl Default for Node {
 }
 
 impl Node {
-    pub fn toggle_collapsed(&mut self) { self.collapsed = !self.collapsed; }
+    pub fn toggle_collapsed(&mut self) {
+        self.collapsed = !self.collapsed;
+    }
 
     pub fn toggle_stricken(&mut self) {
         if self.stricken {
@@ -49,7 +51,9 @@ impl Node {
         self.stricken = !self.stricken;
     }
 
-    pub fn toggle_hide_stricken(&mut self) { self.hide_stricken = !self.hide_stricken; }
+    pub fn toggle_hide_stricken(&mut self) {
+        self.hide_stricken = !self.hide_stricken;
+    }
 
     pub fn new_from(other: &Self) -> Self {
         Node {

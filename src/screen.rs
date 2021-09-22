@@ -167,9 +167,11 @@ impl Screen {
         let mut new_node = Node::new_from(self.nodes.get(&id)?);
         info!("Made new node");
         let new_id = self.new_node_id();
-        let new_children = new_node.children.iter().flat_map(|&child_id| {
-            self.clone_node(child_id, new_id)
-        }).collect();
+        let new_children = new_node
+            .children
+            .iter()
+            .flat_map(|&child_id| self.clone_node(child_id, new_id))
+            .collect();
         new_node.id = new_id;
         new_node.children = new_children;
         new_node.parent_id = new_parent_id;
@@ -304,7 +306,9 @@ impl Screen {
 
     fn cut_paste(&mut self, yanking: bool) {
         let can_cut = self.selected.is_some();
-        let place = self.selected.map_or(self.drawing_root, |sel| sel.selected_id);
+        let place = self
+            .selected
+            .map_or(self.drawing_root, |sel| sel.selected_id);
         match self.cut {
             Cut::Move(cut) => {
                 self.reparent(cut, place);
