@@ -2390,7 +2390,7 @@ impl Screen {
         let today_normalized = now / day_in_sec * day_in_sec;
         let counts_clone = counts.clone();
         let finished_today = counts_clone[&today_normalized];
-        let week_line: Vec<i64> = counts.into_iter().map(|(_, v)| v).collect();
+        let week_line: Vec<i64> = counts.into_iter().rev().map(|(_, v)| v).collect();
         let plot = plot::plot_sparkline(week_line);
         (plot, finished_today as usize)
     }
@@ -2537,7 +2537,7 @@ impl Screen {
             });
             nodes.append(&mut new);
         }
-        let plot = plot::bounded_count_sparkline(nodes, since as i64, until as i64, buckets);
+        let plot = plot::bounded_count_sparkline(nodes, until as i64, since as i64, buckets);
         format!("|{}|", plot)
     }
 

@@ -35,7 +35,7 @@ where
     let step = (end - start) / bars as i64;
     let mut counts = vec![0; bars];
 
-    if step == 0 || nums.is_empty() || end <= start {
+    if step == 0 || nums.is_empty() {
         return String::from_utf8(vec![b' '; bars]).unwrap();
     }
 
