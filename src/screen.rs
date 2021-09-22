@@ -34,6 +34,13 @@ struct Selection {
     inserting: bool,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum Cut {
+    Move(NodeID),
+    Yank(NodeID),
+    Empty,
+}
+
 pub struct Screen {
     pub max_id: u64,
     pub nodes: HashMap<NodeID, Node>,
@@ -50,7 +57,7 @@ pub struct Screen {
     drawing_root: NodeID,
     show_logs: bool,
     selected: Option<Selection>,
-    cut: Option<NodeID>,
+    cut: Cut,
     drawing_arrow: Option<NodeID>,
     lookup: HashMap<Coords, NodeID>,
     drawn_at: HashMap<NodeID, Coords>,
@@ -95,7 +102,7 @@ impl Default for Screen {
             config: Config::default(),
             arrows: vec![],
             selected: None,
-            cut: None,
+            cut: Cut::Empty,
             drawing_arrow: None,
             nodes: HashMap::new(),
             lookup: HashMap::new(),
@@ -130,7 +137,12 @@ impl Screen {
     fn help(&mut self) {
         self.cleanup();
         self.start_raw_mode();
-        println!("{}{}{}", cursor::Goto(1, 1), clear::All, self.config.to_string().replace("\n", "\r\n"));
+        println!(
+            "{}{}{}",
+            cursor::Goto(1, 1),
+            clear::All,
+            self.config.to_string().replace("\n", "\r\n")
+        );
         if self.single_key_prompt("").is_err() {
             // likely here because of testing
         }
@@ -148,6 +160,24 @@ impl Screen {
         node.id = id;
         self.nodes.insert(id, node);
         id
+    }
+
+    fn clone_node(&mut self, id: NodeID, new_parent_id: NodeID) -> Option<NodeID> {
+        info!("Try new node");
+        let mut new_node = Node::new_from(self.nodes.get(&id)?);
+        info!("Made new node");
+        let new_id = self.new_node_id();
+        let new_children = new_node.children.iter().flat_map(|&child_id| {
+            self.clone_node(child_id, new_id)
+        }).collect();
+        new_node.id = new_id;
+        new_node.children = new_children;
+        new_node.parent_id = new_parent_id;
+
+        self.nodes.insert(new_id, new_node);
+        info!("Inserted new node");
+
+        Some(new_id)
     }
 
     pub fn with_node<B, F>(&self, k: NodeID, mut f: F) -> Option<B>
@@ -234,9 +264,7 @@ impl Screen {
                 Action::SelectDown => self.select_down(),
                 Action::SelectLeft => self.select_left(),
                 Action::SelectRight => self.select_right(),
-                Action::EraseChar if self.is_insert_mode() => {
-                    self.backspace()
-                }
+                Action::EraseChar if self.is_insert_mode() => self.backspace(),
                 Action::EraseChar => {}
                 Action::CreateSibling => self.create_sibling(),
                 Action::CreateChild => self.create_child(),
@@ -255,7 +283,8 @@ impl Screen {
                 Action::ToggleShowLogs => self.toggle_show_logs(),
                 Action::EnterCmd => self.enter_cmd(),
                 Action::FindTask => self.auto_task(),
-                Action::YankPasteNode => self.cut_paste(),
+                Action::YankPasteNode => self.cut_paste(true),
+                Action::MovePasteNode => self.cut_paste(false),
                 Action::RaiseSelected => self.raise_selected(),
                 Action::LowerSelected => self.lower_selected(),
                 Action::Search => self.search_forward(),
@@ -273,16 +302,35 @@ impl Screen {
         self.nodes.get(&node_id).is_some()
     }
 
-    fn cut_paste(&mut self) {
-        if let Some(sel) = self.selected {
-            if let Some(cut) = self.cut.take() {
-                self.reparent(cut, sel.selected_id);
-            } else {
-                self.cut = Some(sel.selected_id);
+    fn cut_paste(&mut self, yanking: bool) {
+        let can_cut = self.selected.is_some();
+        let place = self.selected.map_or(self.drawing_root, |sel| sel.selected_id);
+        match self.cut {
+            Cut::Move(cut) => {
+                self.reparent(cut, place);
+                self.cut = Cut::Empty;
             }
-        } else if let Some(cut) = self.cut.take() {
-            let root = self.drawing_root;
-            self.reparent(cut, root);
+            Cut::Yank(cut) => {
+                if self.is_parent(cut, place) {
+                    warn!("Can't copy a node into itself");
+                    return;
+                }
+                if let Some(new_id) = self.clone_node(cut, place) {
+                    self.with_node_mut_no_meta(place, |parent_nd| {
+                        parent_nd.children.push(new_id);
+                    });
+                } else {
+                    info!("Yank failed somewhere");
+                };
+                self.cut = Cut::Empty;
+            }
+            Cut::Empty if yanking && can_cut => {
+                self.cut = Cut::Yank(place);
+            }
+            Cut::Empty if can_cut => {
+                self.cut = Cut::Move(place);
+            }
+            Cut::Empty => {}
         }
     }
 
@@ -333,7 +381,10 @@ impl Screen {
                 .children
                 .iter()
                 .cloned()
-                .filter(|&c| self.with_node(c, |c| !c.stricken && !c.content.contains("#ignr")).unwrap())
+                .filter(|&c| {
+                    self.with_node(c, |c| !c.stricken && !c.content.contains("#ignr"))
+                        .unwrap()
+                })
                 .collect();
             if incomplete_children.is_empty() {
                 leaves.push(root_id);
@@ -582,9 +633,9 @@ impl Screen {
             // want to accidentally execute rm -rf /
             return;
         }
-        lazy_static![
+        lazy_static! {
             static ref RE_TAG: Regex = Regex::new(r"([^#])#[^#\s]+").unwrap();
-        ];
+        };
         let Selection { selected_id, .. } = self.selected.unwrap();
 
         let content_opt = self.with_node(selected_id, |n| n.content.clone());
@@ -595,7 +646,9 @@ impl Screen {
 
         // remove any tags from the exec
         // except for those that are escaped as ##
-        let content = RE_TAG.replace_all(&content_opt.unwrap(), "$1").replace("##", "#");
+        let content = RE_TAG
+            .replace_all(&content_opt.unwrap(), "$1")
+            .replace("##", "#");
         info!("executing command: {}", content);
 
         if content.is_empty() {
@@ -1744,15 +1797,19 @@ impl Screen {
         if let Some(arrow) = self.selected.map(|to| (from, to.selected_id)) {
             let (from, to) = arrow;
             if self.nodes.get(&from).is_some() && self.nodes.get(&to).is_some() {
-                let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2, _)| {
-                    if nl1 == &from && nl2 == &to {
-                        true
-                    } else {
-                        acc
-                    }
-                });
+                let contains = self
+                    .arrows
+                    .iter()
+                    .fold(false, |acc, &(ref nl1, ref nl2, _)| {
+                        if nl1 == &from && nl2 == &to {
+                            true
+                        } else {
+                            acc
+                        }
+                    });
                 if contains {
-                    self.arrows.retain(|(old_from, old_to, _)| (*old_from, *old_to) != arrow);
+                    self.arrows
+                        .retain(|(old_from, old_to, _)| (*old_from, *old_to) != arrow);
                 } else {
                     self.arrows.push((from, to, random_fg_color()));
                 }
@@ -2144,14 +2201,25 @@ impl Screen {
         if self.config.modal && self.is_insert_mode() {
             header_text.push_str(" [insert] ");
         }
-        if let Some(cut) = self.cut {
-            let content = &self.nodes.get(&cut).unwrap().content;
-            let content_ellipsized = if content.len() >= 13 {
-                Cow::from(format!("{}...", &content[..10]))
-            } else {
-                Cow::from(content)
-            };
-            header_text.push_str(&format!(" [yanking: {}] ", content_ellipsized));
+        match self.cut {
+            Cut::Move(id) | Cut::Yank(id) => {
+                let content = &self.nodes.get(&id).unwrap().content;
+                let content_ellipsized = if content.len() >= 13 {
+                    Cow::from(format!("{}...", &content[..10]))
+                } else {
+                    Cow::from(content)
+                };
+                header_text.push_str(&format!(
+                    " [{}: {}] ",
+                    match self.cut {
+                        Cut::Move(_) => "moving",
+                        Cut::Yank(_) => "yanking",
+                        Cut::Empty => unreachable!(),
+                    },
+                    content_ellipsized
+                ));
+            }
+            Cut::Empty => {}
         }
 
         let (plot, finished_today) = self.last_week_of_done_tasks();

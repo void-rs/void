@@ -39,6 +39,7 @@ pub enum Action {
     ToggleShowLogs,
     EnterCmd,
     FindTask,
+    MovePasteNode,
     YankPasteNode,
     RaiseSelected,
     LowerSelected,
@@ -72,6 +73,7 @@ impl fmt::Display for Action {
             Action::Help => write!(f, "Display help"),
             Action::Insert => write!(f, "Enter insert mode"),
             Action::LowerSelected => write!(f, "Move selected node down"),
+            Action::MovePasteNode => write!(f, "Move node"),
             Action::PopUp => write!(f, "Move up in hierarchy"),
             Action::PrefixJump => write!(f, "Select by prefix"),
             Action::Quit => write!(f, "Quit void"),
@@ -127,6 +129,7 @@ fn to_action(input: String) -> Option<Action> {
         "enter_command" => Some(Action::EnterCmd),
         "find_task" => Some(Action::FindTask),
         "yank_paste_node" => Some(Action::YankPasteNode),
+        "move_paste_node" => Some(Action::MovePasteNode),
         "raise_selected" => Some(Action::RaiseSelected),
         "lower_selected" => Some(Action::LowerSelected),
         "search" => Some(Action::Search),
@@ -221,6 +224,7 @@ impl Default for Config {
                 (Ctrl('z'), Action::UndoDelete),
                 (Ctrl('?'), Action::Help),
                 (Alt('P'), Action::SelectParent),
+                (Alt('y'), Action::MovePasteNode),
                 (Alt('n'), Action::SelectNextSibling),
                 (Alt('p'), Action::SelectPrevSibling),
             ]
@@ -240,14 +244,14 @@ struct FmtKey(Key);
 impl fmt::Display for FmtKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.0 {
-            Key::PageDown => write!(f, "{}", "PgDn"),
-            Key::PageUp => write!(f, "{}", "PgUp"),
-            Key::Delete => write!(f, "{}", "Del"),
+            Key::PageDown => write!(f, "PgDn"),
+            Key::PageUp => write!(f, "PgUp"),
+            Key::Delete => write!(f, "Del"),
             Key::Alt(c) => write!(f, "A-{}", FmtKey(Key::Char(*c))),
             Key::Ctrl(c) => write!(f, "C-{}", FmtKey(Key::Char(*c))),
-            Key::Char(' ') => write!(f, "{}", "Space"),
-            Key::Char('\n') => write!(f, "{}", "Enter"),
-            Key::Char('\t') => write!(f, "{}", "Tab"),
+            Key::Char(' ') => write!(f, "Space"),
+            Key::Char('\n') => write!(f, "Enter"),
+            Key::Char('\t') => write!(f, "Tab"),
             Key::Char(c) => write!(f, "{}", c),
             other => fmt::Debug::fmt(other, f),
         }

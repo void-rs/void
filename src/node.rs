@@ -50,4 +50,14 @@ impl Node {
     }
 
     pub fn toggle_hide_stricken(&mut self) { self.hide_stricken = !self.hide_stricken; }
+
+    pub fn new_from(other: &Self) -> Self {
+        Node {
+            color: random_fg_color(),
+            id: 0,
+            parent_id: 0,
+            selected: false,
+            ..other.clone()
+        }
+    }
 }
