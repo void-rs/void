@@ -22,12 +22,12 @@ impl fmt::Debug for Op {
 }
 
 impl Arbitrary for Op {
-    fn arbitrary<G: Gen>(g: &mut G) -> Op {
+    fn arbitrary<G: Gen>(generator: &mut G) -> Op {
         let (c, u, x, y) = (
-            g.sample(Alphanumeric),
-            g.gen::<char>(),
-            g.gen::<u16>(),
-            g.gen::<u16>(),
+            generator.sample(Alphanumeric),
+            generator.gen::<char>(),
+            generator.gen::<u16>(),
+            generator.gen::<u16>(),
         );
         let events = vec![
             Event::Key(Key::Char('\n')),
@@ -50,7 +50,7 @@ impl Arbitrary for Op {
             Event::Mouse(MouseEvent::Release(x, y)),
         ];
         Op {
-            event: events.choose(g).unwrap().clone(),
+            event: events.choose(generator).unwrap().clone(),
         }
     }
 }
@@ -94,7 +94,7 @@ impl Arbitrary for Content {
         let mut choice = vec![];
 
         for _ in 0..g.gen_range(0, 2) {
-            let command = commands.choose(g).unwrap().clone();
+            let command = commands.choose(g).unwrap();
             let mut chars = command.chars().collect();
             choice.append(&mut chars);
             if g.gen_range(0, 10) > 0 {

@@ -293,7 +293,7 @@ impl Config {
         f.read_to_string(&mut buf)?;
         let mut config = Config::default();
         for (mut line_num, line) in buf.lines().enumerate() {
-            if line == "" || line.starts_with('#') {
+            if line.is_empty() || line.starts_with('#') {
                 continue;
             }
             if line == "modal" {

@@ -73,8 +73,8 @@ impl TagDB {
             .tag_to_nodes
             .get(&tag.to_owned())
             .map(|set| set.clone().into_iter().collect())
-            .unwrap_or_else(|| vec![]);
-        res.sort();
+            .unwrap_or_else(Vec::new);
+        res.sort_unstable();
         res
     }
 }

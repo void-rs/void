@@ -1,7 +1,7 @@
 use std::{
     self,
     borrow::Cow,
-    cmp::{max, min},
+    cmp::{max, min, Ordering},
     collections::{BTreeMap, BinaryHeap, HashMap, HashSet},
     env,
     fmt::Write as FmtWrite,
@@ -95,8 +95,10 @@ pub struct Screen {
 
 impl Default for Screen {
     fn default() -> Screen {
-        let mut root = Node::default();
-        root.content = "home".to_owned();
+        let root = Node {
+            content: "home".to_owned(),
+            ..Node::default()
+        };
         let mut screen = Screen {
             autosave_every: 25,
             config: Config::default(),
@@ -445,7 +447,7 @@ impl Screen {
             .and_then(|c| {
                 if RE.is_match(&*c) {
                     RE.captures_iter(&*c)
-                        .nth(0)
+                        .next()
                         .and_then(|n| n.get(1).unwrap().as_str().parse::<usize>().ok())
                 } else {
                     None
@@ -468,7 +470,7 @@ impl Screen {
             prompt
         );
         self.flush();
-        let res = stdin.keys().nth(0).unwrap();
+        let res = stdin.keys().next().unwrap();
         debug!("read prompt: {:?}", res);
         print!("{}", style::Reset);
         res
@@ -524,7 +526,7 @@ impl Screen {
             SearchDirection::Backward => format!("search backwards{}:", last_search_str),
         };
         if let Ok(Some(mut query)) = self.prompt(&*prompt) {
-            if query == "" {
+            if query.is_empty() {
                 if let Some((ref last, _)) = self.last_search {
                     query = last.clone();
                 } else {
@@ -540,7 +542,7 @@ impl Screen {
             if candidates.is_empty() {
                 return;
             }
-            candidates.sort();
+            candidates.sort_unstable();
             let choice = if let Some((_, last_choice)) = self.last_search.take() {
                 let idx = candidates
                     .iter()
@@ -908,14 +910,14 @@ impl Screen {
                         node.selected = true;
                         node_id
                     })
-                    .and_then(|id| {
+                    .map(|id| {
                         self.selected = Some(Selection {
                             selected_id: node_id,
                             inserting: !self.config.modal,
                         });
                         self.dragging_from = Some(coords);
                         self.dragging_to = Some(coords);
-                        Some(id)
+                        id
                     })
                     .or_else(|| {
                         trace!("found no node at {:?}", coords);
@@ -2023,7 +2025,7 @@ impl Screen {
             }
             write!(&mut buf, "{}", pre_meta).unwrap();
             write!(&mut buf, "{}", prefix).unwrap();
-            if prefix != "" {
+            if !prefix.is_empty() {
                 // only anchor will have blank prefix
                 if last {
                     write!(&mut buf, "└─").unwrap();
@@ -2051,7 +2053,7 @@ impl Screen {
                 write!(&mut buf, "{}", post_content).unwrap();
             }
             // keep color for selected & tree root Fg
-            if !node.selected && prefix != "" {
+            if !node.selected && !prefix.is_empty() {
                 write!(&mut buf, "{}", reset).unwrap();
             }
 
@@ -2113,8 +2115,8 @@ impl Screen {
         let mut prefix = prefix;
         if last {
             prefix.push_str("   ");
-        } else if prefix == "" {
-            prefix.push_str(" ");
+        } else if prefix.is_empty() {
+            prefix.push(' ');
         } else {
             prefix.push_str("│  ");
         }
@@ -2147,49 +2149,51 @@ impl Screen {
             .collect();
         trace!("draw_path({:?}, {:?}, {:?})", path, start_dir, dest_dir);
         print!("{}", color);
-        if path.len() == 1 {
-            print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
-        } else if path.len() > 1 {
-            let first = if path[1].1 > path[0].1 {
-                match start_dir {
-                    Dir::R => '┐',
-                    Dir::L => '┌',
-                }
-            } else if path[1].1 < path[0].1 {
-                match start_dir {
-                    Dir::R => '┘',
-                    Dir::L => '└',
-                }
-            } else {
-                '─'
-            };
-
-            print!("{}{}", cursor::Goto(path[0].0, path[0].1), first);
-            for items in path.windows(3) {
-                let (p, this, n) = (items[0], items[1], items[2]);
-                let c = if p.0 == n.0 {
-                    '│'
-                } else if p.1 == n.1 {
-                    '─'
-                } else if (this.1 < p.1 && this.0 < n.0) || (this.0 < p.0 && this.1 < n.1) {
-                    '┌' // up+right or left+down
-                } else if (this.0 > p.0 && this.1 > n.1) || (this.1 > p.1 && this.0 > n.0) {
-                    '┘' // right+up or down+left
-                } else if (this.0 > p.0 && this.1 < n.1) || (this.1 < p.1 && this.0 > n.0) {
-                    '┐' // right+down or up+left
-                } else {
-                    '└' // down+right or left+up
+        match path.len().cmp(&1) {
+            Ordering::Equal => {
+                print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
+            }
+            Ordering::Greater => {
+                let first = match path[1].1.cmp(&path[0].1) {
+                    Ordering::Greater => match start_dir {
+                        Dir::R => '┐',
+                        Dir::L => '┌',
+                    },
+                    Ordering::Less => match start_dir {
+                        Dir::R => '┘',
+                        Dir::L => '└',
+                    },
+                    Ordering::Equal => '─',
                 };
 
-                print!("{}{}", cursor::Goto(this.0, this.1), c)
+                print!("{}{}", cursor::Goto(path[0].0, path[0].1), first);
+                for items in path.windows(3) {
+                    let (p, this, n) = (items[0], items[1], items[2]);
+                    let c = if p.0 == n.0 {
+                        '│'
+                    } else if p.1 == n.1 {
+                        '─'
+                    } else if (this.1 < p.1 && this.0 < n.0) || (this.0 < p.0 && this.1 < n.1) {
+                        '┌' // up+right or left+down
+                    } else if (this.0 > p.0 && this.1 > n.1) || (this.1 > p.1 && this.0 > n.0) {
+                        '┘' // right+up or down+left
+                    } else if (this.0 > p.0 && this.1 < n.1) || (this.1 < p.1 && this.0 > n.0) {
+                        '┐' // right+down or up+left
+                    } else {
+                        '└' // down+right or left+up
+                    };
+
+                    print!("{}{}", cursor::Goto(this.0, this.1), c)
+                }
+                let (end_x, end_y) = (path[path.len() - 1].0, path[path.len() - 1].1);
+                let end_char = match dest_dir {
+                    Dir::L => '>',
+                    Dir::R => '<',
+                };
+                print!("{}{}", cursor::Goto(end_x, end_y), end_char);
             }
-            let (end_x, end_y) = (path[path.len() - 1].0, path[path.len() - 1].1);
-            let end_char = match dest_dir {
-                Dir::L => '>',
-                Dir::R => '<',
-            };
-            print!("{}{}", cursor::Goto(end_x, end_y), end_char);
-        }
+            _ => {}
+        };
         print!("{}", color::Fg(color::Reset));
     }
 
@@ -2430,7 +2434,7 @@ impl Screen {
         }
         let queried_nodes = tagged_children
             .map(|tc| tc.into_iter().collect())
-            .unwrap_or_else(|| vec![]);
+            .unwrap_or_else(Vec::new);
 
         let mut since_opt = None;
         let mut until_opt = None;
@@ -2493,7 +2497,7 @@ impl Screen {
             let now = now().as_secs();
             let buckets = n_opt.cloned().unwrap_or(7);
             let since = since_opt.unwrap_or_else(|| now - 60 * 60 * 24 * 7);
-            let until = until_opt.unwrap_or_else(|| now);
+            let until = until_opt.unwrap_or(now);
 
             node.content = match plot.as_str() {
                 "done" => self.plot(queried_nodes, PlotType::Done, buckets, since, until),

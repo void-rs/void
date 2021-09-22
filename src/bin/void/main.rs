@@ -16,9 +16,9 @@ fn main() {
         .value_of("PATH")
         .map(OsString::from)
         .or_else(|| {
-            dirs::home_dir().and_then(|mut h| {
+            dirs::home_dir().map(|mut h| {
                 h.push(".void.db");
-                Some(h.into_os_string())
+                h.into_os_string()
             })
         })
         .unwrap();
