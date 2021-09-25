@@ -19,6 +19,7 @@ use termion::{
     style, terminal_size,
 };
 
+use chrono::{Date, Datelike, Local, NaiveDate, TimeZone, Weekday};
 use rand::{self, Rng};
 use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
@@ -56,6 +57,7 @@ pub struct Screen {
     // non-pub members are ephemeral
     drawing_root: NodeID,
     show_logs: bool,
+    show_calendar: bool,
     selected: Option<Selection>,
     cut: Cut,
     drawing_arrow: Option<NodeID>,
@@ -110,6 +112,7 @@ impl Default for Screen {
             lookup: HashMap::new(),
             drawn_at: HashMap::new(),
             show_logs: false,
+            show_calendar: true,
             drawing_root: 0,
             stdout: None,
             dragging_from: None,
@@ -165,9 +168,7 @@ impl Screen {
     }
 
     fn clone_node(&mut self, id: NodeID, new_parent_id: NodeID) -> Option<NodeID> {
-        info!("Try new node");
         let mut new_node = Node::new_from(self.nodes.get(&id)?);
-        info!("Made new node");
         let new_id = self.new_node_id();
         let new_children = new_node
             .children
@@ -179,7 +180,6 @@ impl Screen {
         new_node.parent_id = new_parent_id;
 
         self.nodes.insert(new_id, new_node);
-        info!("Inserted new node");
 
         Some(new_id)
     }
@@ -325,9 +325,7 @@ impl Screen {
                     self.with_node_mut_no_meta(place, |parent_nd| {
                         parent_nd.children.push(new_id);
                     });
-                } else {
-                    info!("Yank failed somewhere");
-                };
+                }
                 self.cut = Cut::Empty;
             }
             Cut::Empty if yanking && can_cut => {
@@ -537,8 +535,8 @@ impl Screen {
                 self.last_search.take();
             }
 
-            let mut f = |n: &Node| n.content.find(&*query).map(|idx| (idx, n.id));
-            let mut candidates = self.recursive_child_filter_map(self.drawing_root, &mut f);
+            let mut f = |n: &Node, _: ()| (n.content.find(&*query).map(|idx| (idx, n.id)), ());
+            let mut candidates = self.recursive_child_filter_map(self.drawing_root, (), &mut f);
             if candidates.is_empty() {
                 return;
             }
@@ -770,19 +768,26 @@ impl Screen {
         }
     }
 
-    pub fn recursive_child_filter_map<F, B>(&self, node_id: NodeID, filter_map: &mut F) -> Vec<B>
+    pub fn recursive_child_filter_map<F, C, B>(
+        &self,
+        node_id: NodeID,
+        context: C,
+        filter_map: &mut F,
+    ) -> Vec<B>
     where
-        F: FnMut(&Node) -> Option<B>,
+        F: FnMut(&Node, C) -> (Option<B>, C),
+        C: Copy,
     {
         trace!("recursive_child_filter_map({}, F...)", node_id);
         let mut ret = vec![];
 
         if let Some(node) = self.nodes.get(&node_id) {
-            if let Some(b) = filter_map(node) {
+            let (filtered, context) = filter_map(node, context);
+            if let Some(b) = filtered {
                 ret.push(b);
             }
             for &child_id in &node.children {
-                ret.append(&mut self.recursive_child_filter_map(child_id, filter_map));
+                ret.append(&mut self.recursive_child_filter_map(child_id, context, filter_map));
             }
         } else {
             debug!("queried for node {} but it is not in self.nodes", node_id);
@@ -836,7 +841,7 @@ impl Screen {
     fn unselect(&mut self) -> Option<NodeID> {
         trace!("unselect()");
         lazy_static! {
-            static ref RE_DATE: Regex = Regex::new(r"\[(\S+)\]").unwrap();
+            static ref RE_DATE: Regex = Regex::new(r"\[(\d{2}\.\d{2}\.\d{4})\]").unwrap();
         }
         if let Some(Selection { selected_id, .. }) = self.selected {
             // nuke node if it's empty and has no children
@@ -853,17 +858,21 @@ impl Screen {
 
             self.with_node_mut_no_meta(selected_id, |n| {
                 // if parseable date, change date
+                let mut due_date_set = false;
                 if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).get(0) {
-                    if let Some(date) = dateparse(date.clone()) {
-                        n.content = RE_DATE.replace(&*n.content, "").trim_end().to_owned();
+                    if let Ok(date) = NaiveDate::parse_from_str(date, "%d.%m.%Y") {
+                        let date = Local.from_local_date(&date).unwrap();
                         if n.meta.finish_time.is_some() {
-                            n.meta.finish_time = Some(date);
+                            n.meta.finish_time = Some(date.and_hms(0, 0, 0).timestamp() as u64);
                         } else {
-                            let now_in_s = now().as_secs();
-                            let future_date = now_in_s + (now_in_s - date);
-                            n.meta.due = Some(future_date);
+                            n.meta.due_date = Some(date);
+                            due_date_set = true;
                         }
                     }
+                }
+
+                if !due_date_set {
+                    n.meta.due_date = None;
                 }
             });
         }
@@ -1029,8 +1038,6 @@ impl Screen {
         let stdin = stdin();
         for (num_events, c) in stdin.events().enumerate() {
             let evt = c.unwrap();
-
-            self.dims = terminal_size().unwrap();
 
             let should_break = !self.handle_event(evt);
 
@@ -1843,6 +1850,147 @@ impl Screen {
         }
     }
 
+    fn reserve_and_draw_calendar(&mut self) {
+        if !self.show_calendar {
+            return;
+        }
+        const CALENDAR_WIDTH: u16 = 1 + // vertical line
+            4 + // week numbers + padding
+            3*7; // days
+        if self.dims.0 < CALENDAR_WIDTH {
+            return;
+        }
+        self.dims.0 -= CALENDAR_WIDTH;
+
+        let today = Local::today();
+        let mut date = today.with_day(1).unwrap();
+        let mut line = 2;
+        let max_line = self.dims.1;
+        'make_month: loop {
+            if line > max_line {
+                break;
+            }
+
+            let (month, year) = (date.month(), date.year());
+            let month_assigned_days = self.recursive_child_filter_map(
+                self.drawing_root,
+                None,
+                &mut |nd: &Node, default_date: Option<Date<Local>>| {
+                    let date = nd.meta.due_date.or(default_date);
+                    if let Some(assigned) = date {
+                        if assigned.year() == year && assigned.month() == month {
+                            (Some(assigned.day0()), date)
+                        } else {
+                            (None, date)
+                        }
+                    } else {
+                        (None, None)
+                    }
+                },
+            );
+            let mut counts_by_day = [0usize; 31];
+            for day in month_assigned_days {
+                counts_by_day[day as usize] += 1;
+            }
+
+            let month_header = format!(
+                "{}│{}{:^width$}{}",
+                cursor::Goto(self.dims.0, line),
+                style::Bold,
+                date.format("%B %Y").to_string(),
+                style::Reset,
+                width = (CALENDAR_WIDTH - 1) as usize,
+            );
+
+            println!("{}", month_header);
+            line += 1;
+            if line > max_line {
+                break;
+            }
+
+            let weekday_header = format!(
+                "{}│   │  M  T  W  T  F  S  S",
+                cursor::Goto(self.dims.0, line)
+            );
+            println!("{}", weekday_header);
+            line += 1;
+            if line > max_line {
+                break;
+            }
+
+            let week_header = format!(
+                "{}│{:3}│{}│   │",
+                cursor::Goto(self.dims.0, line),
+                date.iso_week().week(),
+                cursor::Goto(self.dims.0, line + 1),
+            );
+            print!("{}", week_header);
+
+            loop {
+                if line > max_line {
+                    break 'make_month;
+                }
+
+                let offset_x = self.dims.0 + 5 + date.weekday().num_days_from_monday() as u16 * 3;
+                let day_label = format!(
+                    "{}{}{:3}{}",
+                    cursor::Goto(offset_x, line),
+                    if today == date {
+                        &style::Bold as &dyn std::fmt::Display
+                    } else {
+                        &style::Reset as &dyn std::fmt::Display
+                    },
+                    date.day(),
+                    style::Reset,
+                );
+                print!("{}", day_label);
+
+                if line + 1 < max_line {
+                    let assigned = counts_by_day[date.day0() as usize];
+                    if assigned > 0 {
+                        let day_assigned_tasks_label = format!(
+                            "{}{}{:3}{}",
+                            cursor::Goto(offset_x, line + 1),
+                            style::Italic,
+                            assigned,
+                            style::Reset,
+                        );
+                        print!("{}", day_assigned_tasks_label);
+                    }
+                }
+
+                let prev_month = date.month();
+                date = date.succ();
+
+                if prev_month != date.month() {
+                    break;
+                }
+
+                if date.weekday() == Weekday::Mon {
+                    line += 2;
+                    if line > max_line {
+                        break 'make_month;
+                    }
+
+                    let week_header = format!(
+                        "{}│{:3}│{}│   │",
+                        cursor::Goto(self.dims.0, line),
+                        date.iso_week().week(),
+                        cursor::Goto(self.dims.0, line + 1),
+                    );
+                    print!("{}", week_header);
+                }
+            }
+            line += 2;
+            if line > max_line {
+                break;
+            }
+
+            println!("{}│", cursor::Goto(self.dims.0, line));
+            line += 1;
+        }
+    }
+
     // *
     // *
     // *┌──┐
@@ -1863,6 +2011,9 @@ impl Screen {
         self.drawn_at.clear();
         self.lowest_drawn = 0;
         print!("{}", clear::All);
+
+        self.dims = terminal_size().unwrap();
+        self.reserve_and_draw_calendar();
 
         // print visible nodes
         self.draw_children_of_root();
@@ -2364,18 +2515,19 @@ impl Screen {
         let now = now().as_secs();
         let day_in_sec = 60 * 60 * 24;
         let last_week = now - (day_in_sec * 7);
-        let tasks_finished_in_last_week = self.recursive_child_filter_map(0, &mut |n: &Node| {
-            let f = n.meta.finish_time;
-            if let Some(t) = f {
-                if t > last_week {
-                    Some(t)
+        let tasks_finished_in_last_week =
+            self.recursive_child_filter_map(0, (), &mut |n: &Node, _: ()| {
+                let f = n.meta.finish_time;
+                if let Some(t) = f {
+                    if t > last_week {
+                        (Some(t), ())
+                    } else {
+                        (None, ())
+                    }
                 } else {
-                    None
+                    (None, ())
                 }
-            } else {
-                None
-            }
-        });
+            });
         let mut counts = BTreeMap::new();
         for d in 0..7 {
             let t = now - (d * day_in_sec);
@@ -2518,23 +2670,24 @@ impl Screen {
     ) -> String {
         let mut nodes = vec![];
         for &c in &queried_nodes {
-            let mut new = self.recursive_child_filter_map(c, &mut |n: &Node| match kind {
-                PlotType::Done => {
-                    if let Some(ft) = n.meta.finish_time {
-                        if ft >= since {
-                            return Some(ft as i64);
+            let mut new =
+                self.recursive_child_filter_map(c, (), &mut |n: &Node, _: ()| match kind {
+                    PlotType::Done => {
+                        if let Some(ft) = n.meta.finish_time {
+                            if ft >= since {
+                                return (Some(ft as i64), ());
+                            }
+                        }
+                        (None, ())
+                    }
+                    PlotType::New => {
+                        if n.meta.ctime >= since {
+                            (Some(n.meta.ctime as i64), ())
+                        } else {
+                            (None, ())
                         }
                     }
-                    None
-                }
-                PlotType::New => {
-                    if n.meta.ctime >= since {
-                        Some(n.meta.ctime as i64)
-                    } else {
-                        None
-                    }
-                }
-            });
+                });
             nodes.append(&mut new);
         }
         let plot = plot::bounded_count_sparkline(nodes, until as i64, since as i64, buckets);

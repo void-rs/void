@@ -1,3 +1,4 @@
+use chrono::{Datelike, Local, TimeZone};
 use protobuf::{self, Message};
 
 use crate::{pb, random_fg_color, Meta, Node, Screen};
@@ -25,6 +26,14 @@ pub fn serialize_screen(screen: &Screen) -> Vec<u8> {
     screen_pb.write_to_bytes().unwrap()
 }
 
+fn serialize_date(date: chrono::Date<Local>) -> pb::Date {
+    let mut date_pb = pb::Date::default();
+    date_pb.set_day(date.day());
+    date_pb.set_month(date.month());
+    date_pb.set_year(date.year() as u32);
+    date_pb
+}
+
 fn serialize_meta(meta: &Meta) -> pb::Meta {
     let mut meta_pb = pb::Meta::default();
     meta_pb.set_gps(pb::Gps::default());
@@ -32,6 +41,9 @@ fn serialize_meta(meta: &Meta) -> pb::Meta {
     meta_pb.set_mtime(meta.mtime);
     if let Some(finish_time) = meta.finish_time {
         meta_pb.set_finish_time(finish_time);
+    }
+    if let Some(due_date) = meta.due_date {
+        meta_pb.set_due_date(serialize_date(due_date));
     }
     let mut tags = vec![];
     for (tagk, tagv) in &meta.tags {
@@ -53,6 +65,7 @@ fn serialize_node(node: &Node) -> pb::Node {
     node_pb.set_stricken(node.stricken);
     node_pb.set_hide_stricken(node.hide_stricken);
     node_pb.set_parent_id(node.parent_id);
+    node_pb.set_selected(node.selected);
     node_pb.set_x(u32::from(node.rooted_coords.0));
     node_pb.set_y(u32::from(node.rooted_coords.1));
     node_pb.set_meta(serialize_meta(&node.meta));
@@ -61,6 +74,14 @@ fn serialize_node(node: &Node) -> pb::Node {
         node_pb.set_free_text(free_text.to_owned());
     }
     node_pb
+}
+
+fn deserialize_date(date_pb: &pb::Date) -> chrono::Date<Local> {
+    let day = date_pb.get_day();
+    let month = date_pb.get_month();
+    let year = date_pb.get_year();
+
+    Local.ymd(year as i32, month, day)
 }
 
 fn deserialize_meta(meta_pb: &pb::Meta) -> Meta {
@@ -72,8 +93,8 @@ fn deserialize_meta(meta_pb: &pb::Meta) -> Meta {
         } else {
             None
         },
-        due: if meta_pb.has_due() {
-            Some(meta_pb.get_due())
+        due_date: if meta_pb.has_due_date() {
+            Some(deserialize_date(meta_pb.get_due_date()))
         } else {
             None
         },
@@ -91,7 +112,7 @@ fn deserialize_node(node_pb: &pb::Node) -> Node {
         rooted_coords: (node_pb.get_x() as u16, node_pb.get_y() as u16),
         content: node_pb.get_text().to_owned(),
         children: node_pb.get_children().to_vec(),
-        selected: node_pb.get_selected(),
+        selected: false, // Don't actually load this...
         collapsed: node_pb.get_collapsed(),
         stricken: node_pb.get_stricken(),
         hide_stricken: node_pb.get_hide_stricken(),
@@ -108,7 +129,7 @@ fn deserialize_node(node_pb: &pb::Node) -> Node {
 }
 
 pub fn deserialize_screen(data: Vec<u8>) -> Result<Screen, protobuf::ProtobufError> {
-    let screen_pb: pb::Screen = protobuf::parse_from_bytes(&*data)?;
+    let screen_pb: pb::Screen = Message::parse_from_bytes(&*data)?;
     let mut screen = Screen::default();
     screen.max_id = screen_pb.get_max_id();
     screen.nodes = screen_pb

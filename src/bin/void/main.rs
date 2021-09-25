@@ -1,6 +1,6 @@
 use fs2::FileExt;
 use std::{ffi::OsString, fs::OpenOptions, io::Read};
-use voidmap::{deserialize_screen, init_screen_log, Config, Screen};
+use voidmap::{deserialize_screen, init_screen_log, Config};
 
 mod cli;
 
@@ -37,10 +37,10 @@ fn main() {
         .unwrap_or_else(|_| panic!("Another `void` process is using this path already!"));
 
     f.read_to_end(&mut data).unwrap();
-    let saved_screen = deserialize_screen(data).ok();
+    let saved_screen = deserialize_screen(data).expect("invalid screen");
 
     // Initialise the main working screen
-    let mut screen = saved_screen.unwrap_or_else(Screen::default);
+    let mut screen = saved_screen/*.unwrap_or_else(Screen::default)*/;
 
     screen.work_path = matches
         .value_of("PATH")

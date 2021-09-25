@@ -1,13 +1,14 @@
 use std::collections::HashMap;
 
 use crate::now;
+use chrono::{Date, Local};
 
 #[derive(Debug, Clone)]
 pub struct Meta {
     pub ctime: u64,
     pub mtime: u64,
     pub finish_time: Option<u64>,
-    pub due: Option<u64>,
+    pub due_date: Option<Date<Local>>,
     pub tags: HashMap<String, String>,
 }
 
@@ -18,7 +19,7 @@ impl Default for Meta {
             ctime: now,
             mtime: now,
             finish_time: None,
-            due: None,
+            due_date: None,
             tags: HashMap::new(),
         }
     }

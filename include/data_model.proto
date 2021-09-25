@@ -8,8 +8,14 @@ message Tag {
 }
 
 message Gps {
-  required float lat = 1;
-  required float lon = 2;
+  optional float lat = 1;
+  optional float lon = 2;
+}
+
+message Date {
+    required uint32 day = 1;
+    required uint32 month = 2;
+    required uint32 year = 3;
 }
 
 message Meta {
@@ -18,7 +24,8 @@ message Meta {
   optional uint64 finish_time = 5;
   required Gps gps = 3;
   repeated Tag tags = 4;
-  optional uint64 due = 6;
+  optional uint64 OLD_due = 6;
+  optional Date due_date = 7;
 }
 
 message Node {
@@ -31,7 +38,7 @@ message Node {
   required bool hide_stricken = 7;
   required uint32 x = 8;
   required uint32 y = 9;
-  required bool selected = 10;
+  optional bool selected = 10;
   required uint64 parent_id = 11;
   optional string free_text = 12;
   required bool auto_arrange = 13;

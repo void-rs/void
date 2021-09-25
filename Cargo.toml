@@ -24,13 +24,14 @@ log = "0.4.11"
 lazy_static = "1.4.0"
 time = "0.2.22"
 getopts = "0.2.21"
-protobuf = "1"
+protobuf = "2"
 rand = "0.7.3"
 libc = "0.2.80"
 regex = "1.4.2"
 unicode-segmentation = "1.6.0"
 clippy = { version = "0.0.302", optional = true }
 fs2 = "0.4.3"
+chrono = "0.4"
 
 [dev-dependencies]
 quickcheck = "0.9.2"
