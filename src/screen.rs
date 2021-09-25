@@ -1863,8 +1863,10 @@ impl Screen {
         self.dims.0 -= CALENDAR_WIDTH;
 
         let today = Local::today();
-        let mut date = today.with_day(1).unwrap();
-        let mut line = 2;
+        let mut date = today
+            .with_day(max(1, today.day() - today.weekday().num_days_from_monday()))
+            .unwrap();
+        let mut line = 3;
         let max_line = self.dims.1;
         'make_month: loop {
             if line > max_line {
@@ -1878,7 +1880,11 @@ impl Screen {
                 &mut |nd: &Node, default_date: Option<Date<Local>>| {
                     let date = nd.meta.due_date.or(default_date);
                     if let Some(assigned) = date {
-                        if assigned.year() == year && assigned.month() == month {
+                        if !nd.stricken
+                            && nd.children.is_empty()
+                            && assigned.year() == year
+                            && assigned.month() == month
+                        {
                             (Some(assigned.day0()), date)
                         } else {
                             (None, date)
@@ -2013,16 +2019,17 @@ impl Screen {
         print!("{}", clear::All);
 
         self.dims = terminal_size().unwrap();
-        self.reserve_and_draw_calendar();
-
-        // print visible nodes
-        self.draw_children_of_root();
 
         // TODO figure out why header doesn't get shown
         // when a root node is NOT drawn at 1,1
         // (this only happens when draw_header() is above
         // the call to draw_children_of_root()...
+
         self.draw_header();
+        self.reserve_and_draw_calendar();
+
+        // print visible nodes
+        self.draw_children_of_root();
 
         // print logs
         if self.show_logs && self.dims.0 > 4 && self.dims.1 > 7 {
@@ -2348,7 +2355,7 @@ impl Screen {
         print!("{}", color::Fg(color::Reset));
     }
 
-    fn draw_header(&self) {
+    fn draw_header(&mut self) {
         trace!("draw_header()");
         let mut header_text = self
             .with_node(self.drawing_root, |node| node.content.clone())
@@ -2389,7 +2396,7 @@ impl Screen {
         if self.dims.0 > header_text.len() as u16 && self.dims.1 > 1 {
             let mut sep = format!(
                 "{}{}{}{}",
-                cursor::Goto(0, 1),
+                cursor::Goto(1, 1),
                 style::Invert,
                 header_text,
                 style::Reset
@@ -2398,7 +2405,7 @@ impl Screen {
             for _ in 0..(max(self.dims.0 as usize, text_len) - text_len) {
                 sep.push('█');
             }
-            println!("{}", sep);
+            print!("{}", sep);
         }
     }
 
