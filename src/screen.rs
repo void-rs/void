@@ -1525,15 +1525,38 @@ impl Screen {
                 // principle: don't modify things that are above the visible scope
                 return;
             }
-            self.with_node_mut_no_meta(parent_id, |parent| {
+
+            if let Some((swap_from, swap_to)) = self.with_node(parent_id, |parent| {
                 let idx = parent
                     .children
                     .iter()
                     .position(|&e| e == selected_id)
                     .unwrap();
+
                 let to = max(idx, 1) - 1;
-                parent.children.swap(idx, to);
-            });
+                let hide_stricken = parent.hide_stricken;
+                if !hide_stricken {
+                    (idx, to)
+                } else {
+                    (
+                        idx,
+                        parent.children[..idx]
+                            .iter()
+                            .enumerate()
+                            .rfind(|(_, child_id)| {
+                                self.with_node(**child_id, |child| child.stricken) == Some(false)
+                            })
+                            .map(|(child_idx, _)| child_idx)
+                            .unwrap_or(0),
+                    )
+                }
+            }) {
+                self.with_node_mut_no_meta(parent_id, |parent| {
+                    for i in (swap_to..swap_from).rev() {
+                        parent.children.swap(i, i + 1);
+                    }
+                });
+            }
         }
     }
 
@@ -1548,18 +1571,45 @@ impl Screen {
                 // principle: don't modify things that are above the visible scope
                 return;
             }
-            self.with_node_mut_no_meta(parent_id, |parent| {
+
+            if let Some((swap_from, swap_to)) = self.with_node(parent_id, |parent| {
                 let idx = parent
                     .children
                     .iter()
                     .position(|&e| e == selected_id)
                     .unwrap();
+
                 let len = parent.children.len();
-                if len > 1 {
-                    let to = min(idx, len - 2) + 1;
-                    parent.children.swap(idx, to);
+                if len <= 1 {
+                    return (idx, 1);
                 }
-            });
+
+                let to = min(idx, len - 2) + 1;
+                let hide_stricken = parent.hide_stricken;
+                if !hide_stricken {
+                    (idx, to)
+                } else {
+                    (
+                        idx,
+                        parent
+                            .children
+                            .iter()
+                            .enumerate()
+                            .skip(idx + 1)
+                            .find(|(_, child_id)| {
+                                self.with_node(**child_id, |child| child.stricken) == Some(false)
+                            })
+                            .map(|(child_idx, _)| child_idx)
+                            .unwrap_or(len - 1),
+                    )
+                }
+            }) {
+                self.with_node_mut_no_meta(parent_id, |parent| {
+                    for i in swap_from..swap_to {
+                        parent.children.swap(i, i + 1);
+                    }
+                });
+            }
         }
     }
 
