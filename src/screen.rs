@@ -944,6 +944,23 @@ impl Screen {
         trace!("toggle_stricken()");
         if let Some(Selection { selected_id, .. }) = self.selected {
             self.with_node_mut(selected_id, |node| node.toggle_stricken());
+            if let Some(parent_id) = self.parent(selected_id) {
+                if let Some(child_pos) = self.with_node(parent_id, |p| {
+                    p.children
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .find(|(_, id)| *id == selected_id)
+                        .unwrap()
+                        .0
+                }) {
+                    if let Some(new_selection) =
+                        self.find_near_sibling_or_parent(parent_id, child_pos)
+                    {
+                        self.select_node(new_selection);
+                    }
+                }
+            }
         }
     }
 
@@ -972,6 +989,30 @@ impl Screen {
         }
     }
 
+    fn find_near_sibling_or_parent(&self, parent_id: NodeID, child_pos: usize) -> Option<NodeID> {
+        self.with_node(parent_id, |p| {
+            if p.children.is_empty() {
+                parent_id
+            } else if !p.hide_stricken {
+                p.children[min(child_pos, p.children.len() - 1)]
+            } else {
+                let forward_search = p
+                    .children
+                    .iter()
+                    .copied()
+                    .skip(child_pos)
+                    .find(|id| self.with_node(*id, |sibling| !sibling.stricken) == Some(true));
+                forward_search
+                    .or_else(|| {
+                        p.children.iter().copied().take(child_pos).rfind(|id| {
+                            self.with_node(*id, |sibling| !sibling.stricken) == Some(true)
+                        })
+                    })
+                    .unwrap_or(parent_id)
+            }
+        })
+    }
+
     fn delete_selected(&mut self, reselect: bool) {
         trace!("delete_selected()");
         if let Some(Selection { selected_id, .. }) = self.selected.take() {
@@ -979,7 +1020,7 @@ impl Screen {
             // remove ref from parent
             if let Some(parent_id) = self.parent(selected_id) {
                 trace!("deleting node {} from parent {}", selected_id, parent_id);
-                let self_pos = self
+                let child_pos = self
                     .with_node_mut_no_meta(parent_id, |p| {
                         let self_pos = p
                             .children
@@ -993,30 +1034,11 @@ impl Screen {
                     })
                     .unwrap();
                 if reselect {
-                    let next_selection = self
-                        .with_node(parent_id, |p| {
-                            if p.children.is_empty() {
-                                parent_id
-                            } else if !p.hide_stricken {
-                                p.children[min(self_pos, p.children.len() - 1)]
-                            } else {
-                                let forward_search =
-                                    p.children.iter().copied().skip(self_pos).find(|id| {
-                                        self.with_node(*id, |sibling| !sibling.stricken)
-                                            == Some(true)
-                                    });
-                                forward_search
-                                    .or_else(|| {
-                                        p.children.iter().copied().take(self_pos).rfind(|id| {
-                                            self.with_node(*id, |sibling| !sibling.stricken)
-                                                == Some(true)
-                                        })
-                                    })
-                                    .unwrap_or(parent_id)
-                            }
-                        })
-                        .unwrap();
-                    self.select_node(next_selection);
+                    if let Some(next_selection) =
+                        self.find_near_sibling_or_parent(parent_id, child_pos)
+                    {
+                        self.select_node(next_selection);
+                    }
                 }
             }
             // remove children
