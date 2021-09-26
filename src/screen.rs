@@ -975,21 +975,52 @@ impl Screen {
     fn delete_selected(&mut self, reselect: bool) {
         trace!("delete_selected()");
         if let Some(Selection { selected_id, .. }) = self.selected.take() {
-            let (_, height) = self.drawable_subtree_dims(selected_id).unwrap();
-            let coords = self.drawn_at.remove(&selected_id);
+            self.drawn_at.remove(&selected_id);
             // remove ref from parent
             if let Some(parent_id) = self.parent(selected_id) {
                 trace!("deleting node {} from parent {}", selected_id, parent_id);
-                self.with_node_mut_no_meta(parent_id, |p| p.children.retain(|c| c != &selected_id))
+                let self_pos = self
+                    .with_node_mut_no_meta(parent_id, |p| {
+                        let self_pos = p
+                            .children
+                            .iter()
+                            .enumerate()
+                            .find(|(_, id)| **id == selected_id)
+                            .unwrap()
+                            .0;
+                        p.children.remove(self_pos);
+                        self_pos
+                    })
                     .unwrap();
+                if reselect {
+                    let next_selection = self
+                        .with_node(parent_id, |p| {
+                            if p.children.is_empty() {
+                                parent_id
+                            } else if !p.hide_stricken {
+                                p.children[min(self_pos, p.children.len() - 1)]
+                            } else {
+                                let forward_search =
+                                    p.children.iter().copied().skip(self_pos).find(|id| {
+                                        self.with_node(*id, |sibling| !sibling.stricken)
+                                            == Some(true)
+                                    });
+                                forward_search
+                                    .or_else(|| {
+                                        p.children.iter().copied().take(self_pos).rfind(|id| {
+                                            self.with_node(*id, |sibling| !sibling.stricken)
+                                                == Some(true)
+                                        })
+                                    })
+                                    .unwrap_or(parent_id)
+                            }
+                        })
+                        .unwrap();
+                    self.select_node(next_selection);
+                }
             }
             // remove children
             self.delete_recursive(selected_id);
-            if let Some((x, y)) = coords {
-                if reselect {
-                    self.click_select((x, y + height));
-                }
-            }
             self.undo_stack.push(selected_id);
         }
     }
@@ -1450,14 +1481,6 @@ impl Screen {
                 self.view_y = 0;
             }
         }
-    }
-
-    fn click_select(&mut self, coords: Coords) -> Option<NodeID> {
-        trace!("click_select({:?})", coords);
-        let result = self.try_select(coords);
-        self.dragging_from.take();
-        self.dragging_to.take();
-        result
     }
 
     fn scroll_up(&mut self) {
