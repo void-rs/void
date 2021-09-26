@@ -1116,6 +1116,7 @@ impl Screen {
             self.with_node_mut_no_meta(node_id, |node| node.parent_id = selected_id);
             let added = self.with_node_mut_no_meta(selected_id, |selected| {
                 selected.children.push(node_id);
+                selected.collapsed = false;
             });
             if added.is_some() {
                 self.select_node_ensure_inserting(node_id);
