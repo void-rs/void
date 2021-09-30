@@ -1982,8 +1982,10 @@ impl Screen {
                             && assigned.month() == month
                         {
                             (Some(assigned.day0()), date)
-                        } else {
+                        } else if !nd.stricken {
                             (None, date)
+                        } else {
+                            (None, None)
                         }
                     } else {
                         (None, None)
