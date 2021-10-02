@@ -862,12 +862,8 @@ impl Screen {
                 if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).get(0) {
                     if let Ok(date) = NaiveDate::parse_from_str(date, "%d.%m.%Y") {
                         let date = Local.from_local_date(&date).unwrap();
-                        if n.meta.finish_time.is_some() {
-                            n.meta.finish_time = Some(date.and_hms(0, 0, 0).timestamp() as u64);
-                        } else {
-                            n.meta.due_date = Some(date);
-                            due_date_set = true;
-                        }
+                        n.meta.due_date = Some(date);
+                        due_date_set = true;
                     }
                 }
 
