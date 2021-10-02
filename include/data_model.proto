@@ -42,6 +42,7 @@ message Node {
   required uint64 parent_id = 11;
   optional string free_text = 12;
   required bool auto_arrange = 13;
+  optional string url = 14;
 }
 
 message Arrow {

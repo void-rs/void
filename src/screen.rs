@@ -642,24 +642,23 @@ impl Screen {
         };
         let Selection { selected_id, .. } = self.selected.unwrap();
 
-        let content_opt = self.with_node(selected_id, |n| n.content.clone());
+        let content_opt = self.with_node(selected_id, |n| (n.url.clone(), n.content.clone()));
         if content_opt.is_none() {
             error!("tried to exec deleted node");
             return;
         }
+        let (url, content) = content_opt.unwrap();
 
         // remove any tags from the exec
         // except for those that are escaped as ##
-        let content = RE_TAG
-            .replace_all(&content_opt.unwrap(), "$1")
-            .replace("##", "#");
+        let content = RE_TAG.replace_all(&content, "$1").replace("##", "#");
         info!("executing command: {}", content);
 
         if content.is_empty() {
             error!("cannot execute empty command");
         } else if content.starts_with("txt:") {
             self.exec_text_editor(selected_id);
-        } else if content.starts_with("http") {
+        } else if let Some(url) = url {
             #[cfg(any(target_os = "macos",))]
             let default_open_cmd = "open";
             #[cfg(target_os = "linux")]
@@ -668,9 +667,9 @@ impl Screen {
             let default_open_cmd = "start";
 
             let browser = env::var("BROWSER").unwrap_or_else(|_| default_open_cmd.to_owned());
-            let cmd = process::Command::new(browser).arg(&content).spawn();
+            let cmd = process::Command::new(browser).arg(&url).spawn();
             if cmd.is_err() {
-                error!("command failed to start: {}", &content);
+                error!("url command failed to start: {}", &url);
             }
         } else {
             let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_owned());
@@ -810,7 +809,24 @@ impl Screen {
         let raw_node_opt = self.with_node(node_id, |n| n.clone());
         if let Some(raw_node) = raw_node_opt {
             let node = self.format_node(&raw_node);
-            let width = 2 + (3 * depth as u16) + node.content.len() as u16;
+            let mut width = 2 + (3 * depth as u16) + node.content.len() as u16;
+
+            if node.hide_stricken {
+                width += 1;
+            }
+            if node.free_text.is_some() {
+                width += 1;
+            }
+            if node.stricken {
+                width += 1;
+            }
+            if node.url.is_some() {
+                width += 1;
+            }
+            if node.collapsed {
+                width += 1;
+            }
+
             let mut ret = vec![width];
             let hide_stricken = self.with_node(node_id, |n| n.hide_stricken).unwrap();
             if !node.collapsed {
@@ -842,6 +858,7 @@ impl Screen {
         trace!("unselect()");
         lazy_static! {
             static ref RE_DATE: Regex = Regex::new(r"\[(\d{2}\.\d{2}\.\d{4})\]").unwrap();
+            static ref RE_URL: Regex = Regex::new(r"#url=(.*)$").unwrap();
         }
         if let Some(Selection { selected_id, .. }) = self.selected {
             // nuke node if it's empty and has no children
@@ -856,6 +873,7 @@ impl Screen {
                 return None;
             }
 
+            let mut invalidate_cache = false;
             self.with_node_mut_no_meta(selected_id, |n| {
                 // if parseable date, change date
                 let mut due_date_set = false;
@@ -867,10 +885,23 @@ impl Screen {
                     }
                 }
 
+                if let Some(url) = re_matches::<String>(&RE_URL, &*n.content).get(0) {
+                    n.content = RE_URL.replace(&*n.content, "").trim_end().to_owned();
+                    invalidate_cache = true;
+                    if url.is_empty() {
+                        n.url = None;
+                    } else {
+                        n.url = Some(url.to_owned());
+                    }
+                }
+
                 if !due_date_set {
                     n.meta.due_date = None;
                 }
             });
+            if invalidate_cache {
+                self.grapheme_cache.remove(&selected_id);
+            }
         }
         self.selected.take().map(|s| s.selected_id)
     }
@@ -2290,14 +2321,18 @@ impl Screen {
             }
             if node.stricken {
                 buf.write_str(&self.config.stricken).unwrap();
-            } else if node.collapsed {
+            }
+            if node.collapsed {
                 buf.write_str(&self.config.collapsed).unwrap();
-            } else if node.hide_stricken {
+            }
+            if node.hide_stricken {
                 buf.write_str(&self.config.hide_stricken).unwrap();
-            } else if node.free_text.is_some() {
+            }
+            if node.free_text.is_some() {
                 buf.write_str(&self.config.free_text).unwrap();
-            } else {
-                write!(&mut buf, " ").unwrap();
+            }
+            if node.url.is_some() {
+                buf.write_str(&self.config.url).unwrap();
             }
 
             write!(&mut buf, "{}", node.content).unwrap();

@@ -73,6 +73,9 @@ fn serialize_node(node: &Node) -> pb::Node {
     if let Some(ref free_text) = node.free_text {
         node_pb.set_free_text(free_text.to_owned());
     }
+    if let Some(ref url) = node.url {
+        node_pb.set_url(url.to_owned());
+    }
     node_pb
 }
 
@@ -120,6 +123,11 @@ fn deserialize_node(node_pb: &pb::Node) -> Node {
         id: node_pb.get_id(),
         free_text: if node_pb.has_free_text() {
             Some(node_pb.get_free_text().to_owned())
+        } else {
+            None
+        },
+        url: if node_pb.has_url() {
+            Some(node_pb.get_url().to_owned())
         } else {
             None
         },

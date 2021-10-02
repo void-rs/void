@@ -183,6 +183,7 @@ pub struct Config {
     pub collapsed: String,
     pub hide_stricken: String,
     pub free_text: String,
+    pub url: String,
 }
 
 impl Default for Config {
@@ -235,6 +236,7 @@ impl Default for Config {
             collapsed: "⊞".to_owned(),
             hide_stricken: "⚔".to_owned(),
             free_text: "✏".to_owned(),
+            url: "".to_owned(),
         }
     }
 }
@@ -328,6 +330,9 @@ impl Config {
                 }
                 ("free_text", p) => {
                     config.free_text = p.to_owned();
+                }
+                ("url", p) => {
+                    config.url = p.to_owned();
                 }
                 (raw_action, raw_key) => {
                     let key_opt = to_key(raw_key.to_owned());

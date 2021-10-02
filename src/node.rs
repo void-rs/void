@@ -15,6 +15,7 @@ pub struct Node {
     pub free_text: Option<String>,
     pub color: String,
     pub auto_arrange: bool,
+    pub url: Option<String>,
 }
 
 impl Default for Node {
@@ -31,6 +32,7 @@ impl Default for Node {
             hide_stricken: false,
             meta: Meta::default(),
             free_text: None,
+            url: None,
             color: random_fg_color(),
             auto_arrange: true,
         }
