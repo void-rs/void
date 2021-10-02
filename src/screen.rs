@@ -1960,7 +1960,10 @@ impl Screen {
 
         let today = Local::today();
         let mut date = today
-            .with_day(max(1, today.day() - today.weekday().num_days_from_monday()))
+            .with_day(max(
+                1i32,
+                today.day() as i32 - today.weekday().num_days_from_monday() as i32,
+            ) as u32)
             .unwrap();
         let mut line = 3;
         let max_line = self.dims.1;
