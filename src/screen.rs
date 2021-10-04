@@ -667,7 +667,11 @@ impl Screen {
             let default_open_cmd = "start";
 
             let browser = env::var("BROWSER").unwrap_or_else(|_| default_open_cmd.to_owned());
-            let cmd = process::Command::new(browser).arg(&url).spawn();
+            let cmd = process::Command::new(browser)
+                .arg(&url)
+                .stdout(process::Stdio::null())
+                .stderr(process::Stdio::null())
+                .spawn();
             if cmd.is_err() {
                 error!("url command failed to start: {}", &url);
             }
