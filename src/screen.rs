@@ -462,7 +462,7 @@ impl Screen {
         let stdin: Box<dyn Read> = Box::new(stdin());
         print!(
             "{}{}{}{}",
-            cursor::Goto(0, self.dims.1),
+            cursor::Goto(1, self.dims.1),
             style::Invert,
             clear::AfterCursor,
             prompt
@@ -484,7 +484,7 @@ impl Screen {
         print!(
             "{}{}{}{}{}",
             style::Invert,
-            cursor::Goto(0, self.dims.1),
+            cursor::Goto(1, self.dims.1),
             clear::AfterCursor,
             prompt,
             cursor::Show
@@ -2120,7 +2120,7 @@ impl Screen {
                 }
             }
             line += 2;
-            if line > max_line {
+            if line >= max_line {
                 break;
             }
 
@@ -2167,7 +2167,7 @@ impl Screen {
         if self.show_logs && self.dims.0 > 4 && self.dims.1 > 7 {
             let mut sep = format!(
                 "{}{}logs{}",
-                cursor::Goto(0, self.dims.1 - 6),
+                cursor::Goto(1, self.dims.1 - 6),
                 style::Invert,
                 style::Reset
             );
@@ -2309,6 +2309,9 @@ impl Screen {
 
         // only actually print it if we're in-view
         if let Some((x, y)) = self.internal_to_screen_xy(internal_coords) {
+            if x < 1 || y < 1 {
+                warn!("drawn at {} {}", x, y);
+            }
             write!(pre_meta, "{}{}", cursor::Goto(x, y), color).unwrap();
             if node.selected && !(self.config.modal && self.is_insert_mode()) {
                 write!(&mut pre_meta, "{}", style::Invert).unwrap();
