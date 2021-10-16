@@ -2532,6 +2532,9 @@ impl Screen {
 
         header_text.push_str(&*plot_line);
 
+        let date = Local::today();
+        header_text.push_str(&format!(" {}", date.format("%-d.%-m.%Y")));
+
         if self.dims.0 > header_text.len() as u16 && self.dims.1 > 1 {
             let mut sep = format!(
                 "{}{}{}{}",
