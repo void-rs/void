@@ -535,7 +535,8 @@ impl Screen {
                 self.last_search.take();
             }
 
-            let mut f = |n: &Node, _: ()| (n.content.find(&*query).map(|idx| (idx, n.id)), ());
+            let mut f =
+                |n: &Node, _: ()| (n.content.find(&*query).map(|idx| (idx, n.id)), (), true);
             let mut candidates = self.recursive_child_filter_map(self.drawing_root, (), &mut f);
             if candidates.is_empty() {
                 return;
@@ -778,19 +779,21 @@ impl Screen {
         filter_map: &mut F,
     ) -> Vec<B>
     where
-        F: FnMut(&Node, C) -> (Option<B>, C),
+        F: FnMut(&Node, C) -> (Option<B>, C, bool),
         C: Copy,
     {
         trace!("recursive_child_filter_map({}, F...)", node_id);
         let mut ret = vec![];
 
         if let Some(node) = self.nodes.get(&node_id) {
-            let (filtered, context) = filter_map(node, context);
+            let (filtered, context, walk) = filter_map(node, context);
             if let Some(b) = filtered {
                 ret.push(b);
             }
-            for &child_id in &node.children {
-                ret.append(&mut self.recursive_child_filter_map(child_id, context, filter_map));
+            if walk {
+                for &child_id in &node.children {
+                    ret.append(&mut self.recursive_child_filter_map(child_id, context, filter_map));
+                }
             }
         } else {
             debug!("queried for node {} but it is not in self.nodes", node_id);
@@ -2015,14 +2018,14 @@ impl Screen {
                             && assigned.year() == year
                             && assigned.month() == month
                         {
-                            (Some(assigned.day0()), date)
+                            (Some(assigned.day0()), date, false)
                         } else if !nd.stricken {
-                            (None, date)
+                            (None, date, true)
                         } else {
-                            (None, None)
+                            (None, None, false)
                         }
                     } else {
-                        (None, None)
+                        (None, None, !nd.stricken)
                     }
                 },
             );
@@ -2669,12 +2672,12 @@ impl Screen {
                 let f = n.meta.finish_time;
                 if let Some(t) = f {
                     if t > last_week {
-                        (Some(t), ())
+                        (Some(t), (), true)
                     } else {
-                        (None, ())
+                        (None, (), true)
                     }
                 } else {
-                    (None, ())
+                    (None, (), true)
                 }
             });
         let mut counts = BTreeMap::new();
@@ -2824,16 +2827,16 @@ impl Screen {
                     PlotType::Done => {
                         if let Some(ft) = n.meta.finish_time {
                             if ft >= since {
-                                return (Some(ft as i64), ());
+                                return (Some(ft as i64), (), true);
                             }
                         }
-                        (None, ())
+                        (None, (), true)
                     }
                     PlotType::New => {
                         if n.meta.ctime >= since {
-                            (Some(n.meta.ctime as i64), ())
+                            (Some(n.meta.ctime as i64), (), true)
                         } else {
-                            (None, ())
+                            (None, (), true)
                         }
                     }
                 });
