@@ -2088,12 +2088,21 @@ impl Screen {
 
                 if line + 1 < max_line {
                     let assigned = counts_by_day[date.day0() as usize];
-                    if assigned > 0 {
+                    if assigned > 0 && assigned < 100 {
                         let day_assigned_tasks_label = format!(
                             "{}{}{:3}{}",
                             cursor::Goto(offset_x, line + 1),
                             style::Italic,
                             assigned,
+                            style::Reset,
+                        );
+                        print!("{}", day_assigned_tasks_label);
+                    } else if assigned > 0 {
+                        let day_assigned_tasks_label = format!(
+                            "{}{}{:3}{}",
+                            cursor::Goto(offset_x, line + 1),
+                            style::Italic,
+                            "?!",
                             style::Reset,
                         );
                         print!("{}", day_assigned_tasks_label);
