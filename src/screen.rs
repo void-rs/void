@@ -2680,7 +2680,12 @@ impl Screen {
             self.recursive_child_filter_map(0, (), &mut |n: &Node, _: ()| {
                 let f = n.meta.finish_time;
                 if let Some(t) = f {
-                    if t > last_week {
+                    if t > last_week
+                        && !n
+                            .children
+                            .iter()
+                            .any(|ch| self.with_node(*ch, |sub_n| sub_n.stricken).unwrap())
+                    {
                         (Some(t), (), true)
                     } else {
                         (None, (), true)
@@ -2835,7 +2840,12 @@ impl Screen {
                 self.recursive_child_filter_map(c, (), &mut |n: &Node, _: ()| match kind {
                     PlotType::Done => {
                         if let Some(ft) = n.meta.finish_time {
-                            if ft >= since {
+                            if ft >= since
+                                && !n
+                                    .children
+                                    .iter()
+                                    .any(|ch| self.with_node(*ch, |sub_n| sub_n.stricken).unwrap())
+                            {
                                 return (Some(ft as i64), (), true);
                             }
                         }
