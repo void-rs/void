@@ -2521,8 +2521,9 @@ impl Screen {
         match self.cut {
             Cut::Move(id) | Cut::Yank(id) => {
                 let content = &self.nodes.get(&id).unwrap().content;
-                let content_ellipsized = if content.len() >= 13 {
-                    Cow::from(format!("{}...", &content[..10]))
+                let restricted_chars = content.chars().take(10).collect::<String>();
+                let content_ellipsized = if restricted_chars.len() < content.len() {
+                    Cow::from(format!("{}...", &restricted_chars))
                 } else {
                     Cow::from(content)
                 };
