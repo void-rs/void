@@ -222,24 +222,24 @@ impl Screen {
                 Action::LeftClick(x, y) => {
                     let internal_coords = self.screen_to_internal_xy((x, y));
                     self.click_screen(internal_coords)
-                }
+                },
                 Action::RightClick(..) => {
                     self.pop_focus();
-                }
+                },
                 Action::Release(x, y) => {
                     let internal_coords = self.screen_to_internal_xy((x, y));
                     self.release(internal_coords)
-                }
+                },
                 Action::Char('/') => {
                     self.search_forward();
-                }
+                },
                 Action::Char('?') => {
                     self.search_backward();
-                }
+                },
                 Action::Char(c) if !self.config.modal => {
                     self.prefix_jump_to(c.to_string());
-                }
-                Action::Char(_) => {}
+                },
+                Action::Char(_) => {},
                 Action::Help => self.help(),
                 Action::Insert => {
                     if let Some(sel) = self.selected.as_mut() {
@@ -247,7 +247,7 @@ impl Screen {
                         self.grapheme_cache.remove(&sel.selected_id);
                         sel.inserting = true
                     }
-                }
+                },
 
                 Action::UnselectRet
                     if self.config.modal && self.selected.map(|s| s.inserting) == Some(true) =>
@@ -257,10 +257,10 @@ impl Screen {
                         self.grapheme_cache.remove(&sel.selected_id);
                         sel.inserting = false
                     }
-                }
+                },
                 Action::UnselectRet => {
                     self.unselect();
-                }
+                },
                 Action::ScrollUp => self.scroll_up(),
                 Action::ScrollDown => self.scroll_down(),
                 Action::DeleteSelected => self.delete_selected(true),
@@ -269,7 +269,7 @@ impl Screen {
                 Action::SelectLeft => self.select_left(),
                 Action::SelectRight => self.select_right(),
                 Action::EraseChar if self.is_insert_mode() => self.backspace(),
-                Action::EraseChar => {}
+                Action::EraseChar => {},
                 Action::CreateSibling => self.create_sibling(),
                 Action::CreateChild => self.create_child(),
                 Action::CreateFreeNode => self.create_free_node(),
@@ -315,7 +315,7 @@ impl Screen {
             Cut::Move(cut) => {
                 self.reparent(cut, place);
                 self.cut = Cut::Empty;
-            }
+            },
             Cut::Yank(cut) => {
                 if self.is_parent(cut, place) {
                     warn!("Can't copy a node into itself");
@@ -327,14 +327,14 @@ impl Screen {
                     });
                 }
                 self.cut = Cut::Empty;
-            }
+            },
             Cut::Empty if yanking && can_cut => {
                 self.cut = Cut::Yank(place);
-            }
+            },
             Cut::Empty if can_cut => {
                 self.cut = Cut::Move(place);
-            }
-            Cut::Empty => {}
+            },
+            Cut::Empty => {},
         }
     }
 
@@ -655,10 +655,12 @@ impl Screen {
         let content = RE_TAG.replace_all(&content, "$1").replace("##", "#");
         info!("executing command: {}", content);
 
-        if content.is_empty() {
+        let handle = if content.is_empty() {
             error!("cannot execute empty command");
+            None
         } else if content.starts_with("txt:") {
             self.exec_text_editor(selected_id);
+            None
         } else if let Some(url) = url {
             #[cfg(any(target_os = "macos",))]
             let default_open_cmd = "open";
@@ -673,15 +675,24 @@ impl Screen {
                 .stdout(process::Stdio::null())
                 .stderr(process::Stdio::null())
                 .spawn();
-            if cmd.is_err() {
-                error!("url command failed to start: {}", &url);
-            }
+            Some(cmd)
         } else {
             let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_owned());
             let cmd = process::Command::new(shell).arg("-c").arg(&content).spawn();
-            if cmd.is_err() {
+            Some(cmd)
+        };
+        match handle {
+            Some(Err(_)) => {
                 error!("command failed to start: {}", &content);
-            }
+            },
+            Some(Ok(mut child)) => {
+                std::thread::spawn(move || {
+                    if matches!(child.wait(), Err(..)) {
+                        error!("command failed to finish: {}", &content);
+                    }
+                });
+            },
+            None => {},
         }
     }
 
@@ -2461,7 +2472,7 @@ impl Screen {
         match path.len().cmp(&1) {
             Ordering::Equal => {
                 print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
-            }
+            },
             Ordering::Greater => {
                 let first = match path[1].1.cmp(&path[0].1) {
                     Ordering::Greater => match start_dir {
@@ -2500,8 +2511,8 @@ impl Screen {
                     Dir::R => '<',
                 };
                 print!("{}{}", cursor::Goto(end_x, end_y), end_char);
-            }
-            _ => {}
+            },
+            _ => {},
         };
         print!("{}", color::Fg(color::Reset));
     }
@@ -2536,8 +2547,8 @@ impl Screen {
                     },
                     content_ellipsized
                 ));
-            }
-            Cut::Empty => {}
+            },
+            Cut::Empty => {},
         }
 
         let (plot, finished_today) = self.last_week_of_done_tasks();
@@ -2851,14 +2862,14 @@ impl Screen {
                             }
                         }
                         (None, (), true)
-                    }
+                    },
                     PlotType::New => {
                         if n.meta.ctime >= since {
                             (Some(n.meta.ctime as i64), (), true)
                         } else {
                             (None, (), true)
                         }
-                    }
+                    },
                 });
             nodes.append(&mut new);
         }

@@ -57,7 +57,7 @@ impl fmt::Display for Action {
         match self {
             Action::LeftClick(..) | Action::RightClick(..) | Action::Release(..) => {
                 write!(f, "Other action")
-            }
+            },
             Action::Arrow => write!(f, "Start or end arrow"),
             Action::AutoArrange => write!(f, "Toggle automatic arrangement"),
             Action::Char(c) => write!(f, "Input character {}", c),
@@ -321,19 +321,19 @@ impl Config {
             match (option, param) {
                 ("stricken", p) => {
                     config.stricken = p.to_owned();
-                }
+                },
                 ("collapsed", p) => {
                     config.collapsed = p.to_owned();
-                }
+                },
                 ("hide_stricken", p) => {
                     config.hide_stricken = p.to_owned();
-                }
+                },
                 ("free_text", p) => {
                     config.free_text = p.to_owned();
-                }
+                },
                 ("url", p) => {
                     config.url = p.to_owned();
-                }
+                },
                 (raw_action, raw_key) => {
                     let key_opt = to_key(raw_key.to_owned());
                     let action_opt = to_action(raw_action.to_owned());
@@ -348,7 +348,7 @@ impl Config {
                     let action = action_opt.unwrap();
 
                     config.config.insert(key, action);
-                }
+                },
             }
         }
 
@@ -364,10 +364,10 @@ impl Config {
                 } else {
                     Some(Action::Char(c))
                 }
-            }
+            },
             Event::Mouse(MouseEvent::Press(MouseButton::Right, x, y)) => {
                 Some(Action::RightClick(x, y))
-            }
+            },
             Event::Mouse(MouseEvent::Press(_, x, y)) => Some(Action::LeftClick(x, y)),
             Event::Mouse(MouseEvent::Release(x, y)) => Some(Action::Release(x, y)),
             Event::Mouse(MouseEvent::Hold(..)) => None,
@@ -377,11 +377,11 @@ impl Config {
                     warn!("Weird event {:?}", other);
                 }
                 lookup
-            }
+            },
             other => {
                 warn!("Unknown event received: {:?}", other);
                 None
-            }
+            },
         }
     }
 }
