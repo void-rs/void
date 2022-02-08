@@ -190,28 +190,28 @@ impl Screen {
         Some(new_id)
     }
 
-    pub fn with_node<B, F>(&self, k: NodeID, mut f: F) -> Option<B>
+    pub fn with_node<B, F>(&self, k: NodeID, f: F) -> Option<B>
     where
         F: FnMut(&Node) -> B,
     {
-        self.nodes.get(&k).map(|node| f(node))
+        self.nodes.get(&k).map(f)
     }
 
     fn with_node_mut<B, F>(&mut self, k: NodeID, mut f: F) -> Option<B>
     where
         F: FnMut(&mut Node) -> B,
     {
-        self.nodes.get_mut(&k).map(|mut node| {
+        self.nodes.get_mut(&k).map(|node| {
             node.meta.bump_mtime();
-            f(&mut node)
+            f(node)
         })
     }
 
-    fn with_node_mut_no_meta<B, F>(&mut self, k: NodeID, mut f: F) -> Option<B>
+    fn with_node_mut_no_meta<B, F>(&mut self, k: NodeID, f: F) -> Option<B>
     where
         F: FnMut(&mut Node) -> B,
     {
-        self.nodes.get_mut(&k).map(|mut node| f(&mut node))
+        self.nodes.get_mut(&k).map(f)
     }
 
     // return of false signals to the caller that we are done in this view

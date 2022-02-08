@@ -1,8 +1,20 @@
-use fs2::FileExt;
-use std::{ffi::OsString, fs::OpenOptions, io::Read};
+use std::{
+    ffi::OsString,
+    fs::OpenOptions,
+    io::{Read, Write},
+    path::PathBuf,
+};
 use voidmap::{deserialize_screen, init_screen_log, Config};
 
 mod cli;
+
+struct DeleteOnDrop(PathBuf);
+
+impl Drop for DeleteOnDrop {
+    fn drop(&mut self) {
+        std::fs::remove_file(&self.0).expect("failed to kill lockfile")
+    }
+}
 
 fn main() {
     // Initialise the CLI parser
@@ -25,16 +37,36 @@ fn main() {
 
     // load from file if present
     let mut data = vec![];
+    let mut lock_path = PathBuf::new();
+    lock_path.push(&path);
+    let mut file_name = lock_path
+        .file_name()
+        .expect("a filename for the db is needed")
+        .to_owned();
+    file_name.push(".lock");
+    lock_path.set_file_name(file_name);
+
+    let mut lock_file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&lock_path)
+        .expect("failed to lock db - is another process using it?");
+    write!(
+        lock_file,
+        "{}::{}",
+        hostname::get().unwrap().to_string_lossy(),
+        std::process::id()
+    )
+    .unwrap();
+    lock_file.sync_all().unwrap();
+    let guard = DeleteOnDrop(lock_path);
+
     let mut f = OpenOptions::new()
         .write(true)
         .read(true)
         .create(true)
         .open(&path)
         .unwrap();
-
-    // exclusively lock the file
-    f.try_lock_exclusive()
-        .unwrap_or_else(|_| panic!("Another `void` process is using this path already!"));
 
     f.read_to_end(&mut data).unwrap();
     let saved_screen = deserialize_screen(data).expect("invalid screen");
@@ -58,4 +90,5 @@ fn main() {
     screen.config = config;
 
     screen.run();
+    drop(guard);
 }
