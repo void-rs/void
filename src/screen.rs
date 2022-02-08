@@ -42,6 +42,12 @@ enum Cut {
     Empty,
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum UndoNode {
+    Delete(NodeID),
+    ToggleStricken(NodeID),
+}
+
 pub struct Screen {
     pub max_id: u64,
     pub nodes: HashMap<NodeID, Node>,
@@ -74,7 +80,7 @@ pub struct Screen {
     last_search: Option<(String, NodeID)>,
 
     // undo info
-    undo_stack: Vec<NodeID>,
+    undo_stack: Vec<UndoNode>,
     // needs to be separate, as recursive deletion of nodes causes ordering issues
     undo_nodes: HashMap<NodeID, Node>,
 
@@ -277,7 +283,7 @@ impl Screen {
                 Action::DrillDown => self.drill_down(),
                 Action::PopUp => self.pop_focus(),
                 Action::PrefixJump => self.prefix_jump_prompt(),
-                Action::ToggleCompleted => self.toggle_stricken(),
+                Action::ToggleCompleted => self.toggle_stricken(true),
                 Action::ToggleHideCompleted => self.toggle_hide_stricken(),
                 Action::Arrow => self.add_or_remove_arrow(),
                 Action::AutoArrange => self.toggle_auto_arrange(),
@@ -292,10 +298,12 @@ impl Screen {
                 Action::RaiseSelected => self.raise_selected(),
                 Action::LowerSelected => self.lower_selected(),
                 Action::Search => self.search_forward(),
-                Action::UndoDelete => self.undo_delete(),
+                Action::Undo => self.undo(),
                 Action::SelectParent => self.select_parent(),
                 Action::SelectNextSibling => self.select_next_sibling(),
                 Action::SelectPrevSibling => self.select_prev_sibling(),
+                Action::SelectFirstSibling => self.select_first_sibling(),
+                Action::SelectLastSibling => self.select_last_sibling(),
             },
             None => warn!("received unknown input"),
         }
@@ -985,9 +993,12 @@ impl Screen {
         None
     }
 
-    fn toggle_stricken(&mut self) {
+    fn toggle_stricken(&mut self, make_undo: bool) {
         trace!("toggle_stricken()");
         if let Some(Selection { selected_id, .. }) = self.selected {
+            if make_undo {
+                self.undo_stack.push(UndoNode::ToggleStricken(selected_id));
+            }
             self.with_node_mut(selected_id, |node| node.toggle_stricken());
             if let Some(parent_id) = self.parent(selected_id) {
                 if let Some(child_pos) = self.with_node(parent_id, |p| {
@@ -1088,14 +1099,21 @@ impl Screen {
             }
             // remove children
             self.delete_recursive(selected_id);
-            self.undo_stack.push(selected_id);
+            self.undo_stack.push(UndoNode::Delete(selected_id));
         }
     }
 
-    fn undo_delete(&mut self) {
-        if let Some(node_id) = self.undo_stack.pop() {
-            self.recursive_restore(node_id).unwrap();
-            self.select_node(node_id);
+    fn undo(&mut self) {
+        match self.undo_stack.pop() {
+            Some(UndoNode::Delete(node_id)) => {
+                self.recursive_restore(node_id).unwrap();
+                self.select_node(node_id);
+            },
+            Some(UndoNode::ToggleStricken(node_id)) => {
+                self.select_node(node_id);
+                self.toggle_stricken(false);
+            },
+            None => {},
         }
     }
 
@@ -1493,6 +1511,28 @@ impl Screen {
                 // deselect it.
                 if parent_id != 0 {
                     self.select_node(parent_id);
+                }
+            }
+        }
+    }
+
+    fn select_first_sibling(&mut self) {
+        if let Some(Selection { selected_id, .. }) = self.selected {
+            if let Some(parent_id) = self.parent(selected_id) {
+                if let Some(parent) = self.nodes.get(&parent_id) {
+                    let choose = *parent.children.first().unwrap();
+                    self.select_node(choose);
+                }
+            }
+        }
+    }
+
+    fn select_last_sibling(&mut self) {
+        if let Some(Selection { selected_id, .. }) = self.selected {
+            if let Some(parent_id) = self.parent(selected_id) {
+                if let Some(parent) = self.nodes.get(&parent_id) {
+                    let choose = *parent.children.last().unwrap();
+                    self.select_node(choose);
                 }
             }
         }
