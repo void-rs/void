@@ -1,12 +1,13 @@
 use std::{
     self,
     borrow::Cow,
+    cell::{RefCell, RefMut},
     cmp::{max, min, Ordering},
     collections::{BTreeMap, BinaryHeap, HashMap, HashSet},
     env,
     fmt::Write as FmtWrite,
     fs::{remove_file, rename, File, OpenOptions},
-    io::{self, stdin, stdout, Error, ErrorKind, Read, Seek, SeekFrom, Stdout, Write},
+    io::{self, stdin, stdout, BufWriter, Error, ErrorKind, Read, Seek, SeekFrom, Stdout, Write},
     process,
 };
 
@@ -71,7 +72,7 @@ pub struct Screen {
     drawn_at: HashMap<NodeID, Coords>,
     dragging_from: Option<Coords>,
     dragging_to: Option<Coords>,
-    stdout: Option<MouseTerminal<RawTerminal<AlternateScreen<Stdout>>>>,
+    stdout: Option<RefCell<MouseTerminal<RawTerminal<AlternateScreen<BufWriter<Stdout>>>>>>,
     lowest_drawn: u16,
     // where we start drawing from
     view_y: u16,
@@ -144,11 +145,34 @@ impl Default for Screen {
     }
 }
 
+macro_rules! write {
+    ($stdout:expr, $($arg:tt)*) => {
+        {
+            let out = ::std::format!($($arg)*);
+            ::std::write!($stdout, "{}", out)
+        }
+    };
+}
+
+macro_rules! writeln {
+    ($stdout:expr, $($arg:tt)*) => {
+        {
+            let out = ::std::format!($($arg)*);
+            ::std::writeln!($stdout, "{}", out)
+        }
+    };
+}
+
 impl Screen {
+    fn assume_stdout(&self) -> RefMut<'_, impl Write> {
+        self.stdout.as_ref().unwrap().borrow_mut()
+    }
+
     fn help(&mut self) {
         self.cleanup();
         self.start_raw_mode();
-        println!(
+        writeln!(
+            self.assume_stdout(),
             "{}{}{}",
             cursor::Goto(1, 1),
             clear::All,
@@ -468,7 +492,8 @@ impl Screen {
         }
 
         let stdin: Box<dyn Read> = Box::new(stdin());
-        print!(
+        write!(
+            self.assume_stdout(),
             "{}{}{}{}",
             cursor::Goto(1, self.dims.1),
             style::Invert,
@@ -478,7 +503,7 @@ impl Screen {
         self.flush();
         let res = stdin.keys().next().unwrap();
         debug!("read prompt: {:?}", res);
-        print!("{}", style::Reset);
+        write!(self.assume_stdout(), "{}", style::Reset);
         res
     }
 
@@ -489,7 +514,8 @@ impl Screen {
         }
 
         let mut stdin: Box<dyn Read> = Box::new(stdin());
-        print!(
+        write!(
+            self.assume_stdout(),
             "{}{}{}{}{}",
             style::Invert,
             cursor::Goto(1, self.dims.1),
@@ -501,7 +527,7 @@ impl Screen {
         let res = stdin.read_line();
         self.start_raw_mode();
         debug!("read prompt: {:?}", res);
-        print!("{}", style::Reset);
+        write!(self.assume_stdout(), "{}", style::Reset);
         res
     }
 
@@ -600,13 +626,19 @@ impl Screen {
             chars.split("").skip(1).zip(nodes.into_iter()).collect();
 
         // clear the prompt
-        print!("{}{}", cursor::Goto(1, self.dims.1), clear::AfterCursor);
+        write!(
+            self.assume_stdout(),
+            "{}{}",
+            cursor::Goto(1, self.dims.1),
+            clear::AfterCursor
+        );
 
         // print the hilighted char at each choice
         for (&c, &node_id) in &mapping {
             let &coords = self.drawn_at(node_id).unwrap();
             let (x, y) = self.internal_to_screen_xy(coords).unwrap();
-            print!(
+            write!(
+                self.assume_stdout(),
                 "{}{}{}{}",
                 cursor::Goto(x, y),
                 style::Invert,
@@ -875,7 +907,7 @@ impl Screen {
     pub fn flush(&mut self) {
         trace!("flush()");
         if let Some(mut s) = self.stdout.take() {
-            s.flush().unwrap();
+            s.get_mut().flush().unwrap();
             self.stdout = Some(s);
         }
     }
@@ -1179,7 +1211,7 @@ impl Screen {
             }
         }
         trace!("leaving stdin.events() loop");
-        print!("{}{}", cursor::Goto(1, 1), clear::All);
+        write!(self.assume_stdout(), "{}{}", cursor::Goto(1, 1), clear::All);
     }
 
     fn toggle_collapsed(&mut self) {
@@ -1966,15 +1998,17 @@ impl Screen {
 
     pub fn cleanup(&mut self) {
         trace!("cleanup()");
-        print!("{}", cursor::Show);
-        self.stdout.take().unwrap().flush().unwrap();
+        write!(self.assume_stdout(), "{}", cursor::Show);
+        self.stdout.take().unwrap().get_mut().flush().unwrap();
     }
 
     pub fn start_raw_mode(&mut self) {
         if self.stdout.is_none() {
-            self.stdout = Some(MouseTerminal::from(
-                AlternateScreen::from(stdout()).into_raw_mode().unwrap(),
-            ));
+            self.stdout = Some(RefCell::new(MouseTerminal::from(
+                AlternateScreen::from(BufWriter::with_capacity(8192 * 1024, stdout()))
+                    .into_raw_mode()
+                    .unwrap(),
+            )));
         }
     }
 
@@ -2050,10 +2084,10 @@ impl Screen {
                 today.day() as i32 - today.weekday().num_days_from_monday() as i32,
             ) as u32)
             .unwrap();
-        let mut line = 3;
+        let mut line = 2;
         let max_line = self.dims.1;
         'make_month: loop {
-            if line > max_line {
+            if line >= max_line {
                 break;
             }
 
@@ -2094,9 +2128,9 @@ impl Screen {
                 width = (CALENDAR_WIDTH - 1) as usize,
             );
 
-            println!("{}", month_header);
+            writeln!(self.assume_stdout(), "{}", month_header);
             line += 1;
-            if line > max_line {
+            if line >= max_line {
                 break;
             }
 
@@ -2104,9 +2138,9 @@ impl Screen {
                 "{}│   │  M  T  W  T  F  S  S",
                 cursor::Goto(self.dims.0, line)
             );
-            println!("{}", weekday_header);
+            writeln!(self.assume_stdout(), "{}", weekday_header);
             line += 1;
-            if line > max_line {
+            if line >= max_line {
                 break;
             }
 
@@ -2116,10 +2150,10 @@ impl Screen {
                 date.iso_week().week(),
                 cursor::Goto(self.dims.0, line + 1),
             );
-            print!("{}", week_header);
+            write!(self.assume_stdout(), "{}", week_header);
 
             loop {
-                if line > max_line {
+                if line >= max_line {
                     break 'make_month;
                 }
 
@@ -2135,7 +2169,7 @@ impl Screen {
                     date.day(),
                     style::Reset,
                 );
-                print!("{}", day_label);
+                write!(self.assume_stdout(), "{}", day_label);
 
                 if line + 1 < max_line {
                     let assigned = counts_by_day[date.day0() as usize];
@@ -2147,7 +2181,7 @@ impl Screen {
                             assigned,
                             style::Reset,
                         );
-                        print!("{}", day_assigned_tasks_label);
+                        write!(self.assume_stdout(), "{}", day_assigned_tasks_label);
                     } else if assigned > 0 {
                         let day_assigned_tasks_label = format!(
                             "{}{}{:3}{}",
@@ -2156,7 +2190,7 @@ impl Screen {
                             "?!",
                             style::Reset,
                         );
-                        print!("{}", day_assigned_tasks_label);
+                        write!(self.assume_stdout(), "{}", day_assigned_tasks_label);
                     }
                 }
 
@@ -2169,7 +2203,7 @@ impl Screen {
 
                 if date.weekday() == Weekday::Mon {
                     line += 2;
-                    if line > max_line {
+                    if line >= max_line {
                         break 'make_month;
                     }
 
@@ -2179,7 +2213,7 @@ impl Screen {
                         date.iso_week().week(),
                         cursor::Goto(self.dims.0, line + 1),
                     );
-                    print!("{}", week_header);
+                    write!(self.assume_stdout(), "{}", week_header);
                 }
             }
             line += 2;
@@ -2187,7 +2221,7 @@ impl Screen {
                 break;
             }
 
-            println!("{}│", cursor::Goto(self.dims.0, line));
+            writeln!(self.assume_stdout(), "{}│", cursor::Goto(self.dims.0, line));
             line += 1;
         }
     }
@@ -2211,7 +2245,7 @@ impl Screen {
         self.lookup.clear();
         self.drawn_at.clear();
         self.lowest_drawn = 0;
-        print!("{}", clear::All);
+        write!(self.assume_stdout(), "{}", clear::All);
 
         self.dims = terminal_size().unwrap();
 
@@ -2237,12 +2271,16 @@ impl Screen {
             for _ in 0..self.dims.0 - 4 {
                 sep.push('█');
             }
-            println!("{}", sep);
+            writeln!(self.assume_stdout(), "{}", sep);
             {
                 let logs = logging::read_logs();
                 for msg in logs.iter().rev() {
                     let line_width = min(msg.len(), self.dims.0 as usize);
-                    println!("\r{}", msg[..line_width as usize].to_owned());
+                    writeln!(
+                        self.assume_stdout(),
+                        "\r{}",
+                        msg[..line_width as usize].to_owned()
+                    );
                 }
             }
         }
@@ -2279,7 +2317,7 @@ impl Screen {
             self.draw_scrollbar();
         }
 
-        print!("{}", cursor::Hide);
+        write!(self.assume_stdout(), "{}", cursor::Hide);
         self.flush();
 
         // let after = time::get_time();
@@ -2287,7 +2325,7 @@ impl Screen {
         // debug!("draw time: {}", after - before);
     }
 
-    fn draw_scrollbar(&self) {
+    fn draw_scrollbar(&mut self) {
         let bar_height = max(self.dims.1, 1) - 1;
         let normalized_lowest = f64::from(max(self.lowest_drawn, 1));
         let fraction_viewable = f64::from(self.dims.1) / normalized_lowest;
@@ -2299,9 +2337,9 @@ impl Screen {
 
         for (i, y) in (2..bar_height + 2).enumerate() {
             if i >= shade_start && i < shade_end {
-                print!("{}┃", cursor::Goto(self.dims.0, y));
+                write!(self.assume_stdout(), "{}┃", cursor::Goto(self.dims.0, y));
             } else {
-                print!("{}│", cursor::Goto(self.dims.0, y));
+                write!(self.assume_stdout(), "{}│", cursor::Goto(self.dims.0, y));
             }
         }
     }
@@ -2443,7 +2481,7 @@ impl Screen {
                 buf.push('…');
             }
 
-            print!("{}{}", buf, style::Reset);
+            write!(self.assume_stdout(), "{}{}", buf, style::Reset);
         }
 
         let visible_graphemes = self
@@ -2508,10 +2546,14 @@ impl Screen {
             .filter_map(|&c| self.internal_to_screen_xy(c))
             .collect();
         trace!("draw_path({:?}, {:?}, {:?})", path, start_dir, dest_dir);
-        print!("{}", color);
+        write!(self.assume_stdout(), "{}", color);
         match path.len().cmp(&1) {
             Ordering::Equal => {
-                print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
+                write!(
+                    self.assume_stdout(),
+                    "{} ↺",
+                    cursor::Goto(path[0].0, path[0].1)
+                );
             },
             Ordering::Greater => {
                 let first = match path[1].1.cmp(&path[0].1) {
@@ -2526,7 +2568,12 @@ impl Screen {
                     Ordering::Equal => '─',
                 };
 
-                print!("{}{}", cursor::Goto(path[0].0, path[0].1), first);
+                write!(
+                    self.assume_stdout(),
+                    "{}{}",
+                    cursor::Goto(path[0].0, path[0].1),
+                    first
+                );
                 for items in path.windows(3) {
                     let (p, this, n) = (items[0], items[1], items[2]);
                     let c = if p.0 == n.0 {
@@ -2543,18 +2590,28 @@ impl Screen {
                         '└' // down+right or left+up
                     };
 
-                    print!("{}{}", cursor::Goto(this.0, this.1), c)
+                    write!(
+                        self.assume_stdout(),
+                        "{}{}",
+                        cursor::Goto(this.0, this.1),
+                        c
+                    );
                 }
                 let (end_x, end_y) = (path[path.len() - 1].0, path[path.len() - 1].1);
                 let end_char = match dest_dir {
                     Dir::L => '>',
                     Dir::R => '<',
                 };
-                print!("{}{}", cursor::Goto(end_x, end_y), end_char);
+                write!(
+                    self.assume_stdout(),
+                    "{}{}",
+                    cursor::Goto(end_x, end_y),
+                    end_char
+                );
             },
             _ => {},
         };
-        print!("{}", color::Fg(color::Reset));
+        write!(self.assume_stdout(), "{}", color::Fg(color::Reset));
     }
 
     fn draw_header(&mut self) {
@@ -2611,7 +2668,7 @@ impl Screen {
             for _ in 0..(max(self.dims.0 as usize, text_len) - text_len) {
                 sep.push('█');
             }
-            print!("{}", sep);
+            write!(self.assume_stdout(), "{}", sep);
         }
     }
 
