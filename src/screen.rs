@@ -2157,14 +2157,29 @@ impl Screen {
                 let direction = (cursor.0 as i32) - (neighbor.0 as i32)
                     + 2 * ((cursor.1 as i32) - (neighbor.1 as i32));
 
-                let this_move_cost = if cursor_last_direction == direction {
+                let move_cost = if cursor_last_direction == direction {
                     1 // We're moving in the same direction as before: free
                 } else {
                     2 // We changed direction, which is discouraged to arrows simple
                 };
 
+                let turn_into_dest_cost = if
+                    neighbor == dest &&
+                    (direction == -2 || direction == 2)
+                {
+                    // When we arrive at dest, it's good to be traveling in the direction
+                    // that the carrot will be pointing.  e.g.
+                    //
+                    // Bad: ──┐       Good:─┐
+                    //        │             │
+                    //        >dest         └─>dest
+                    5
+                } else {
+                    0
+                };
+
                 // Total cost to get to this point
-                let total_cost = this_move_cost + cursor_cost;
+                let total_cost = move_cost + turn_into_dest_cost + cursor_cost;
 
                 if (neighbor.0 < self.dims.0
                     && neighbor.1 < self.dims.1 + self.view_y
