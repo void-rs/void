@@ -45,7 +45,7 @@ pub type Coords = (u16, u16);
 pub type NodeID = u64;
 pub type ScreenDesc = (HashMap<Coords, NodeID>, HashMap<NodeID, Coords>);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Dir {
     L,
     R,
