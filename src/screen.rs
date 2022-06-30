@@ -2144,26 +2144,49 @@ impl Screen {
             ]
         }
         // maps from location to previous location
-        let mut visited: HashMap<Coords, Coords> = HashMap::new();
+        let mut visited: HashMap<Coords, (Coords, u16)> = HashMap::new();
         let mut pq = BinaryHeap::new();
 
         let mut cursor = start;
+        let mut cursor_cost = 0; // The cost to get to the coords of the cursor so far
+        let mut cursor_last_direction = 0;
         trace!("starting draw");
         while cursor != dest {
             for neighbor in perms(cursor) {
+                // direction is -2, -1, 1, or 2
+                let direction = (cursor.0 as i32) - (neighbor.0 as i32)
+                    + 2 * ((cursor.1 as i32) - (neighbor.1 as i32));
+
+                let this_move_cost = if cursor_last_direction == direction {
+                    1 // We're moving in the same direction as before: free
+                } else {
+                    2 // We changed direction, which is discouraged to arrows simple
+                };
+
+                // Total cost to get to this point
+                let total_cost = this_move_cost + cursor_cost;
+
                 if (neighbor.0 < self.dims.0
                     && neighbor.1 < self.dims.1 + self.view_y
                     && !self.occupied(neighbor)
                     || neighbor == dest)
-                    && !visited.contains_key(&neighbor)
+                    && visited.get(&neighbor) // Only if we found...
+                        .map(|(_, old_cost)| *old_cost > total_cost) // a cheaper route...
+                        .unwrap_or(true) // or the first route
                 {
-                    let c = std::u16::MAX - cost(neighbor, dest);
-                    pq.push((c, neighbor));
-                    visited.insert(neighbor, cursor);
+                    let heuristic = cost(neighbor, dest);
+                    let priority = std::u16::MAX
+                        - heuristic
+                        - total_cost;
+
+                    pq.push((priority, neighbor, direction, total_cost));
+                    visited.insert(neighbor, (cursor, total_cost));
                 }
             }
-            if let Some((_, coords)) = pq.pop() {
+            if let Some((_, coords, last_direction, cost)) = pq.pop() {
                 cursor = coords;
+                cursor_cost = cost;
+                cursor_last_direction = last_direction;
             } else {
                 trace!("no path, possible node overlap");
                 return vec![];
@@ -2176,7 +2199,7 @@ impl Screen {
         let mut back_cursor = dest;
         let mut path = vec![dest];
         while back_cursor != start {
-            let prev = visited[&back_cursor];
+            let (prev, _) = visited[&back_cursor];
             path.push(prev);
             back_cursor = prev;
         }
