@@ -12,7 +12,7 @@ Feedback encouraged! If you have a hard time with something, let me know about i
 
 ## problems
 
-This is an attempt to address several cognitive defects.
+This is an attempt to address several common situations:
 
 1. frequently fall out of creative flow
 1. day-to-day work lacks coherence
