@@ -4,18 +4,10 @@ use regex::Regex;
 
 use crate::{re_matches, NodeID};
 
+#[derive(Default)]
 pub struct TagDB {
     node_to_tags: HashMap<NodeID, HashSet<String>>,
     tag_to_nodes: HashMap<String, HashSet<NodeID>>,
-}
-
-impl Default for TagDB {
-    fn default() -> TagDB {
-        TagDB {
-            node_to_tags: HashMap::new(),
-            tag_to_nodes: HashMap::new(),
-        }
-    }
 }
 
 impl TagDB {
@@ -73,8 +65,8 @@ impl TagDB {
             .tag_to_nodes
             .get(&tag.to_owned())
             .map(|set| set.clone().into_iter().collect())
-            .unwrap_or_else(|| vec![]);
-        res.sort();
+            .unwrap_or_else(Vec::new);
+        res.sort_unstable();
         res
     }
 }

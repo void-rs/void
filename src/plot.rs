@@ -1,9 +1,11 @@
 use std::cmp;
 
-pub fn plot_sparkline<T>(nums_in: Vec<T>) -> String
-where T: Into<i64> {
-    const BARS: [char; 9] = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+pub const BARS: [char; 9] = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
+pub fn plot_sparkline<T>(nums_in: Vec<T>) -> String
+where
+    T: Into<i64>,
+{
     let nums: Vec<_> = nums_in.into_iter().map(|n| n.into()).collect();
     let max = nums.iter().max().unwrap();
 
@@ -20,10 +22,18 @@ where T: Into<i64> {
 }
 
 pub fn bounded_count_sparkline<T>(nums_in: Vec<T>, start: T, end: T, bars: usize) -> String
-where T: Into<i64> {
+where
+    T: Into<i64> + PartialOrd<T>,
+{
     if bars == 0 {
         return String::new();
     }
+
+    let (start, end, rev) = if start <= end {
+        (start, end, false)
+    } else {
+        (end, start, true)
+    };
 
     let start = start.into();
     let end = end.into();
@@ -31,7 +41,7 @@ where T: Into<i64> {
     let step = (end - start) / bars as i64;
     let mut counts = vec![0; bars];
 
-    if step == 0 || nums.is_empty() || end <= start {
+    if step == 0 || nums.is_empty() {
         return String::from_utf8(vec![b' '; bars]).unwrap();
     }
 
@@ -43,5 +53,11 @@ where T: Into<i64> {
         let idx = (n - start) / step;
         counts[cmp::min(idx, bars - 1)] += 1;
     }
-    plot_sparkline(counts)
+
+    let plot = plot_sparkline(counts);
+    if rev {
+        plot.chars().rev().collect()
+    } else {
+        plot
+    }
 }

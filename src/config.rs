@@ -39,15 +39,69 @@ pub enum Action {
     ToggleShowLogs,
     EnterCmd,
     FindTask,
+    MovePasteNode,
     YankPasteNode,
     RaiseSelected,
     LowerSelected,
     Search,
-    UndoDelete,
+    Undo,
     Help,
     SelectParent,
     SelectNextSibling,
     SelectPrevSibling,
+    SelectFirstSibling,
+    SelectLastSibling,
+    Insert,
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Action::LeftClick(..) | Action::RightClick(..) | Action::Release(..) => {
+                write!(f, "Other action")
+            },
+            Action::Arrow => write!(f, "Start or end arrow"),
+            Action::AutoArrange => write!(f, "Toggle automatic arrangement"),
+            Action::Char(c) => write!(f, "Input character {}", c),
+            Action::CreateChild => write!(f, "Create new child node"),
+            Action::CreateFreeNode => write!(f, "Create new free node"),
+            Action::CreateSibling => write!(f, "Create new sibling node"),
+            Action::DeleteSelected => write!(f, "Delete selected node"),
+            Action::DrillDown => write!(f, "Move down in hierarchy"),
+            Action::EnterCmd => write!(f, "Enter command"),
+            Action::EraseChar => write!(f, "Erase character"),
+            Action::ExecSelected => write!(f, "Execute node content"),
+            Action::FindTask => write!(f, "Autoassign task"),
+            Action::Help => write!(f, "Display help"),
+            Action::Insert => write!(f, "Enter insert mode"),
+            Action::LowerSelected => write!(f, "Move selected node down"),
+            Action::MovePasteNode => write!(f, "Move node"),
+            Action::PopUp => write!(f, "Move up in hierarchy"),
+            Action::PrefixJump => write!(f, "Select by prefix"),
+            Action::Quit => write!(f, "Quit void"),
+            Action::RaiseSelected => write!(f, "Move selected node up"),
+            Action::Save => write!(f, "Save"),
+            Action::ScrollDown => write!(f, "Scroll view down"),
+            Action::ScrollUp => write!(f, "Scroll view up"),
+            Action::Search => write!(f, "Search for node"),
+            Action::SelectDown => write!(f, "Select next node down"),
+            Action::SelectFirstSibling => write!(f, "Select first sibling"),
+            Action::SelectLastSibling => write!(f, "Select last sibling"),
+            Action::SelectLeft => write!(f, "Select next node left"),
+            Action::SelectNextSibling => write!(f, "Select next sibling"),
+            Action::SelectParent => write!(f, "Select parent node"),
+            Action::SelectPrevSibling => write!(f, "Select previous sibling"),
+            Action::SelectRight => write!(f, "Select next node right"),
+            Action::SelectUp => write!(f, "Select next node up"),
+            Action::ToggleCollapsed => write!(f, "Toggle collapsing of children"),
+            Action::ToggleCompleted => write!(f, "Toggle completed"),
+            Action::ToggleHideCompleted => write!(f, "Toggle hiding of completed tasks"),
+            Action::ToggleShowLogs => write!(f, "Toggle log"),
+            Action::Undo => write!(f, "Undo deletion/toggling completed"),
+            Action::UnselectRet => write!(f, "Unselect node / leave insert mode"),
+            Action::YankPasteNode => write!(f, "Yank node"),
+        }
+    }
 }
 
 fn to_action(input: String) -> Option<Action> {
@@ -79,14 +133,18 @@ fn to_action(input: String) -> Option<Action> {
         "enter_command" => Some(Action::EnterCmd),
         "find_task" => Some(Action::FindTask),
         "yank_paste_node" => Some(Action::YankPasteNode),
+        "move_paste_node" => Some(Action::MovePasteNode),
         "raise_selected" => Some(Action::RaiseSelected),
         "lower_selected" => Some(Action::LowerSelected),
         "search" => Some(Action::Search),
-        "undo_delete" => Some(Action::UndoDelete),
+        "undo" => Some(Action::Undo),
         "help" => Some(Action::Help),
         "select_parent" => Some(Action::SelectParent),
         "select_next_sibling" => Some(Action::SelectNextSibling),
         "select_prev_sibling" => Some(Action::SelectPrevSibling),
+        "select_first_sibling" => Some(Action::SelectFirstSibling),
+        "select_last_sibling" => Some(Action::SelectLastSibling),
+        "insert" => Some(Action::Insert),
         _ => None,
     }
 }
@@ -126,6 +184,12 @@ fn to_key(raw_key: String) -> Option<Key> {
 #[derive(Debug, Clone)]
 pub struct Config {
     config: HashMap<Key, Action>,
+    pub modal: bool,
+    pub stricken: String,
+    pub collapsed: String,
+    pub hide_stricken: String,
+    pub free_text: String,
+    pub url: String,
 }
 
 impl Default for Config {
@@ -164,24 +228,62 @@ impl Default for Config {
                 (Ctrl('g'), Action::RaiseSelected),
                 (Ctrl('d'), Action::LowerSelected),
                 (Ctrl('u'), Action::Search),
-                (Ctrl('z'), Action::UndoDelete),
+                (Ctrl('z'), Action::Undo),
                 (Ctrl('?'), Action::Help),
                 (Alt('P'), Action::SelectParent),
+                (Alt('y'), Action::MovePasteNode),
                 (Alt('n'), Action::SelectNextSibling),
                 (Alt('p'), Action::SelectPrevSibling),
+                (Alt('k'), Action::SelectFirstSibling),
+                (Alt('j'), Action::SelectLastSibling),
             ]
             .into_iter()
             .collect(),
+            modal: false,
+            stricken: "☠".to_owned(),
+            collapsed: "⊞".to_owned(),
+            hide_stricken: "⚔".to_owned(),
+            free_text: "✏".to_owned(),
+            url: "".to_owned(),
+        }
+    }
+}
+
+struct FmtKey(Key);
+
+impl fmt::Display for FmtKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.0 {
+            Key::PageDown => write!(f, "PgDn"),
+            Key::PageUp => write!(f, "PgUp"),
+            Key::Delete => write!(f, "Del"),
+            Key::Alt(c) => write!(f, "A-{}", FmtKey(Key::Char(*c))),
+            Key::Ctrl(c) => write!(f, "C-{}", FmtKey(Key::Char(*c))),
+            Key::Char(' ') => write!(f, "Space"),
+            Key::Char('\n') => write!(f, "Enter"),
+            Key::Char('\t') => write!(f, "Tab"),
+            Key::Char(c) => write!(f, "{}", c),
+            other => fmt::Debug::fmt(other, f),
         }
     }
 }
 
 impl fmt::Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Configured Hotkeys:").unwrap();
-        for (key, action) in &self.config {
-            writeln!(f, "    {:?}: {:?}", action, key).unwrap();
+        if self.modal {
+            writeln!(f, "Modal mode enabled.").unwrap();
         }
+        writeln!(f, "Configured Hotkeys:").unwrap();
+        let mut hotkeys = self
+            .config
+            .iter()
+            .map(|(key, action)| format!("    {}: {}", action, FmtKey(*key)))
+            .collect::<Vec<_>>();
+        hotkeys.sort();
+        hotkeys
+            .into_iter()
+            .map(|string| writeln!(f, "{}", string))
+            .collect::<Result<Vec<()>, _>>()?;
         Ok(())
     }
 }
@@ -201,7 +303,15 @@ impl Config {
         f.read_to_string(&mut buf)?;
         let mut config = Config::default();
         for (mut line_num, line) in buf.lines().enumerate() {
-            if line == "" || line.starts_with('#') {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if line == "modal" {
+                config.modal = true;
+                continue;
+            }
+            if line == "no_defaults" {
+                config.config = HashMap::new();
                 continue;
             }
 
@@ -215,21 +325,39 @@ impl Config {
                 return Err(Error::new(ErrorKind::Other, e));
             }
 
-            let (raw_action, raw_key) = (parts[0], parts[1]);
+            let (option, param) = (parts[0], parts[1]);
+            match (option, param) {
+                ("stricken", p) => {
+                    config.stricken = p.to_owned();
+                },
+                ("collapsed", p) => {
+                    config.collapsed = p.to_owned();
+                },
+                ("hide_stricken", p) => {
+                    config.hide_stricken = p.to_owned();
+                },
+                ("free_text", p) => {
+                    config.free_text = p.to_owned();
+                },
+                ("url", p) => {
+                    config.url = p.to_owned();
+                },
+                (raw_action, raw_key) => {
+                    let key_opt = to_key(raw_key.to_owned());
+                    let action_opt = to_action(raw_action.to_owned());
 
-            let key_opt = to_key(raw_key.to_owned());
-            let action_opt = to_action(raw_action.to_owned());
+                    if key_opt.is_none() || action_opt.is_none() {
+                        let e = format!("invalid config at line {}: {}", line_num, line);
+                        error!("{}", e);
+                        return Err(Error::new(ErrorKind::Other, e));
+                    }
 
-            if key_opt.is_none() || action_opt.is_none() {
-                let e = format!("invalid config at line {}: {}", line_num, line);
-                error!("{}", e);
-                return Err(Error::new(ErrorKind::Other, e));
+                    let key = key_opt.unwrap();
+                    let action = action_opt.unwrap();
+
+                    config.config.insert(key, action);
+                },
             }
-
-            let key = key_opt.unwrap();
-            let action = action_opt.unwrap();
-
-            config.config.insert(key, action);
         }
 
         Ok(config)
@@ -244,10 +372,10 @@ impl Config {
                 } else {
                     Some(Action::Char(c))
                 }
-            }
+            },
             Event::Mouse(MouseEvent::Press(MouseButton::Right, x, y)) => {
                 Some(Action::RightClick(x, y))
-            }
+            },
             Event::Mouse(MouseEvent::Press(_, x, y)) => Some(Action::LeftClick(x, y)),
             Event::Mouse(MouseEvent::Release(x, y)) => Some(Action::Release(x, y)),
             Event::Mouse(MouseEvent::Hold(..)) => None,
@@ -257,11 +385,11 @@ impl Config {
                     warn!("Weird event {:?}", other);
                 }
                 lookup
-            }
+            },
             other => {
                 warn!("Unknown event received: {:?}", other);
                 None
-            }
+            },
         }
     }
 }

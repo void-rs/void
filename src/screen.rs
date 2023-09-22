@@ -1,11 +1,13 @@
 use std::{
     self,
-    cmp::{max, min},
+    borrow::Cow,
+    cell::{RefCell, RefMut},
+    cmp::{max, min, Ordering},
     collections::{BTreeMap, BinaryHeap, HashMap, HashSet},
     env,
     fmt::Write as FmtWrite,
     fs::{remove_file, rename, File, OpenOptions},
-    io::{self, stdin, stdout, Error, ErrorKind, Read, Seek, SeekFrom, Stdout, Write},
+    io::{self, stdin, stdout, BufWriter, Error, ErrorKind, Read, Seek, SeekFrom, Stdout, Write},
     process,
 };
 
@@ -18,6 +20,7 @@ use termion::{
     style, terminal_size,
 };
 
+use chrono::{Date, Datelike, Local, NaiveDate, TimeZone, Weekday};
 use rand::{self, Rng};
 use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
@@ -27,10 +30,29 @@ use crate::{
     Action, Config, Coords, Dir, Node, NodeID, Pack, TagDB,
 };
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+struct Selection {
+    selected_id: NodeID,
+    inserting: bool,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum Cut {
+    Move(NodeID),
+    Yank(NodeID),
+    Empty,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum UndoNode {
+    Delete(NodeID),
+    ToggleStricken(NodeID),
+}
+
 pub struct Screen {
     pub max_id: u64,
     pub nodes: HashMap<NodeID, Node>,
-    pub arrows: Vec<(NodeID, NodeID)>,
+    pub arrows: Vec<(NodeID, NodeID, String)>,
     pub work_path: Option<String>,
     pub autosave_every: usize,
     pub config: Config,
@@ -42,14 +64,15 @@ pub struct Screen {
     // non-pub members are ephemeral
     drawing_root: NodeID,
     show_logs: bool,
-    selected: Option<NodeID>,
-    cut: Option<NodeID>,
+    show_calendar: bool,
+    selected: Option<Selection>,
+    cut: Cut,
     drawing_arrow: Option<NodeID>,
     lookup: HashMap<Coords, NodeID>,
     drawn_at: HashMap<NodeID, Coords>,
     dragging_from: Option<Coords>,
     dragging_to: Option<Coords>,
-    stdout: Option<MouseTerminal<RawTerminal<AlternateScreen<Stdout>>>>,
+    stdout: Option<RefCell<MouseTerminal<RawTerminal<AlternateScreen<BufWriter<Stdout>>>>>>,
     lowest_drawn: u16,
     // where we start drawing from
     view_y: u16,
@@ -58,7 +81,7 @@ pub struct Screen {
     last_search: Option<(String, NodeID)>,
 
     // undo info
-    undo_stack: Vec<NodeID>,
+    undo_stack: Vec<UndoNode>,
     // needs to be separate, as recursive deletion of nodes causes ordering issues
     undo_nodes: HashMap<NodeID, Node>,
 
@@ -81,19 +104,22 @@ pub struct Screen {
 
 impl Default for Screen {
     fn default() -> Screen {
-        let mut root = Node::default();
-        root.content = "home".to_owned();
+        let root = Node {
+            content: "home".to_owned(),
+            ..Node::default()
+        };
         let mut screen = Screen {
             autosave_every: 25,
             config: Config::default(),
             arrows: vec![],
             selected: None,
-            cut: None,
+            cut: Cut::Empty,
             drawing_arrow: None,
             nodes: HashMap::new(),
             lookup: HashMap::new(),
             drawn_at: HashMap::new(),
             show_logs: false,
+            show_calendar: true,
             drawing_root: 0,
             stdout: None,
             dragging_from: None,
@@ -119,11 +145,39 @@ impl Default for Screen {
     }
 }
 
+macro_rules! write {
+    ($stdout:expr, $($arg:tt)*) => {
+        {
+            let out = ::std::format!($($arg)*);
+            ::std::write!($stdout, "{}", out)
+        }
+    };
+}
+
+macro_rules! writeln {
+    ($stdout:expr, $($arg:tt)*) => {
+        {
+            let out = ::std::format!($($arg)*);
+            ::std::writeln!($stdout, "{}", out)
+        }
+    };
+}
+
 impl Screen {
+    fn assume_stdout(&self) -> RefMut<'_, impl Write> {
+        self.stdout.as_ref().unwrap().borrow_mut()
+    }
+
     fn help(&mut self) {
         self.cleanup();
-        println!("{}{}{}", cursor::Goto(1, 1), clear::All, self.config);
         self.start_raw_mode();
+        writeln!(
+            self.assume_stdout(),
+            "{}{}{}",
+            cursor::Goto(1, 1),
+            clear::All,
+            self.config.to_string().replace("\n", "\r\n")
+        );
         if self.single_key_prompt("").is_err() {
             // likely here because of testing
         }
@@ -143,60 +197,100 @@ impl Screen {
         id
     }
 
-    pub fn with_node<B, F>(&self, k: NodeID, mut f: F) -> Option<B>
+    fn clone_node(&mut self, id: NodeID, new_parent_id: NodeID) -> Option<NodeID> {
+        let mut new_node = Node::new_from(self.nodes.get(&id)?);
+        let new_id = self.new_node_id();
+        let new_children = new_node
+            .children
+            .iter()
+            .flat_map(|&child_id| self.clone_node(child_id, new_id))
+            .collect();
+        new_node.id = new_id;
+        new_node.children = new_children;
+        new_node.parent_id = new_parent_id;
+
+        self.nodes.insert(new_id, new_node);
+
+        Some(new_id)
+    }
+
+    pub fn with_node<B, F>(&self, k: NodeID, f: F) -> Option<B>
     where
         F: FnMut(&Node) -> B,
     {
-        self.nodes.get(&k).map(|node| f(node))
+        self.nodes.get(&k).map(f)
     }
 
     fn with_node_mut<B, F>(&mut self, k: NodeID, mut f: F) -> Option<B>
     where
         F: FnMut(&mut Node) -> B,
     {
-        self.nodes.get_mut(&k).map(|mut node| {
+        self.nodes.get_mut(&k).map(|node| {
             node.meta.bump_mtime();
-            f(&mut node)
+            f(node)
         })
     }
 
-    fn with_node_mut_no_meta<B, F>(&mut self, k: NodeID, mut f: F) -> Option<B>
+    fn with_node_mut_no_meta<B, F>(&mut self, k: NodeID, f: F) -> Option<B>
     where
         F: FnMut(&mut Node) -> B,
     {
-        self.nodes.get_mut(&k).map(|mut node| f(&mut node))
+        self.nodes.get_mut(&k).map(f)
     }
 
     // return of false signals to the caller that we are done in this view
     pub fn handle_event(&mut self, evt: Event) -> bool {
+        // Write character to selection
+        if let Event::Key(Key::Char(k)) = evt {
+            if self.is_insert_mode() {
+                self.append(k);
+                return true;
+            }
+        }
         match self.config.map(evt) {
             Some(e) => match e {
                 Action::LeftClick(x, y) => {
                     let internal_coords = self.screen_to_internal_xy((x, y));
                     self.click_screen(internal_coords)
-                }
+                },
                 Action::RightClick(..) => {
                     self.pop_focus();
-                }
+                },
                 Action::Release(x, y) => {
                     let internal_coords = self.screen_to_internal_xy((x, y));
                     self.release(internal_coords)
-                }
-                // Write character to selection
-                Action::Char(c) if self.selected.is_some() => {
-                    self.append(c);
-                }
+                },
                 Action::Char('/') => {
                     self.search_forward();
-                }
+                },
                 Action::Char('?') => {
                     self.search_backward();
-                }
-                Action::Char(c) => {
+                },
+                Action::Char(c) if !self.config.modal => {
                     self.prefix_jump_to(c.to_string());
-                }
+                },
+                Action::Char(_) => {},
                 Action::Help => self.help(),
-                Action::UnselectRet => return self.unselect().is_some(),
+                Action::Insert => {
+                    if let Some(sel) = self.selected.as_mut() {
+                        // Invalidate the grapheme cache, because an insertion cursor is being added
+                        self.grapheme_cache.remove(&sel.selected_id);
+                        sel.inserting = true
+                    }
+                },
+
+                Action::UnselectRet
+                    if self.config.modal && self.selected.map(|s| s.inserting) == Some(true) =>
+                {
+                    if let Some(sel) = self.selected.as_mut() {
+                        // Invalidate the grapheme cache, because an insertion cursor is being removed
+                        self.grapheme_cache.remove(&sel.selected_id);
+                        sel.inserting = false
+                    }
+                },
+                Action::UnselectRet => {
+                    self.unselect();
+                },
                 Action::ScrollUp => self.scroll_up(),
                 Action::ScrollDown => self.scroll_down(),
                 Action::DeleteSelected => self.delete_selected(true),
@@ -204,7 +298,8 @@ impl Screen {
                 Action::SelectDown => self.select_down(),
                 Action::SelectLeft => self.select_left(),
                 Action::SelectRight => self.select_right(),
-                Action::EraseChar => self.backspace(),
+                Action::EraseChar if self.is_insert_mode() => self.backspace(),
+                Action::EraseChar => {},
                 Action::CreateSibling => self.create_sibling(),
                 Action::CreateChild => self.create_child(),
                 Action::CreateFreeNode => self.create_free_node(),
@@ -212,7 +307,7 @@ impl Screen {
                 Action::DrillDown => self.drill_down(),
                 Action::PopUp => self.pop_focus(),
                 Action::PrefixJump => self.prefix_jump_prompt(),
-                Action::ToggleCompleted => self.toggle_stricken(),
+                Action::ToggleCompleted => self.toggle_stricken(true),
                 Action::ToggleHideCompleted => self.toggle_hide_stricken(),
                 Action::Arrow => self.add_or_remove_arrow(),
                 Action::AutoArrange => self.toggle_auto_arrange(),
@@ -222,14 +317,17 @@ impl Screen {
                 Action::ToggleShowLogs => self.toggle_show_logs(),
                 Action::EnterCmd => self.enter_cmd(),
                 Action::FindTask => self.auto_task(),
-                Action::YankPasteNode => self.cut_paste(),
+                Action::YankPasteNode => self.cut_paste(true),
+                Action::MovePasteNode => self.cut_paste(false),
                 Action::RaiseSelected => self.raise_selected(),
                 Action::LowerSelected => self.lower_selected(),
                 Action::Search => self.search_forward(),
-                Action::UndoDelete => self.undo_delete(),
+                Action::Undo => self.undo(),
                 Action::SelectParent => self.select_parent(),
                 Action::SelectNextSibling => self.select_next_sibling(),
                 Action::SelectPrevSibling => self.select_prev_sibling(),
+                Action::SelectFirstSibling => self.select_first_sibling(),
+                Action::SelectLastSibling => self.select_last_sibling(),
             },
             None => warn!("received unknown input"),
         }
@@ -240,16 +338,35 @@ impl Screen {
         self.nodes.get(&node_id).is_some()
     }
 
-    fn cut_paste(&mut self) {
-        if let Some(selected_id) = self.selected {
-            if let Some(cut) = self.cut.take() {
-                self.reparent(cut, selected_id);
-            } else {
-                self.cut = Some(selected_id);
-            }
-        } else if let Some(cut) = self.cut.take() {
-            let root = self.drawing_root;
-            self.reparent(cut, root);
+    fn cut_paste(&mut self, yanking: bool) {
+        let can_cut = self.selected.is_some();
+        let place = self
+            .selected
+            .map_or(self.drawing_root, |sel| sel.selected_id);
+        match self.cut {
+            Cut::Move(cut) => {
+                self.reparent(cut, place);
+                self.cut = Cut::Empty;
+            },
+            Cut::Yank(cut) => {
+                if self.is_parent(cut, place) {
+                    warn!("Can't copy a node into itself");
+                    return;
+                }
+                if let Some(new_id) = self.clone_node(cut, place) {
+                    self.with_node_mut_no_meta(place, |parent_nd| {
+                        parent_nd.children.push(new_id);
+                    });
+                }
+                self.cut = Cut::Empty;
+            },
+            Cut::Empty if yanking && can_cut => {
+                self.cut = Cut::Yank(place);
+            },
+            Cut::Empty if can_cut => {
+                self.cut = Cut::Move(place);
+            },
+            Cut::Empty => {},
         }
     }
 
@@ -300,7 +417,10 @@ impl Screen {
                 .children
                 .iter()
                 .cloned()
-                .filter(|&c| self.with_node(c, |c| !c.stricken).unwrap())
+                .filter(|&c| {
+                    self.with_node(c, |c| !c.stricken && !c.content.contains("#ignr"))
+                        .unwrap()
+                })
                 .collect();
             if incomplete_children.is_empty() {
                 leaves.push(root_id);
@@ -357,7 +477,7 @@ impl Screen {
             .and_then(|c| {
                 if RE.is_match(&*c) {
                     RE.captures_iter(&*c)
-                        .nth(0)
+                        .next()
                         .and_then(|n| n.get(1).unwrap().as_str().parse::<usize>().ok())
                 } else {
                     None
@@ -372,17 +492,18 @@ impl Screen {
         }
 
         let stdin: Box<dyn Read> = Box::new(stdin());
-        print!(
+        write!(
+            self.assume_stdout(),
             "{}{}{}{}",
-            cursor::Goto(0, self.dims.1),
+            cursor::Goto(1, self.dims.1),
             style::Invert,
             clear::AfterCursor,
             prompt
         );
         self.flush();
-        let res = stdin.keys().nth(0).unwrap();
+        let res = stdin.keys().next().unwrap();
         debug!("read prompt: {:?}", res);
-        print!("{}", style::Reset);
+        write!(self.assume_stdout(), "{}", style::Reset);
         res
     }
 
@@ -393,10 +514,11 @@ impl Screen {
         }
 
         let mut stdin: Box<dyn Read> = Box::new(stdin());
-        print!(
+        write!(
+            self.assume_stdout(),
             "{}{}{}{}{}",
             style::Invert,
-            cursor::Goto(0, self.dims.1),
+            cursor::Goto(1, self.dims.1),
             clear::AfterCursor,
             prompt,
             cursor::Show
@@ -405,7 +527,7 @@ impl Screen {
         let res = stdin.read_line();
         self.start_raw_mode();
         debug!("read prompt: {:?}", res);
-        print!("{}", style::Reset);
+        write!(self.assume_stdout(), "{}", style::Reset);
         res
     }
 
@@ -436,7 +558,7 @@ impl Screen {
             SearchDirection::Backward => format!("search backwards{}:", last_search_str),
         };
         if let Ok(Some(mut query)) = self.prompt(&*prompt) {
-            if query == "" {
+            if query.is_empty() {
                 if let Some((ref last, _)) = self.last_search {
                     query = last.clone();
                 } else {
@@ -447,12 +569,13 @@ impl Screen {
                 self.last_search.take();
             }
 
-            let mut f = |n: &Node| n.content.find(&*query).map(|idx| (idx, n.id));
-            let mut candidates = self.recursive_child_filter_map(self.drawing_root, &mut f);
+            let mut f =
+                |n: &Node, _: ()| (n.content.find(&*query).map(|idx| (idx, n.id)), (), true);
+            let mut candidates = self.recursive_child_filter_map(self.drawing_root, (), &mut f);
             if candidates.is_empty() {
                 return;
             }
-            candidates.sort();
+            candidates.sort_unstable();
             let choice = if let Some((_, last_choice)) = self.last_search.take() {
                 let idx = candidates
                     .iter()
@@ -503,13 +626,19 @@ impl Screen {
             chars.split("").skip(1).zip(nodes.into_iter()).collect();
 
         // clear the prompt
-        print!("{}{}", cursor::Goto(1, self.dims.1), clear::AfterCursor);
+        write!(
+            self.assume_stdout(),
+            "{}{}",
+            cursor::Goto(1, self.dims.1),
+            clear::AfterCursor
+        );
 
         // print the hilighted char at each choice
         for (&c, &node_id) in &mapping {
             let &coords = self.drawn_at(node_id).unwrap();
             let (x, y) = self.internal_to_screen_xy(coords).unwrap();
-            print!(
+            write!(
+                self.assume_stdout(),
                 "{}{}{}{}",
                 cursor::Goto(x, y),
                 style::Invert,
@@ -549,21 +678,30 @@ impl Screen {
             // want to accidentally execute rm -rf /
             return;
         }
-        let selected_id = self.selected.unwrap();
+        lazy_static! {
+            static ref RE_TAG: Regex = Regex::new(r"([^#])#[^#\s]+").unwrap();
+        };
+        let Selection { selected_id, .. } = self.selected.unwrap();
 
-        let content_opt = self.with_node(selected_id, |n| n.content.clone());
+        let content_opt = self.with_node(selected_id, |n| (n.url.clone(), n.content.clone()));
         if content_opt.is_none() {
             error!("tried to exec deleted node");
             return;
         }
-        let content = content_opt.unwrap();
+        let (url, content) = content_opt.unwrap();
+
+        // remove any tags from the exec
+        // except for those that are escaped as ##
+        let content = RE_TAG.replace_all(&content, "$1").replace("##", "#");
         info!("executing command: {}", content);
 
-        if content.is_empty() {
+        let handle = if content.is_empty() {
             error!("cannot execute empty command");
+            None
         } else if content.starts_with("txt:") {
             self.exec_text_editor(selected_id);
-        } else if content.starts_with("http") {
+            None
+        } else if let Some(url) = url {
             #[cfg(any(target_os = "macos",))]
             let default_open_cmd = "open";
             #[cfg(target_os = "linux")]
@@ -572,16 +710,29 @@ impl Screen {
             let default_open_cmd = "start";
 
             let browser = env::var("BROWSER").unwrap_or_else(|_| default_open_cmd.to_owned());
-            let cmd = process::Command::new(browser).arg(&content).spawn();
-            if cmd.is_err() {
-                error!("command failed to start: {}", &content);
-            }
+            let cmd = process::Command::new(browser)
+                .arg(&url)
+                .stdout(process::Stdio::null())
+                .stderr(process::Stdio::null())
+                .spawn();
+            Some(cmd)
         } else {
             let shell = env::var("SHELL").unwrap_or_else(|_| "bash".to_owned());
             let cmd = process::Command::new(shell).arg("-c").arg(&content).spawn();
-            if cmd.is_err() {
+            Some(cmd)
+        };
+        match handle {
+            Some(Err(_)) => {
                 error!("command failed to start: {}", &content);
-            }
+            },
+            Some(Ok(mut child)) => {
+                std::thread::spawn(move || {
+                    if matches!(child.wait(), Err(..)) {
+                        error!("command failed to finish: {}", &content);
+                    }
+                });
+            },
+            None => {},
         }
     }
 
@@ -672,19 +823,28 @@ impl Screen {
         }
     }
 
-    pub fn recursive_child_filter_map<F, B>(&self, node_id: NodeID, filter_map: &mut F) -> Vec<B>
+    pub fn recursive_child_filter_map<F, C, B>(
+        &self,
+        node_id: NodeID,
+        context: C,
+        filter_map: &mut F,
+    ) -> Vec<B>
     where
-        F: FnMut(&Node) -> Option<B>,
+        F: FnMut(&Node, C) -> (Option<B>, C, bool),
+        C: Copy,
     {
         trace!("recursive_child_filter_map({}, F...)", node_id);
         let mut ret = vec![];
 
         if let Some(node) = self.nodes.get(&node_id) {
-            if let Some(b) = filter_map(node) {
+            let (filtered, context, walk) = filter_map(node, context);
+            if let Some(b) = filtered {
                 ret.push(b);
             }
-            for &child_id in &node.children {
-                ret.append(&mut self.recursive_child_filter_map(child_id, filter_map));
+            if walk {
+                for &child_id in &node.children {
+                    ret.append(&mut self.recursive_child_filter_map(child_id, context, filter_map));
+                }
             }
         } else {
             debug!("queried for node {} but it is not in self.nodes", node_id);
@@ -707,7 +867,24 @@ impl Screen {
         let raw_node_opt = self.with_node(node_id, |n| n.clone());
         if let Some(raw_node) = raw_node_opt {
             let node = self.format_node(&raw_node);
-            let width = 1 + (3 * depth as u16) + node.content.len() as u16;
+            let mut width = 2 + (3 * depth as u16) + node.content.len() as u16;
+
+            if node.hide_stricken {
+                width += 1;
+            }
+            if node.free_text.is_some() {
+                width += 1;
+            }
+            if node.stricken {
+                width += 1;
+            }
+            if node.url.is_some() {
+                width += 1;
+            }
+            if node.collapsed {
+                width += 1;
+            }
+
             let mut ret = vec![width];
             let hide_stricken = self.with_node(node_id, |n| n.hide_stricken).unwrap();
             if !node.collapsed {
@@ -730,7 +907,7 @@ impl Screen {
     pub fn flush(&mut self) {
         trace!("flush()");
         if let Some(mut s) = self.stdout.take() {
-            s.flush().unwrap();
+            s.get_mut().flush().unwrap();
             self.stdout = Some(s);
         }
     }
@@ -738,9 +915,10 @@ impl Screen {
     fn unselect(&mut self) -> Option<NodeID> {
         trace!("unselect()");
         lazy_static! {
-            static ref RE_DATE: Regex = Regex::new(r"\[(\S+)\]").unwrap();
+            static ref RE_DATE: Regex = Regex::new(r"\[(\d{2}\.\d{2}\.\d{4})\]").unwrap();
+            static ref RE_URL: Regex = Regex::new(r"#url=(.*)$").unwrap();
         }
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             // nuke node if it's empty and has no children
             let deletable = self
                 .with_node_mut_no_meta(selected_id, |n| {
@@ -753,23 +931,37 @@ impl Screen {
                 return None;
             }
 
+            let mut invalidate_cache = false;
             self.with_node_mut_no_meta(selected_id, |n| {
                 // if parseable date, change date
+                let mut due_date_set = false;
                 if let Some(date) = re_matches::<String>(&RE_DATE, &*n.content).get(0) {
-                    if let Some(date) = dateparse(date.clone()) {
-                        n.content = RE_DATE.replace(&*n.content, "").trim_end().to_owned();
-                        if n.meta.finish_time.is_some() {
-                            n.meta.finish_time = Some(date);
-                        } else {
-                            let now_in_s = now().as_secs();
-                            let future_date = now_in_s + (now_in_s - date);
-                            n.meta.due = Some(future_date);
-                        }
+                    if let Ok(date) = NaiveDate::parse_from_str(date, "%d.%m.%Y") {
+                        let date = Local.from_local_date(&date).unwrap();
+                        n.meta.due_date = Some(date);
+                        due_date_set = true;
                     }
                 }
+
+                if let Some(url) = re_matches::<String>(&RE_URL, &*n.content).get(0) {
+                    n.content = RE_URL.replace(&*n.content, "").trim_end().to_owned();
+                    invalidate_cache = true;
+                    if url.is_empty() {
+                        n.url = None;
+                    } else {
+                        n.url = Some(url.to_owned());
+                    }
+                }
+
+                if !due_date_set {
+                    n.meta.due_date = None;
+                }
             });
+            if invalidate_cache {
+                self.grapheme_cache.remove(&selected_id);
+            }
         }
-        self.selected.take()
+        self.selected.take().map(|s| s.selected_id)
     }
 
     fn internal_to_screen_xy(&self, coords: Coords) -> Option<Coords> {
@@ -812,11 +1004,14 @@ impl Screen {
                         node.selected = true;
                         node_id
                     })
-                    .and_then(|id| {
-                        self.selected = Some(node_id);
+                    .map(|id| {
+                        self.selected = Some(Selection {
+                            selected_id: node_id,
+                            inserting: !self.config.modal,
+                        });
                         self.dragging_from = Some(coords);
                         self.dragging_to = Some(coords);
-                        Some(id)
+                        id
                     })
                     .or_else(|| {
                         trace!("found no node at {:?}", coords);
@@ -830,16 +1025,36 @@ impl Screen {
         None
     }
 
-    fn toggle_stricken(&mut self) {
+    fn toggle_stricken(&mut self, make_undo: bool) {
         trace!("toggle_stricken()");
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
+            if make_undo {
+                self.undo_stack.push(UndoNode::ToggleStricken(selected_id));
+            }
             self.with_node_mut(selected_id, |node| node.toggle_stricken());
+            if let Some(parent_id) = self.parent(selected_id) {
+                if let Some(child_pos) = self.with_node(parent_id, |p| {
+                    p.children
+                        .iter()
+                        .copied()
+                        .enumerate()
+                        .find(|(_, id)| *id == selected_id)
+                        .unwrap()
+                        .0
+                }) {
+                    if let Some(new_selection) =
+                        self.find_near_sibling_or_parent(parent_id, child_pos)
+                    {
+                        self.select_node(new_selection);
+                    }
+                }
+            }
         }
     }
 
     fn toggle_hide_stricken(&mut self) {
         trace!("toggle_hide_stricken()");
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             self.with_node_mut(selected_id, |node| node.toggle_hide_stricken());
         }
     }
@@ -849,7 +1064,7 @@ impl Screen {
         if let Some(node) = self.nodes.remove(&node_id) {
             // clean up any arrow state
             self.arrows
-                .retain(|&(ref from, ref to)| from != &node_id && to != &node_id);
+                .retain(|&(ref from, ref to, _)| from != &node_id && to != &node_id);
 
             // remove from tag_db
             self.tag_db.remove(node_id);
@@ -862,32 +1077,75 @@ impl Screen {
         }
     }
 
+    fn find_near_sibling_or_parent(&self, parent_id: NodeID, child_pos: usize) -> Option<NodeID> {
+        self.with_node(parent_id, |p| {
+            if p.children.is_empty() {
+                parent_id
+            } else if !p.hide_stricken {
+                p.children[min(child_pos, p.children.len() - 1)]
+            } else {
+                let forward_search = p
+                    .children
+                    .iter()
+                    .copied()
+                    .skip(child_pos)
+                    .find(|id| self.with_node(*id, |sibling| !sibling.stricken) == Some(true));
+                forward_search
+                    .or_else(|| {
+                        p.children.iter().copied().take(child_pos).rfind(|id| {
+                            self.with_node(*id, |sibling| !sibling.stricken) == Some(true)
+                        })
+                    })
+                    .unwrap_or(parent_id)
+            }
+        })
+    }
+
     fn delete_selected(&mut self, reselect: bool) {
         trace!("delete_selected()");
-        if let Some(selected_id) = self.selected.take() {
-            let (_, height) = self.drawable_subtree_dims(selected_id).unwrap();
-            let coords = self.drawn_at.remove(&selected_id);
+        if let Some(Selection { selected_id, .. }) = self.selected.take() {
+            self.drawn_at.remove(&selected_id);
             // remove ref from parent
             if let Some(parent_id) = self.parent(selected_id) {
                 trace!("deleting node {} from parent {}", selected_id, parent_id);
-                self.with_node_mut_no_meta(parent_id, |p| p.children.retain(|c| c != &selected_id))
+                let child_pos = self
+                    .with_node_mut_no_meta(parent_id, |p| {
+                        let self_pos = p
+                            .children
+                            .iter()
+                            .enumerate()
+                            .find(|(_, id)| **id == selected_id)
+                            .unwrap()
+                            .0;
+                        p.children.remove(self_pos);
+                        self_pos
+                    })
                     .unwrap();
+                if reselect {
+                    if let Some(next_selection) =
+                        self.find_near_sibling_or_parent(parent_id, child_pos)
+                    {
+                        self.select_node(next_selection);
+                    }
+                }
             }
             // remove children
             self.delete_recursive(selected_id);
-            if let Some((x, y)) = coords {
-                if reselect {
-                    self.click_select((x, y + height));
-                }
-            }
-            self.undo_stack.push(selected_id);
+            self.undo_stack.push(UndoNode::Delete(selected_id));
         }
     }
 
-    fn undo_delete(&mut self) {
-        if let Some(node_id) = self.undo_stack.pop() {
-            self.recursive_restore(node_id).unwrap();
-            self.select_node(node_id);
+    fn undo(&mut self) {
+        match self.undo_stack.pop() {
+            Some(UndoNode::Delete(node_id)) => {
+                self.recursive_restore(node_id).unwrap();
+                self.select_node(node_id);
+            },
+            Some(UndoNode::ToggleStricken(node_id)) => {
+                self.select_node(node_id);
+                self.toggle_stricken(false);
+            },
+            None => {},
         }
     }
 
@@ -929,8 +1187,6 @@ impl Screen {
         for (num_events, c) in stdin.events().enumerate() {
             let evt = c.unwrap();
 
-            self.dims = terminal_size().unwrap();
-
             let should_break = !self.handle_event(evt);
 
             self.draw();
@@ -955,12 +1211,12 @@ impl Screen {
             }
         }
         trace!("leaving stdin.events() loop");
-        print!("{}{}", cursor::Goto(1, 1), clear::All);
+        write!(self.assume_stdout(), "{}{}", cursor::Goto(1, 1), clear::All);
     }
 
     fn toggle_collapsed(&mut self) {
         trace!("toggle_collapsed()");
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             self.with_node_mut_no_meta(selected_id, |node| node.toggle_collapsed());
         }
     }
@@ -970,7 +1226,10 @@ impl Screen {
     }
 
     fn create_child(&mut self) {
-        if let Some(mut selected_id) = self.selected {
+        if let Some(Selection {
+            mut selected_id, ..
+        }) = self.selected
+        {
             if self
                 .with_node(selected_id, |n| n.content.is_empty())
                 .unwrap()
@@ -1005,9 +1264,10 @@ impl Screen {
             self.with_node_mut_no_meta(node_id, |node| node.parent_id = selected_id);
             let added = self.with_node_mut_no_meta(selected_id, |selected| {
                 selected.children.push(node_id);
+                selected.collapsed = false;
             });
             if added.is_some() {
-                self.select_node(node_id);
+                self.select_node_ensure_inserting(node_id);
             } else {
                 self.delete_recursive(node_id);
             }
@@ -1015,7 +1275,10 @@ impl Screen {
     }
 
     fn create_sibling(&mut self) {
-        if let Some(mut selected_id) = self.selected {
+        if let Some(Selection {
+            mut selected_id, ..
+        }) = self.selected
+        {
             if self
                 .with_node(selected_id, |n| n.content.is_empty())
                 .unwrap()
@@ -1027,7 +1290,7 @@ impl Screen {
                     // because that's not underneath the drawing root
                     return;
                 }
-                self.select_node(sel_parent);
+                self.select_node_ensure_inserting(sel_parent);
                 selected_id = sel_parent;
             }
             let selected_id = selected_id;
@@ -1052,7 +1315,7 @@ impl Screen {
                     parent.children.insert(idx + 1, node_id);
                 });
                 if added.is_some() {
-                    self.select_node(node_id);
+                    self.select_node_ensure_inserting(node_id);
                 } else {
                     self.delete_recursive(node_id);
                 }
@@ -1101,12 +1364,12 @@ impl Screen {
             node.parent_id = root;
         });
         self.with_node_mut_no_meta(root, |root| root.children.push(node_id));
-        self.select_node(node_id);
+        self.select_node_ensure_inserting(node_id);
     }
 
     fn backspace(&mut self) {
         trace!("backspace");
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             if let Some(content) = self.with_node_mut(selected_id, |node| {
                 let content = node.content.clone();
                 let chars = content.chars();
@@ -1123,7 +1386,7 @@ impl Screen {
 
     fn append(&mut self, c: char) {
         trace!("append({})", c);
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             if let Some(content) = self.with_node_mut(selected_id, |node| {
                 node.content.push(c);
                 node.content.clone()
@@ -1212,7 +1475,7 @@ impl Screen {
         let dx = to.0 as i16 - from.0 as i16;
         let dy = to.1 as i16 - from.1 as i16;
 
-        let selected_id = if let Some(selected_id) = self.selected {
+        let selected_id = if let Some(Selection { selected_id, .. }) = self.selected {
             if self.is_parent(self.drawing_root, selected_id) {
                 selected_id
             } else {
@@ -1273,13 +1536,35 @@ impl Screen {
     }
 
     fn select_parent(&mut self) {
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             // If no parent, this should be a no-op.
             if let Some(parent_id) = self.parent(selected_id) {
                 // If we're at a toplevel task (i.e., 0 is its parent ID), we don't want to
                 // deselect it.
                 if parent_id != 0 {
                     self.select_node(parent_id);
+                }
+            }
+        }
+    }
+
+    fn select_first_sibling(&mut self) {
+        if let Some(Selection { selected_id, .. }) = self.selected {
+            if let Some(parent_id) = self.parent(selected_id) {
+                if let Some(parent) = self.nodes.get(&parent_id) {
+                    let choose = *parent.children.first().unwrap();
+                    self.select_node(choose);
+                }
+            }
+        }
+    }
+
+    fn select_last_sibling(&mut self) {
+        if let Some(Selection { selected_id, .. }) = self.selected {
+            if let Some(parent_id) = self.parent(selected_id) {
+                if let Some(parent) = self.nodes.get(&parent_id) {
+                    let choose = *parent.children.last().unwrap();
+                    self.select_node(choose);
                 }
             }
         }
@@ -1295,7 +1580,7 @@ impl Screen {
 
     fn select_neighbor(&mut self, dir: SearchDirection) -> Option<NodeID> {
         use SearchDirection::*;
-        let selected_id = self.selected?;
+        let selected_id = self.selected?.selected_id;
         let parent = self.nodes.get(&self.parent(selected_id)?)?;
 
         let selected_idx = parent.children.iter().position(|&id| id == selected_id)? as u64;
@@ -1337,14 +1622,6 @@ impl Screen {
         }
     }
 
-    fn click_select(&mut self, coords: Coords) -> Option<NodeID> {
-        trace!("click_select({:?})", coords);
-        let result = self.try_select(coords);
-        self.dragging_from.take();
-        self.dragging_to.take();
-        result
-    }
-
     fn scroll_up(&mut self) {
         self.view_y = max(self.view_y, self.dims.1 / 2) - self.dims.1 / 2;
         self.unselect();
@@ -1358,7 +1635,7 @@ impl Screen {
     }
 
     fn scroll_to_selected(&mut self) -> bool {
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             self.scroll_to_node(selected_id)
         } else {
             false
@@ -1394,17 +1671,13 @@ impl Screen {
             }
         }
 
-        // save old location and jump
-        let old_select = self.unselect().unwrap_or(0);
-        let breadcrumb = (self.drawing_root, old_select, self.view_y);
-        self.focus_stack.push(breadcrumb);
         self.drawing_root = cursor;
         self.select_node(node_id);
         self.draw();
     }
 
     fn raise_selected(&mut self) {
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             if !self.exists(selected_id) {
                 warn!("tried to raise deleted node");
                 return;
@@ -1414,20 +1687,43 @@ impl Screen {
                 // principle: don't modify things that are above the visible scope
                 return;
             }
-            self.with_node_mut_no_meta(parent_id, |parent| {
+
+            if let Some((swap_from, swap_to)) = self.with_node(parent_id, |parent| {
                 let idx = parent
                     .children
                     .iter()
                     .position(|&e| e == selected_id)
                     .unwrap();
+
                 let to = max(idx, 1) - 1;
-                parent.children.swap(idx, to);
-            });
+                let hide_stricken = parent.hide_stricken;
+                if !hide_stricken {
+                    (idx, to)
+                } else {
+                    (
+                        idx,
+                        parent.children[..idx]
+                            .iter()
+                            .enumerate()
+                            .rfind(|(_, child_id)| {
+                                self.with_node(**child_id, |child| child.stricken) == Some(false)
+                            })
+                            .map(|(child_idx, _)| child_idx)
+                            .unwrap_or(0),
+                    )
+                }
+            }) {
+                self.with_node_mut_no_meta(parent_id, |parent| {
+                    for i in (swap_to..swap_from).rev() {
+                        parent.children.swap(i, i + 1);
+                    }
+                });
+            }
         }
     }
 
     fn lower_selected(&mut self) {
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             if !self.exists(selected_id) {
                 warn!("tried to lower deleted node");
                 return;
@@ -1437,18 +1733,45 @@ impl Screen {
                 // principle: don't modify things that are above the visible scope
                 return;
             }
-            self.with_node_mut_no_meta(parent_id, |parent| {
+
+            if let Some((swap_from, swap_to)) = self.with_node(parent_id, |parent| {
                 let idx = parent
                     .children
                     .iter()
                     .position(|&e| e == selected_id)
                     .unwrap();
+
                 let len = parent.children.len();
-                if len > 1 {
-                    let to = min(idx, len - 2) + 1;
-                    parent.children.swap(idx, to);
+                if len <= 1 {
+                    return (idx, 1);
                 }
-            });
+
+                let to = min(idx, len - 2) + 1;
+                let hide_stricken = parent.hide_stricken;
+                if !hide_stricken {
+                    (idx, to)
+                } else {
+                    (
+                        idx,
+                        parent
+                            .children
+                            .iter()
+                            .enumerate()
+                            .skip(idx + 1)
+                            .find(|(_, child_id)| {
+                                self.with_node(**child_id, |child| child.stricken) == Some(false)
+                            })
+                            .map(|(child_idx, _)| child_idx)
+                            .unwrap_or(len - 1),
+                    )
+                }
+            }) {
+                self.with_node_mut_no_meta(parent_id, |parent| {
+                    for i in swap_from..swap_to {
+                        parent.children.swap(i, i + 1);
+                    }
+                });
+            }
         }
     }
 
@@ -1524,7 +1847,7 @@ impl Screen {
 
         let cur = self
             .selected
-            .and_then(|s| self.bounds_for_lookup(s))
+            .and_then(|s| self.bounds_for_lookup(s.selected_id))
             .unwrap_or((rel_def_coords, rel_def_coords));
 
         let mut node_costs = vec![];
@@ -1552,7 +1875,31 @@ impl Screen {
                 .with_node_mut_no_meta(node_id, |node| node.selected = true)
                 .is_some()
             {
-                self.selected = Some(node_id);
+                self.selected = Some(Selection {
+                    selected_id: node_id,
+                    inserting: !self.config.modal,
+                });
+            }
+        }
+    }
+
+    fn select_node_ensure_inserting(&mut self, node_id: NodeID) {
+        trace!("select_node({})", node_id);
+        self.unselect();
+        if node_id != 0 {
+            // it's possible that unselecting above actually caused
+            // this node to be deleted, due to its parent (previous
+            // selection) being empty.  To account for this, we need
+            // to only set self.selected to node_id if the with_node
+            // succeeds.
+            if self
+                .with_node_mut_no_meta(node_id, |node| node.selected = true)
+                .is_some()
+            {
+                self.selected = Some(Selection {
+                    selected_id: node_id,
+                    inserting: true,
+                });
             }
         }
     }
@@ -1563,7 +1910,7 @@ impl Screen {
             warn!("click way off-screen");
             return;
         }
-        let old = self.selected;
+        let old = self.selected.map(|s| s.selected_id);
         let new = self.try_select(coords);
         if old.is_none() && self.dragging_from.is_none() {
             self.create_anchor(coords);
@@ -1625,7 +1972,7 @@ impl Screen {
 
         debug!("testing that all arrows are existing nodes");
         // no arrows that don't exist
-        for &(ref a, ref b) in &self.arrows {
+        for &(ref a, ref b, _) in &self.arrows {
             assert!(self.nodes.get(a).is_some());
             assert!(self.nodes.get(b).is_some());
         }
@@ -1651,15 +1998,17 @@ impl Screen {
 
     pub fn cleanup(&mut self) {
         trace!("cleanup()");
-        print!("{}", cursor::Show);
-        self.stdout.take().unwrap().flush().unwrap();
+        write!(self.assume_stdout(), "{}", cursor::Show);
+        self.stdout.take().unwrap().get_mut().flush().unwrap();
     }
 
     pub fn start_raw_mode(&mut self) {
         if self.stdout.is_none() {
-            self.stdout = Some(MouseTerminal::from(
-                AlternateScreen::from(stdout()).into_raw_mode().unwrap(),
-            ));
+            self.stdout = Some(RefCell::new(MouseTerminal::from(
+                AlternateScreen::from(BufWriter::with_capacity(8192 * 1024, stdout()))
+                    .into_raw_mode()
+                    .unwrap(),
+            )));
         }
     }
 
@@ -1669,24 +2018,28 @@ impl Screen {
 
     pub fn add_or_remove_arrow(&mut self) {
         if self.drawing_arrow.is_none() {
-            self.drawing_arrow = self.selected;
+            self.drawing_arrow = self.selected.map(|s| s.selected_id);
             return;
         }
         let from = self.drawing_arrow.take().unwrap();
-        if let Some(arrow) = self.selected.map(|to| (from, to)) {
+        if let Some(arrow) = self.selected.map(|to| (from, to.selected_id)) {
             let (from, to) = arrow;
             if self.nodes.get(&from).is_some() && self.nodes.get(&to).is_some() {
-                let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
-                    if nl1 == &from && nl2 == &to {
-                        true
-                    } else {
-                        acc
-                    }
-                });
+                let contains = self
+                    .arrows
+                    .iter()
+                    .fold(false, |acc, &(ref nl1, ref nl2, _)| {
+                        if nl1 == &from && nl2 == &to {
+                            true
+                        } else {
+                            acc
+                        }
+                    });
                 if contains {
-                    self.arrows.retain(|e| e != &arrow);
+                    self.arrows
+                        .retain(|(old_from, old_to, _)| (*old_from, *old_to) != arrow);
                 } else {
-                    self.arrows.push(arrow);
+                    self.arrows.push((from, to, random_fg_color()));
                 }
             }
         }
@@ -1712,6 +2065,167 @@ impl Screen {
         }
     }
 
+    fn reserve_and_draw_calendar(&mut self) {
+        if !self.show_calendar {
+            return;
+        }
+        const CALENDAR_WIDTH: u16 = 1 + // vertical line
+            4 + // week numbers + padding
+            3*7; // days
+        if self.dims.0 < CALENDAR_WIDTH {
+            return;
+        }
+        self.dims.0 -= CALENDAR_WIDTH;
+
+        let today = Local::today();
+        let mut date = today
+            .with_day(max(
+                1i32,
+                today.day() as i32 - today.weekday().num_days_from_monday() as i32,
+            ) as u32)
+            .unwrap();
+        let mut line = 2;
+        let max_line = self.dims.1;
+        'make_month: loop {
+            if line >= max_line {
+                break;
+            }
+
+            let (month, year) = (date.month(), date.year());
+            let month_assigned_days = self.recursive_child_filter_map(
+                self.drawing_root,
+                None,
+                &mut |nd: &Node, default_date: Option<Date<Local>>| {
+                    let date = nd.meta.due_date.or(default_date);
+                    if let Some(assigned) = date {
+                        if !nd.stricken
+                            && nd.children.is_empty()
+                            && assigned.year() == year
+                            && assigned.month() == month
+                        {
+                            (Some(assigned.day0()), date, false)
+                        } else if !nd.stricken {
+                            (None, date, true)
+                        } else {
+                            (None, None, false)
+                        }
+                    } else {
+                        (None, None, !nd.stricken)
+                    }
+                },
+            );
+            let mut counts_by_day = [0usize; 31];
+            for day in month_assigned_days {
+                counts_by_day[day as usize] += 1;
+            }
+
+            let month_header = format!(
+                "{}│{}{:^width$}{}",
+                cursor::Goto(self.dims.0, line),
+                style::Bold,
+                date.format("%B %Y").to_string(),
+                style::Reset,
+                width = (CALENDAR_WIDTH - 1) as usize,
+            );
+
+            writeln!(self.assume_stdout(), "{}", month_header);
+            line += 1;
+            if line >= max_line {
+                break;
+            }
+
+            let weekday_header = format!(
+                "{}│   │  M  T  W  T  F  S  S",
+                cursor::Goto(self.dims.0, line)
+            );
+            writeln!(self.assume_stdout(), "{}", weekday_header);
+            line += 1;
+            if line >= max_line {
+                break;
+            }
+
+            let week_header = format!(
+                "{}│{:3}│{}│   │",
+                cursor::Goto(self.dims.0, line),
+                date.iso_week().week(),
+                cursor::Goto(self.dims.0, line + 1),
+            );
+            write!(self.assume_stdout(), "{}", week_header);
+
+            loop {
+                if line >= max_line {
+                    break 'make_month;
+                }
+
+                let offset_x = self.dims.0 + 5 + date.weekday().num_days_from_monday() as u16 * 3;
+                let day_label = format!(
+                    "{}{}{:3}{}",
+                    cursor::Goto(offset_x, line),
+                    if today == date {
+                        &style::Bold as &dyn std::fmt::Display
+                    } else {
+                        &style::Reset as &dyn std::fmt::Display
+                    },
+                    date.day(),
+                    style::Reset,
+                );
+                write!(self.assume_stdout(), "{}", day_label);
+
+                if line + 1 < max_line {
+                    let assigned = counts_by_day[date.day0() as usize];
+                    if assigned > 0 && assigned < 100 {
+                        let day_assigned_tasks_label = format!(
+                            "{}{}{:3}{}",
+                            cursor::Goto(offset_x, line + 1),
+                            style::Italic,
+                            assigned,
+                            style::Reset,
+                        );
+                        write!(self.assume_stdout(), "{}", day_assigned_tasks_label);
+                    } else if assigned > 0 {
+                        let day_assigned_tasks_label = format!(
+                            "{}{}{:3}{}",
+                            cursor::Goto(offset_x, line + 1),
+                            style::Italic,
+                            "?!",
+                            style::Reset,
+                        );
+                        write!(self.assume_stdout(), "{}", day_assigned_tasks_label);
+                    }
+                }
+
+                let prev_month = date.month();
+                date = date.succ();
+
+                if prev_month != date.month() {
+                    break;
+                }
+
+                if date.weekday() == Weekday::Mon {
+                    line += 2;
+                    if line >= max_line {
+                        break 'make_month;
+                    }
+
+                    let week_header = format!(
+                        "{}│{:3}│{}│   │",
+                        cursor::Goto(self.dims.0, line),
+                        date.iso_week().week(),
+                        cursor::Goto(self.dims.0, line + 1),
+                    );
+                    write!(self.assume_stdout(), "{}", week_header);
+                }
+            }
+            line += 2;
+            if line >= max_line {
+                break;
+            }
+
+            writeln!(self.assume_stdout(), "{}│", cursor::Goto(self.dims.0, line));
+            line += 1;
+        }
+    }
+
     // *
     // *
     // *┌──┐
@@ -1731,42 +2245,50 @@ impl Screen {
         self.lookup.clear();
         self.drawn_at.clear();
         self.lowest_drawn = 0;
-        print!("{}", clear::All);
+        write!(self.assume_stdout(), "{}", clear::All);
 
-        // print visible nodes
-        self.draw_children_of_root();
+        self.dims = terminal_size().unwrap();
 
         // TODO figure out why header doesn't get shown
         // when a root node is NOT drawn at 1,1
         // (this only happens when draw_header() is above
         // the call to draw_children_of_root()...
+
         self.draw_header();
+        self.reserve_and_draw_calendar();
+
+        // print visible nodes
+        self.draw_children_of_root();
 
         // print logs
         if self.show_logs && self.dims.0 > 4 && self.dims.1 > 7 {
             let mut sep = format!(
                 "{}{}logs{}",
-                cursor::Goto(0, self.dims.1 - 6),
+                cursor::Goto(1, self.dims.1 - 6),
                 style::Invert,
                 style::Reset
             );
             for _ in 0..self.dims.0 - 4 {
                 sep.push('█');
             }
-            println!("{}", sep);
+            writeln!(self.assume_stdout(), "{}", sep);
             {
                 let logs = logging::read_logs();
                 for msg in logs.iter().rev() {
                     let line_width = min(msg.len(), self.dims.0 as usize);
-                    println!("\r{}", msg[..line_width as usize].to_owned());
+                    writeln!(
+                        self.assume_stdout(),
+                        "\r{}",
+                        msg[..line_width as usize].to_owned()
+                    );
                 }
             }
         }
 
         // print arrows
-        for &(ref from, ref to) in &self.arrows {
+        for &(ref from, ref to, ref color) in &self.arrows {
             let (path, (direction1, direction2)) = self.path_between_nodes(*from, *to);
-            self.draw_path(path, direction1, direction2);
+            self.draw_path(path, direction1, direction2, color);
         }
 
         // conditionally print drag dest arrow
@@ -1778,11 +2300,11 @@ impl Screen {
                     if let Some(to_node) = self.lookup(to) {
                         let (path, (direction1, direction2)) =
                             self.path_between_nodes(*from_node, *to_node);
-                        self.draw_path(path, direction1, direction2);
+                        self.draw_path(path, direction1, direction2, &random_fg_color());
                     } else {
                         let (path, (direction1, direction2)) =
                             self.path_from_node_to_point(*from_node, to);
-                        self.draw_path(path, direction1, direction2);
+                        self.draw_path(path, direction1, direction2, &random_fg_color());
                     }
                 } else {
                     warn!("dragging_from set, but NOT dragging_to");
@@ -1795,7 +2317,7 @@ impl Screen {
             self.draw_scrollbar();
         }
 
-        print!("{}", cursor::Hide);
+        write!(self.assume_stdout(), "{}", cursor::Hide);
         self.flush();
 
         // let after = time::get_time();
@@ -1803,7 +2325,7 @@ impl Screen {
         // debug!("draw time: {}", after - before);
     }
 
-    fn draw_scrollbar(&self) {
+    fn draw_scrollbar(&mut self) {
         let bar_height = max(self.dims.1, 1) - 1;
         let normalized_lowest = f64::from(max(self.lowest_drawn, 1));
         let fraction_viewable = f64::from(self.dims.1) / normalized_lowest;
@@ -1815,9 +2337,9 @@ impl Screen {
 
         for (i, y) in (2..bar_height + 2).enumerate() {
             if i >= shade_start && i < shade_end {
-                print!("{}┃", cursor::Goto(self.dims.0, y));
+                write!(self.assume_stdout(), "{}┃", cursor::Goto(self.dims.0, y));
             } else {
-                print!("{}│", cursor::Goto(self.dims.0, y));
+                write!(self.assume_stdout(), "{}│", cursor::Goto(self.dims.0, y));
             }
         }
     }
@@ -1883,17 +2405,21 @@ impl Screen {
 
         let reset = &*format!("{}", color::Fg(color::Reset));
         let mut pre_meta = String::new();
+        let mut post_content = String::new();
         let mut buf = String::new();
 
         // only actually print it if we're in-view
         if let Some((x, y)) = self.internal_to_screen_xy(internal_coords) {
+            if x < 1 || y < 1 {
+                warn!("drawn at {} {}", x, y);
+            }
             write!(pre_meta, "{}{}", cursor::Goto(x, y), color).unwrap();
-            if node.selected {
+            if node.selected && !(self.config.modal && self.is_insert_mode()) {
                 write!(&mut pre_meta, "{}", style::Invert).unwrap();
             }
             write!(&mut buf, "{}", pre_meta).unwrap();
             write!(&mut buf, "{}", prefix).unwrap();
-            if prefix != "" {
+            if !prefix.is_empty() {
                 // only anchor will have blank prefix
                 if last {
                     write!(&mut buf, "└─").unwrap();
@@ -1902,22 +2428,32 @@ impl Screen {
                 }
             }
             if node.stricken {
-                write!(&mut buf, "☠").unwrap();
-            } else if node.collapsed {
-                write!(&mut buf, "⊞").unwrap();
-            } else if node.hide_stricken {
-                write!(&mut buf, "⚔").unwrap();
-            } else if node.free_text.is_some() {
-                write!(&mut buf, "✏").unwrap();
-            } else {
-                write!(&mut buf, " ").unwrap();
+                buf.write_str(&self.config.stricken).unwrap();
             }
-            // keep color for selected & tree root Fg
-            if !node.selected && prefix != "" {
-                write!(&mut buf, "{}", reset).unwrap();
+            if node.collapsed {
+                buf.write_str(&self.config.collapsed).unwrap();
+            }
+            if node.hide_stricken {
+                buf.write_str(&self.config.hide_stricken).unwrap();
+            }
+            if node.free_text.is_some() {
+                buf.write_str(&self.config.free_text).unwrap();
+            }
+            if node.url.is_some() {
+                buf.write_str(&self.config.url).unwrap();
             }
 
             write!(&mut buf, "{}", node.content).unwrap();
+
+            // write cursor if this node is being inserted to
+            if node.selected && self.config.modal && self.is_insert_mode() {
+                write!(&mut post_content, "{} {}", style::Invert, reset).unwrap();
+                write!(&mut buf, "{}", post_content).unwrap();
+            }
+            // keep color for selected & tree root Fg
+            if !node.selected && !prefix.is_empty() {
+                write!(&mut buf, "{}", reset).unwrap();
+            }
 
             let max_width = (max(self.dims.0, 1 + x) - 1 - x) as usize;
             let visible_graphemes =
@@ -1925,7 +2461,13 @@ impl Screen {
                     .get(&node.id)
                     .cloned()
                     .unwrap_or_else(|| {
-                        let visible = buf.replace(reset, "").replace(&*pre_meta, "");
+                        let visible = if !post_content.is_empty() {
+                            buf.replace(&*post_content, " ")
+                                .replace(reset, "")
+                                .replace(&*pre_meta, "")
+                        } else {
+                            buf.replace(reset, "").replace(&*pre_meta, "")
+                        };
                         let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
                         self.grapheme_cache.insert(node.id, vg);
                         vg
@@ -1939,7 +2481,7 @@ impl Screen {
                 buf.push('…');
             }
 
-            print!("{}{}", buf, style::Reset);
+            write!(self.assume_stdout(), "{}{}", buf, style::Reset);
         }
 
         let visible_graphemes = self
@@ -1947,7 +2489,13 @@ impl Screen {
             .get(&node.id)
             .cloned()
             .unwrap_or_else(|| {
-                let visible = buf.replace(reset, "").replace(&*pre_meta, "");
+                let visible = if !post_content.is_empty() {
+                    buf.replace(&*post_content, " ")
+                        .replace(reset, "")
+                        .replace(&*pre_meta, "")
+                } else {
+                    buf.replace(reset, "").replace(&*pre_meta, "")
+                };
                 let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
                 self.grapheme_cache.insert(node.id, vg);
                 vg
@@ -1965,8 +2513,8 @@ impl Screen {
         let mut prefix = prefix;
         if last {
             prefix.push_str("   ");
-        } else if prefix == "" {
-            prefix.push_str(" ");
+        } else if prefix.is_empty() {
+            prefix.push(' ');
         } else {
             prefix.push_str("│  ");
         }
@@ -1992,60 +2540,81 @@ impl Screen {
         drawn
     }
 
-    fn draw_path(&self, internal_path: Vec<Coords>, start_dir: Dir, dest_dir: Dir) {
+    fn draw_path(&self, internal_path: Vec<Coords>, start_dir: Dir, dest_dir: Dir, color: &str) {
         let path: Vec<_> = internal_path
             .iter()
             .filter_map(|&c| self.internal_to_screen_xy(c))
             .collect();
         trace!("draw_path({:?}, {:?}, {:?})", path, start_dir, dest_dir);
-        print!("{}", random_fg_color());
-        if path.len() == 1 {
-            print!("{} ↺", cursor::Goto(path[0].0, path[0].1))
-        } else if path.len() > 1 {
-            let first = if path[1].1 > path[0].1 {
-                match start_dir {
-                    Dir::R => '┐',
-                    Dir::L => '┌',
-                }
-            } else if path[1].1 < path[0].1 {
-                match start_dir {
-                    Dir::R => '┘',
-                    Dir::L => '└',
-                }
-            } else {
-                '─'
-            };
-
-            print!("{}{}", cursor::Goto(path[0].0, path[0].1), first);
-            for items in path.windows(3) {
-                let (p, this, n) = (items[0], items[1], items[2]);
-                let c = if p.0 == n.0 {
-                    '│'
-                } else if p.1 == n.1 {
-                    '─'
-                } else if (this.1 < p.1 && this.0 < n.0) || (this.0 < p.0 && this.1 < n.1) {
-                    '┌' // up+right or left+down
-                } else if (this.0 > p.0 && this.1 > n.1) || (this.1 > p.1 && this.0 > n.0) {
-                    '┘' // right+up or down+left
-                } else if (this.0 > p.0 && this.1 < n.1) || (this.1 < p.1 && this.0 > n.0) {
-                    '┐' // right+down or up+left
-                } else {
-                    '└' // down+right or left+up
+        write!(self.assume_stdout(), "{}", color);
+        match path.len().cmp(&1) {
+            Ordering::Equal => {
+                write!(
+                    self.assume_stdout(),
+                    "{} ↺",
+                    cursor::Goto(path[0].0, path[0].1)
+                );
+            },
+            Ordering::Greater => {
+                let first = match path[1].1.cmp(&path[0].1) {
+                    Ordering::Greater => match start_dir {
+                        Dir::R => '┐',
+                        Dir::L => '┌',
+                    },
+                    Ordering::Less => match start_dir {
+                        Dir::R => '┘',
+                        Dir::L => '└',
+                    },
+                    Ordering::Equal => '─',
                 };
 
-                print!("{}{}", cursor::Goto(this.0, this.1), c)
-            }
-            let (end_x, end_y) = (path[path.len() - 1].0, path[path.len() - 1].1);
-            let end_char = match dest_dir {
-                Dir::L => '>',
-                Dir::R => '<',
-            };
-            print!("{}{}", cursor::Goto(end_x, end_y), end_char);
-        }
-        print!("{}", color::Fg(color::Reset));
+                write!(
+                    self.assume_stdout(),
+                    "{}{}",
+                    cursor::Goto(path[0].0, path[0].1),
+                    first
+                );
+                for items in path.windows(3) {
+                    let (p, this, n) = (items[0], items[1], items[2]);
+                    let c = if p.0 == n.0 {
+                        '│'
+                    } else if p.1 == n.1 {
+                        '─'
+                    } else if (this.1 < p.1 && this.0 < n.0) || (this.0 < p.0 && this.1 < n.1) {
+                        '┌' // up+right or left+down
+                    } else if (this.0 > p.0 && this.1 > n.1) || (this.1 > p.1 && this.0 > n.0) {
+                        '┘' // right+up or down+left
+                    } else if (this.0 > p.0 && this.1 < n.1) || (this.1 < p.1 && this.0 > n.0) {
+                        '┐' // right+down or up+left
+                    } else {
+                        '└' // down+right or left+up
+                    };
+
+                    write!(
+                        self.assume_stdout(),
+                        "{}{}",
+                        cursor::Goto(this.0, this.1),
+                        c
+                    );
+                }
+                let (end_x, end_y) = (path[path.len() - 1].0, path[path.len() - 1].1);
+                let end_char = match dest_dir {
+                    Dir::L => '>',
+                    Dir::R => '<',
+                };
+                write!(
+                    self.assume_stdout(),
+                    "{}{}",
+                    cursor::Goto(end_x, end_y),
+                    end_char
+                );
+            },
+            _ => {},
+        };
+        write!(self.assume_stdout(), "{}", color::Fg(color::Reset));
     }
 
-    fn draw_header(&self) {
+    fn draw_header(&mut self) {
         trace!("draw_header()");
         let mut header_text = self
             .with_node(self.drawing_root, |node| node.content.clone())
@@ -2054,16 +2623,43 @@ impl Screen {
         if self.should_auto_arrange() {
             header_text.push_str(" [auto-arrange] ");
         }
+        if self.config.modal && self.is_insert_mode() {
+            header_text.push_str(" [insert] ");
+        }
+        match self.cut {
+            Cut::Move(id) | Cut::Yank(id) => {
+                let content = &self.nodes.get(&id).unwrap().content;
+                let restricted_chars = content.chars().take(10).collect::<String>();
+                let content_ellipsized = if restricted_chars.len() < content.len() {
+                    Cow::from(format!("{}...", &restricted_chars))
+                } else {
+                    Cow::from(content)
+                };
+                header_text.push_str(&format!(
+                    " [{}: {}] ",
+                    match self.cut {
+                        Cut::Move(_) => "moving",
+                        Cut::Yank(_) => "yanking",
+                        Cut::Empty => unreachable!(),
+                    },
+                    content_ellipsized
+                ));
+            },
+            Cut::Empty => {},
+        }
 
         let (plot, finished_today) = self.last_week_of_done_tasks();
         let plot_line = format!("│{}│({} today)", plot, finished_today);
 
         header_text.push_str(&*plot_line);
 
+        let date = Local::today();
+        header_text.push_str(&format!(" {}", date.format("%-d.%-m.%Y")));
+
         if self.dims.0 > header_text.len() as u16 && self.dims.1 > 1 {
             let mut sep = format!(
                 "{}{}{}{}",
-                cursor::Goto(0, 1),
+                cursor::Goto(1, 1),
                 style::Invert,
                 header_text,
                 style::Reset
@@ -2072,7 +2668,7 @@ impl Screen {
             for _ in 0..(max(self.dims.0 as usize, text_len) - text_len) {
                 sep.push('█');
             }
-            println!("{}", sep);
+            write!(self.assume_stdout(), "{}", sep);
         }
     }
 
@@ -2189,18 +2785,24 @@ impl Screen {
         let now = now().as_secs();
         let day_in_sec = 60 * 60 * 24;
         let last_week = now - (day_in_sec * 7);
-        let tasks_finished_in_last_week = self.recursive_child_filter_map(0, &mut |n: &Node| {
-            let f = n.meta.finish_time;
-            if let Some(t) = f {
-                if t > last_week {
-                    Some(t)
+        let tasks_finished_in_last_week =
+            self.recursive_child_filter_map(0, (), &mut |n: &Node, _: ()| {
+                let f = n.meta.finish_time;
+                if let Some(t) = f {
+                    if t > last_week
+                        && !n
+                            .children
+                            .iter()
+                            .any(|ch| self.with_node(*ch, |sub_n| sub_n.stricken).unwrap())
+                    {
+                        (Some(t), (), true)
+                    } else {
+                        (None, (), true)
+                    }
                 } else {
-                    None
+                    (None, (), true)
                 }
-            } else {
-                None
-            }
-        });
+            });
         let mut counts = BTreeMap::new();
         for d in 0..7 {
             let t = now - (d * day_in_sec);
@@ -2215,7 +2817,7 @@ impl Screen {
         let today_normalized = now / day_in_sec * day_in_sec;
         let counts_clone = counts.clone();
         let finished_today = counts_clone[&today_normalized];
-        let week_line: Vec<i64> = counts.into_iter().map(|(_, v)| v).collect();
+        let week_line: Vec<i64> = counts.into_iter().rev().map(|(_, v)| v).collect();
         let plot = plot::plot_sparkline(week_line);
         (plot, finished_today as usize)
     }
@@ -2259,7 +2861,7 @@ impl Screen {
         }
         let queried_nodes = tagged_children
             .map(|tc| tc.into_iter().collect())
-            .unwrap_or_else(|| vec![]);
+            .unwrap_or_else(Vec::new);
 
         let mut since_opt = None;
         let mut until_opt = None;
@@ -2322,7 +2924,7 @@ impl Screen {
             let now = now().as_secs();
             let buckets = n_opt.cloned().unwrap_or(7);
             let since = since_opt.unwrap_or_else(|| now - 60 * 60 * 24 * 7);
-            let until = until_opt.unwrap_or_else(|| now);
+            let until = until_opt.unwrap_or(now);
 
             node.content = match plot.as_str() {
                 "done" => self.plot(queried_nodes, PlotType::Done, buckets, since, until),
@@ -2343,27 +2945,37 @@ impl Screen {
     ) -> String {
         let mut nodes = vec![];
         for &c in &queried_nodes {
-            let mut new = self.recursive_child_filter_map(c, &mut |n: &Node| match kind {
-                PlotType::Done => {
-                    if let Some(ft) = n.meta.finish_time {
-                        if ft >= since {
-                            return Some(ft as i64);
+            let mut new =
+                self.recursive_child_filter_map(c, (), &mut |n: &Node, _: ()| match kind {
+                    PlotType::Done => {
+                        if let Some(ft) = n.meta.finish_time {
+                            if ft >= since
+                                && !n
+                                    .children
+                                    .iter()
+                                    .any(|ch| self.with_node(*ch, |sub_n| sub_n.stricken).unwrap())
+                            {
+                                return (Some(ft as i64), (), true);
+                            }
                         }
-                    }
-                    None
-                }
-                PlotType::New => {
-                    if n.meta.ctime >= since {
-                        Some(n.meta.ctime as i64)
-                    } else {
-                        None
-                    }
-                }
-            });
+                        (None, (), true)
+                    },
+                    PlotType::New => {
+                        if n.meta.ctime >= since {
+                            (Some(n.meta.ctime as i64), (), true)
+                        } else {
+                            (None, (), true)
+                        }
+                    },
+                });
             nodes.append(&mut new);
         }
-        let plot = plot::bounded_count_sparkline(nodes, since as i64, until as i64, buckets);
+        let plot = plot::bounded_count_sparkline(nodes, until as i64, since as i64, buckets);
         format!("|{}|", plot)
+    }
+
+    fn is_insert_mode(&self) -> bool {
+        self.selected.map(|s| s.inserting) == Some(true)
     }
 }
 

@@ -15,6 +15,7 @@ pub struct Node {
     pub free_text: Option<String>,
     pub color: String,
     pub auto_arrange: bool,
+    pub url: Option<String>,
 }
 
 impl Default for Node {
@@ -31,6 +32,7 @@ impl Default for Node {
             hide_stricken: false,
             meta: Meta::default(),
             free_text: None,
+            url: None,
             color: random_fg_color(),
             auto_arrange: true,
         }
@@ -38,7 +40,9 @@ impl Default for Node {
 }
 
 impl Node {
-    pub fn toggle_collapsed(&mut self) { self.collapsed = !self.collapsed; }
+    pub fn toggle_collapsed(&mut self) {
+        self.collapsed = !self.collapsed;
+    }
 
     pub fn toggle_stricken(&mut self) {
         if self.stricken {
@@ -49,5 +53,17 @@ impl Node {
         self.stricken = !self.stricken;
     }
 
-    pub fn toggle_hide_stricken(&mut self) { self.hide_stricken = !self.hide_stricken; }
+    pub fn toggle_hide_stricken(&mut self) {
+        self.hide_stricken = !self.hide_stricken;
+    }
+
+    pub fn new_from(other: &Self) -> Self {
+        Node {
+            color: random_fg_color(),
+            id: 0,
+            parent_id: 0,
+            selected: false,
+            ..other.clone()
+        }
+    }
 }
