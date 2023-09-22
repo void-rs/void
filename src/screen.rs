@@ -564,12 +564,12 @@ impl Screen {
         } else if content.starts_with("txt:") {
             self.exec_text_editor(selected_id);
         } else if content.starts_with("http") {
-            #[cfg(any(target_os = "macos",))]
+            #[cfg(target_os = "macos")]
             let default_open_cmd = "open";
-            #[cfg(target_os = "linux")]
-            let default_open_cmd = "xdg-open";
             #[cfg(target_os = "windows")]
             let default_open_cmd = "start";
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            let default_open_cmd = "xdg-open";
 
             let browser = env::var("BROWSER").unwrap_or_else(|_| default_open_cmd.to_owned());
             let cmd = process::Command::new(browser).arg(&content).spawn();
