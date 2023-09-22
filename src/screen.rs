@@ -27,6 +27,12 @@ use crate::{
     Action, Config, Coords, Dir, Node, NodeID, Pack, TagDB,
 };
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+struct Selection {
+    selected_id: NodeID,
+    inserting: bool,
+}
+
 pub struct Screen {
     pub max_id: u64,
     pub nodes: HashMap<NodeID, Node>,
@@ -42,7 +48,7 @@ pub struct Screen {
     // non-pub members are ephemeral
     drawing_root: NodeID,
     show_logs: bool,
-    selected: Option<NodeID>,
+    selected: Option<Selection>,
     cut: Option<NodeID>,
     drawing_arrow: Option<NodeID>,
     lookup: HashMap<Coords, NodeID>,
@@ -169,6 +175,13 @@ impl Screen {
 
     // return of false signals to the caller that we are done in this view
     pub fn handle_event(&mut self, evt: Event) -> bool {
+        // Write character to selection
+        if let Event::Key(Key::Char(k)) = evt {
+            if self.is_insert_mode() {
+                self.append(k);
+                return true;
+            }
+        }
         match self.config.map(evt) {
             Some(e) => match e {
                 Action::LeftClick(x, y) => {
@@ -182,21 +195,37 @@ impl Screen {
                     let internal_coords = self.screen_to_internal_xy((x, y));
                     self.release(internal_coords)
                 }
-                // Write character to selection
-                Action::Char(c) if self.selected.is_some() => {
-                    self.append(c);
-                }
                 Action::Char('/') => {
                     self.search_forward();
                 }
                 Action::Char('?') => {
                     self.search_backward();
                 }
-                Action::Char(c) => {
+                Action::Char(c) if !self.config.modal => {
                     self.prefix_jump_to(c.to_string());
                 }
+                Action::Char(_) => {}
                 Action::Help => self.help(),
-                Action::UnselectRet => return self.unselect().is_some(),
+                Action::Insert => {
+                    if let Some(sel) = self.selected.as_mut() {
+                        // Invalidate the grapheme cache, because an insertion cursor is being added
+                        self.grapheme_cache.remove(&sel.selected_id);
+                        sel.inserting = true
+                    }
+                }
+
+                Action::UnselectRet
+                    if self.config.modal && self.selected.map(|s| s.inserting) == Some(true) =>
+                {
+                    if let Some(sel) = self.selected.as_mut() {
+                        // Invalidate the grapheme cache, because an insertion cursor is being removed
+                        self.grapheme_cache.remove(&sel.selected_id);
+                        sel.inserting = false
+                    }
+                }
+                Action::UnselectRet => {
+                    self.unselect();
+                }
                 Action::ScrollUp => self.scroll_up(),
                 Action::ScrollDown => self.scroll_down(),
                 Action::DeleteSelected => self.delete_selected(true),
@@ -204,7 +233,10 @@ impl Screen {
                 Action::SelectDown => self.select_down(),
                 Action::SelectLeft => self.select_left(),
                 Action::SelectRight => self.select_right(),
-                Action::EraseChar => self.backspace(),
+                Action::EraseChar if self.is_insert_mode() => {
+                    self.backspace()
+                }
+                Action::EraseChar => {}
                 Action::CreateSibling => self.create_sibling(),
                 Action::CreateChild => self.create_child(),
                 Action::CreateFreeNode => self.create_free_node(),
@@ -241,11 +273,11 @@ impl Screen {
     }
 
     fn cut_paste(&mut self) {
-        if let Some(selected_id) = self.selected {
+        if let Some(sel) = self.selected {
             if let Some(cut) = self.cut.take() {
-                self.reparent(cut, selected_id);
+                self.reparent(cut, sel.selected_id);
             } else {
-                self.cut = Some(selected_id);
+                self.cut = Some(sel.selected_id);
             }
         } else if let Some(cut) = self.cut.take() {
             let root = self.drawing_root;
@@ -549,7 +581,7 @@ impl Screen {
             // want to accidentally execute rm -rf /
             return;
         }
-        let selected_id = self.selected.unwrap();
+        let Selection { selected_id, .. } = self.selected.unwrap();
 
         let content_opt = self.with_node(selected_id, |n| n.content.clone());
         if content_opt.is_none() {
@@ -707,7 +739,7 @@ impl Screen {
         let raw_node_opt = self.with_node(node_id, |n| n.clone());
         if let Some(raw_node) = raw_node_opt {
             let node = self.format_node(&raw_node);
-            let width = 1 + (3 * depth as u16) + node.content.len() as u16;
+            let width = 2 + (3 * depth as u16) + node.content.len() as u16;
             let mut ret = vec![width];
             let hide_stricken = self.with_node(node_id, |n| n.hide_stricken).unwrap();
             if !node.collapsed {
@@ -740,7 +772,7 @@ impl Screen {
         lazy_static! {
             static ref RE_DATE: Regex = Regex::new(r"\[(\S+)\]").unwrap();
         }
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             // nuke node if it's empty and has no children
             let deletable = self
                 .with_node_mut_no_meta(selected_id, |n| {
@@ -769,7 +801,7 @@ impl Screen {
                 }
             });
         }
-        self.selected.take()
+        self.selected.take().map(|s| s.selected_id)
     }
 
     fn internal_to_screen_xy(&self, coords: Coords) -> Option<Coords> {
@@ -813,7 +845,10 @@ impl Screen {
                         node_id
                     })
                     .and_then(|id| {
-                        self.selected = Some(node_id);
+                        self.selected = Some(Selection {
+                            selected_id: node_id,
+                            inserting: !self.config.modal,
+                        });
                         self.dragging_from = Some(coords);
                         self.dragging_to = Some(coords);
                         Some(id)
@@ -832,14 +867,14 @@ impl Screen {
 
     fn toggle_stricken(&mut self) {
         trace!("toggle_stricken()");
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             self.with_node_mut(selected_id, |node| node.toggle_stricken());
         }
     }
 
     fn toggle_hide_stricken(&mut self) {
         trace!("toggle_hide_stricken()");
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             self.with_node_mut(selected_id, |node| node.toggle_hide_stricken());
         }
     }
@@ -864,7 +899,7 @@ impl Screen {
 
     fn delete_selected(&mut self, reselect: bool) {
         trace!("delete_selected()");
-        if let Some(selected_id) = self.selected.take() {
+        if let Some(Selection { selected_id, .. }) = self.selected.take() {
             let (_, height) = self.drawable_subtree_dims(selected_id).unwrap();
             let coords = self.drawn_at.remove(&selected_id);
             // remove ref from parent
@@ -960,7 +995,7 @@ impl Screen {
 
     fn toggle_collapsed(&mut self) {
         trace!("toggle_collapsed()");
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             self.with_node_mut_no_meta(selected_id, |node| node.toggle_collapsed());
         }
     }
@@ -970,7 +1005,10 @@ impl Screen {
     }
 
     fn create_child(&mut self) {
-        if let Some(mut selected_id) = self.selected {
+        if let Some(Selection {
+            mut selected_id, ..
+        }) = self.selected
+        {
             if self
                 .with_node(selected_id, |n| n.content.is_empty())
                 .unwrap()
@@ -1015,7 +1053,10 @@ impl Screen {
     }
 
     fn create_sibling(&mut self) {
-        if let Some(mut selected_id) = self.selected {
+        if let Some(Selection {
+            mut selected_id, ..
+        }) = self.selected
+        {
             if self
                 .with_node(selected_id, |n| n.content.is_empty())
                 .unwrap()
@@ -1106,7 +1147,7 @@ impl Screen {
 
     fn backspace(&mut self) {
         trace!("backspace");
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             if let Some(content) = self.with_node_mut(selected_id, |node| {
                 let content = node.content.clone();
                 let chars = content.chars();
@@ -1123,7 +1164,7 @@ impl Screen {
 
     fn append(&mut self, c: char) {
         trace!("append({})", c);
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             if let Some(content) = self.with_node_mut(selected_id, |node| {
                 node.content.push(c);
                 node.content.clone()
@@ -1212,7 +1253,7 @@ impl Screen {
         let dx = to.0 as i16 - from.0 as i16;
         let dy = to.1 as i16 - from.1 as i16;
 
-        let selected_id = if let Some(selected_id) = self.selected {
+        let selected_id = if let Some(Selection { selected_id, .. }) = self.selected {
             if self.is_parent(self.drawing_root, selected_id) {
                 selected_id
             } else {
@@ -1273,7 +1314,7 @@ impl Screen {
     }
 
     fn select_parent(&mut self) {
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             // If no parent, this should be a no-op.
             if let Some(parent_id) = self.parent(selected_id) {
                 // If we're at a toplevel task (i.e., 0 is its parent ID), we don't want to
@@ -1295,7 +1336,7 @@ impl Screen {
 
     fn select_neighbor(&mut self, dir: SearchDirection) -> Option<NodeID> {
         use SearchDirection::*;
-        let selected_id = self.selected?;
+        let selected_id = self.selected?.selected_id;
         let parent = self.nodes.get(&self.parent(selected_id)?)?;
 
         let selected_idx = parent.children.iter().position(|&id| id == selected_id)? as u64;
@@ -1358,7 +1399,7 @@ impl Screen {
     }
 
     fn scroll_to_selected(&mut self) -> bool {
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             self.scroll_to_node(selected_id)
         } else {
             false
@@ -1404,7 +1445,7 @@ impl Screen {
     }
 
     fn raise_selected(&mut self) {
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             if !self.exists(selected_id) {
                 warn!("tried to raise deleted node");
                 return;
@@ -1427,7 +1468,7 @@ impl Screen {
     }
 
     fn lower_selected(&mut self) {
-        if let Some(selected_id) = self.selected {
+        if let Some(Selection { selected_id, .. }) = self.selected {
             if !self.exists(selected_id) {
                 warn!("tried to lower deleted node");
                 return;
@@ -1524,7 +1565,7 @@ impl Screen {
 
         let cur = self
             .selected
-            .and_then(|s| self.bounds_for_lookup(s))
+            .and_then(|s| self.bounds_for_lookup(s.selected_id))
             .unwrap_or((rel_def_coords, rel_def_coords));
 
         let mut node_costs = vec![];
@@ -1552,7 +1593,10 @@ impl Screen {
                 .with_node_mut_no_meta(node_id, |node| node.selected = true)
                 .is_some()
             {
-                self.selected = Some(node_id);
+                self.selected = Some(Selection {
+                    selected_id: node_id,
+                    inserting: !self.config.modal,
+                });
             }
         }
     }
@@ -1563,7 +1607,7 @@ impl Screen {
             warn!("click way off-screen");
             return;
         }
-        let old = self.selected;
+        let old = self.selected.map(|s| s.selected_id);
         let new = self.try_select(coords);
         if old.is_none() && self.dragging_from.is_none() {
             self.create_anchor(coords);
@@ -1669,11 +1713,11 @@ impl Screen {
 
     pub fn add_or_remove_arrow(&mut self) {
         if self.drawing_arrow.is_none() {
-            self.drawing_arrow = self.selected;
+            self.drawing_arrow = self.selected.map(|s| s.selected_id);
             return;
         }
         let from = self.drawing_arrow.take().unwrap();
-        if let Some(arrow) = self.selected.map(|to| (from, to)) {
+        if let Some(arrow) = self.selected.map(|to| (from, to.selected_id)) {
             let (from, to) = arrow;
             if self.nodes.get(&from).is_some() && self.nodes.get(&to).is_some() {
                 let contains = self.arrows.iter().fold(false, |acc, &(ref nl1, ref nl2)| {
@@ -1883,12 +1927,13 @@ impl Screen {
 
         let reset = &*format!("{}", color::Fg(color::Reset));
         let mut pre_meta = String::new();
+        let mut post_content = String::new();
         let mut buf = String::new();
 
         // only actually print it if we're in-view
         if let Some((x, y)) = self.internal_to_screen_xy(internal_coords) {
             write!(pre_meta, "{}{}", cursor::Goto(x, y), color).unwrap();
-            if node.selected {
+            if node.selected && !(self.config.modal && self.is_insert_mode()) {
                 write!(&mut pre_meta, "{}", style::Invert).unwrap();
             }
             write!(&mut buf, "{}", pre_meta).unwrap();
@@ -1912,12 +1957,18 @@ impl Screen {
             } else {
                 write!(&mut buf, " ").unwrap();
             }
+
+            write!(&mut buf, "{}", node.content).unwrap();
+
+            // write cursor if this node is being inserted to
+            if node.selected && self.config.modal && self.is_insert_mode() {
+                write!(&mut post_content, "{} {}", style::Invert, reset).unwrap();
+                write!(&mut buf, "{}", post_content).unwrap();
+            }
             // keep color for selected & tree root Fg
             if !node.selected && prefix != "" {
                 write!(&mut buf, "{}", reset).unwrap();
             }
-
-            write!(&mut buf, "{}", node.content).unwrap();
 
             let max_width = (max(self.dims.0, 1 + x) - 1 - x) as usize;
             let visible_graphemes =
@@ -1925,7 +1976,13 @@ impl Screen {
                     .get(&node.id)
                     .cloned()
                     .unwrap_or_else(|| {
-                        let visible = buf.replace(reset, "").replace(&*pre_meta, "");
+                        let visible = if !post_content.is_empty() {
+                            buf.replace(&*post_content, " ")
+                                .replace(reset, "")
+                                .replace(&*pre_meta, "")
+                        } else {
+                            buf.replace(reset, "").replace(&*pre_meta, "")
+                        };
                         let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
                         self.grapheme_cache.insert(node.id, vg);
                         vg
@@ -1947,7 +2004,13 @@ impl Screen {
             .get(&node.id)
             .cloned()
             .unwrap_or_else(|| {
-                let visible = buf.replace(reset, "").replace(&*pre_meta, "");
+                let visible = if !post_content.is_empty() {
+                    buf.replace(&*post_content, " ")
+                        .replace(reset, "")
+                        .replace(&*pre_meta, "")
+                } else {
+                    buf.replace(reset, "").replace(&*pre_meta, "")
+                };
                 let vg = UnicodeSegmentation::graphemes(&*visible, true).count();
                 self.grapheme_cache.insert(node.id, vg);
                 vg
@@ -2364,6 +2427,10 @@ impl Screen {
         }
         let plot = plot::bounded_count_sparkline(nodes, since as i64, until as i64, buckets);
         format!("|{}|", plot)
+    }
+
+    fn is_insert_mode(&self) -> bool {
+        self.selected.map(|s| s.inserting) == Some(true)
     }
 }
 
