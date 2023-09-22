@@ -2077,7 +2077,6 @@ impl Screen {
     }
 
     fn path_from_node_to_point(&self, start: NodeID, to: Coords) -> (Vec<Coords>, (Dir, Dir)) {
-        // TODO this is mostly copypasta from path_between_nodes, DRY
         trace!("getting path between node {} and point {:?}", start, to);
         let startbounds = self.bounds_for_lookup(start);
         if startbounds.is_none() {
@@ -2085,17 +2084,11 @@ impl Screen {
             return (vec![], (Dir::R, Dir::R));
         }
         let (s1, s2) = startbounds.unwrap();
-        let init = (self.path(s2, to), (Dir::R, Dir::R));
-        let paths = vec![(self.path(s1, to), (Dir::L, Dir::R))];
-        paths
-            .into_iter()
-            .fold(init, |(spath, sdirs), (path, dirs)| {
-                if path.len() < spath.len() {
-                    (path, dirs)
-                } else {
-                    (spath, sdirs)
-                }
-            })
+
+        self.path_with_directions(
+            &[(s1, Dir::L), (s2, Dir::R)],
+            &[(to, Dir::R)],
+        )
     }
 
     fn path_between_nodes(&self, start: NodeID, to: NodeID) -> (Vec<Coords>, (Dir, Dir)) {
@@ -2109,28 +2102,44 @@ impl Screen {
         let (s1, s2) = startbounds.unwrap();
         let (t1, t2) = tobounds.unwrap();
 
-        let init = (self.path(s2, t2), (Dir::R, Dir::R));
-        let paths = vec![
-            (self.path(s1, t2), (Dir::L, Dir::R)),
-            (self.path(s2, t1), (Dir::R, Dir::L)),
-            (self.path(s1, t1), (Dir::L, Dir::L)),
-        ];
-        paths
-            .into_iter()
-            .fold(init, |(spath, sdirs), (path, dirs)| {
-                if path.len() < spath.len() {
-                    (path, dirs)
-                } else {
-                    (spath, sdirs)
-                }
-            })
+        self.path_with_directions(
+            &[(s1, Dir::L), (s2, Dir::R)],
+            &[(t1, Dir::L), (t2, Dir::R)],
+        )
     }
 
-    fn path(&self, start: Coords, dest: Coords) -> Vec<Coords> {
+    fn path_with_directions(
+        &self,
+        starts: &[(Coords, Dir)],
+        dests: &[(Coords, Dir)]
+    ) -> (Vec<Coords>, (Dir, Dir)) {
+        let dests_no_dir: Vec<Coords> = dests.iter()
+            .map(|(coords, _)| *coords)
+            .collect();
+        let path = self.path(starts, &dests_no_dir);
+        let last_node = if let Some(n) = path.last() { n } else {
+            return (path, (Dir::L, Dir::R));
+        };
+        let first_node = path.first().unwrap();
+        let last_dir = dests.iter()
+            .filter(|(dest, _)| dest == last_node)
+            .map(|(_, dir)| dir)
+            .next()
+            .unwrap();
+        let first_dir = starts.iter()
+            .filter(|(start, _)| start == first_node)
+            .map(|(_, dir)| dir)
+            .next()
+            .unwrap();
+
+        (path, (*first_dir, *last_dir))
+    }
+
+    fn path(&self, starts: &[(Coords, Dir)], dests: &[Coords]) -> Vec<Coords> {
         trace!(
             "path({:?}, {:?} (screen size: {} x {})",
-            start,
-            dest,
+            starts,
+            dests,
             self.dims.0,
             self.dims.1
         );
@@ -2143,27 +2152,81 @@ impl Screen {
                 (c.0, max(c.1, 2) - 1),
             ]
         }
+        let heuristic = |from: Coords|
+            dests.iter()
+                .map(|dest| cost(from, *dest))
+                .min()
+                .unwrap_or(std::u16::MAX);
         // maps from location to previous location
-        let mut visited: HashMap<Coords, Coords> = HashMap::new();
-        let mut pq = BinaryHeap::new();
+        let mut visited: HashMap<Coords, (Coords, u16)> = HashMap::new();
 
-        let mut cursor = start;
+        // priority queue of nodes to explore, initially populated w/ starting locs
+        // tuple is (priority, coords, last_direction, cost)
+        let mut pq: BinaryHeap<_> = starts.into_iter()
+            .map(|(point, dir)| (
+                std::u16::MAX - heuristic(*point),
+                *point,
+                match dir {
+                    Dir::L => -1,
+                    Dir::R => 1,
+                },
+                0
+            ))
+            .collect();
+
+        let (_, mut cursor, mut cursor_last_direction, mut cursor_cost) =
+            pq.pop().expect("path() called without any starting point");
         trace!("starting draw");
-        while cursor != dest {
+        while !dests.contains(&cursor) {
             for neighbor in perms(cursor) {
+                // direction is -2, -1, 1, or 2
+                let direction = (neighbor.0 as i32) - (cursor.0 as i32)
+                         + 2 * ((neighbor.1 as i32) - (cursor.1 as i32));
+
+                let move_cost = if cursor_last_direction == direction {
+                    1 // We're moving in the same direction as before: free
+                } else {
+                    2 // We changed direction, which is discouraged to arrows simple
+                };
+
+                let turn_into_dest_cost = if
+                    (direction == -2 || direction == 2) &&
+                    heuristic(neighbor) == 0
+                {
+                    // When we arrive at dest, it's good to be traveling in the direction
+                    // that the carrot will be pointing.  e.g.
+                    //
+                    // Bad: ──┐       Good:─┐
+                    //        │             │
+                    //        >dest         └─>dest
+                    5
+                } else {
+                    0
+                };
+
+                // Total cost to get to this point
+                let total_cost = move_cost + turn_into_dest_cost + cursor_cost;
+
                 if (neighbor.0 < self.dims.0
                     && neighbor.1 < self.dims.1 + self.view_y
                     && !self.occupied(neighbor)
-                    || neighbor == dest)
-                    && !visited.contains_key(&neighbor)
+                    || dests.contains(&neighbor))
+                    && visited.get(&neighbor) // Only if we found...
+                        .map(|(_, old_cost)| *old_cost > total_cost) // a cheaper route...
+                        .unwrap_or(true) // or the first route
                 {
-                    let c = std::u16::MAX - cost(neighbor, dest);
-                    pq.push((c, neighbor));
-                    visited.insert(neighbor, cursor);
+                    let priority = std::u16::MAX
+                        - heuristic(neighbor)
+                        - total_cost;
+
+                    pq.push((priority, neighbor, direction, total_cost));
+                    visited.insert(neighbor, (cursor, total_cost));
                 }
             }
-            if let Some((_, coords)) = pq.pop() {
+            if let Some((_, coords, last_direction, cost)) = pq.pop() {
                 cursor = coords;
+                cursor_cost = cost;
+                cursor_last_direction = last_direction;
             } else {
                 trace!("no path, possible node overlap");
                 return vec![];
@@ -2173,10 +2236,10 @@ impl Screen {
         }
         trace!("done draw, starting backtrack");
 
-        let mut back_cursor = dest;
-        let mut path = vec![dest];
-        while back_cursor != start {
-            let prev = visited[&back_cursor];
+        let mut back_cursor = cursor;
+        let mut path = vec![cursor];
+        while !starts.iter().any(|(start, _)| *start == back_cursor) {
+            let (prev, _) = visited[&back_cursor];
             path.push(prev);
             back_cursor = prev;
         }
